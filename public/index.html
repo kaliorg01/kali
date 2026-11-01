@@ -6,15 +6,12 @@
 <title>KALI</title>
 <link rel="icon" type="image/png" href="/img/icone.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700&display=swap">
 <link rel="stylesheet" href="/css/app.css">
-<script>try{var t=localStorage.getItem('kali-tema');if(t==='light'||t==='dark')document.documentElement.dataset.theme=t}catch(e){}</script>
+<script>try{var t=localStorage.getItem('kali-tema')||localStorage.getItem('aura-tema');if(t==='light'||t==='dark')document.documentElement.dataset.theme=t}catch(e){}</script>
 </head>
 <body>
-<svg class="oculto-svg" aria-hidden="true">
-  <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1f5fd6"/><stop offset=".5" stop-color="#367bf0"/><stop offset="1" stop-color="#2fd0ff"/></linearGradient></defs>
-  <symbol id="logo" viewBox="4 6 96 86"><g fill="currentColor"><path d="M56 34 A26 26 0 1 0 81.1 66.7 A24.7 24.7 0 1 1 56 34 Z"/><path d="M80 65 Q92 74 98 90 Q90 76 78 68 Z"/><path d="M56 34 Q64 26 74 22 L75 25 Q65 29 57 36 Z"/><path fill-rule="evenodd" d="M73 21 L79 19 L86 22 L89 24.5 L84 25 L87 27 L80 27.5 L75 26 Z M78.5 21.2 L81.5 21.6 L79 22.6 Z"/><path d="M76 20 Q68 13 59 12 Q68 15 75 21.5 Z"/><path d="M78 19.5 Q74 13 69 10 Q74 14 77 20.5 Z"/><path d="M57 35 Q40 14 12 8 Q38 18 54 38 Z"/><path d="M55 37 Q34 22 6 22 Q32 27 53 40 Z"/><path d="M53 40 Q34 33 10 37 Q33 37 52 43 Z"/></g></symbol>
-</svg>
 <div class="neb n1"></div><div class="neb n2"></div><div class="neb n3"></div>
 <div class="app" id="app">
   <nav class="rail" id="rail" aria-label="Servidores"></nav>

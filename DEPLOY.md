@@ -29,8 +29,20 @@ docker compose restart        # reiniciar
 ```
 
 ## 5. Backup do banco
+O banco roda em modo WAL, então copie os três arquivos com o app parado:
 ```bash
-docker cp kali:/app/dados/kali.db ./backup-kali.db
+docker compose stop
+mkdir -p backup && cp dados/kali.db* backup/
+docker compose start
+```
+
+## Atualizando uma instalação antiga (AURA)
+```bash
+git pull
+docker compose down --remove-orphans   # derruba o container antigo "aura"
+docker compose up -d --build
+```
+Na primeira subida, o app renomeia `dados/aura.db` (e os arquivos `-wal`/`-shm`) para `kali.db`.
 ```
 
 ## Sem Docker (direto no Node)

@@ -572,8 +572,6 @@ export function criarRotas() {
   // ------------------------------------------------------------ procurando grupo (LFG)
   const LFG_TIPOS_VAGAS = { duo: 2, squad: 5 };
   r.post('/servidores/:id/lfg', exigirLogin, (req, res) => {
-    let membro = null;
-    try { membro = db.ehMembro(Number(req.params.id), req.usuario.id); } catch { membro = 'erro-id'; }
     const s = servidorComoMembro(req.usuario.id, idDe(req.params.id));
     const uid = req.usuario.id;
     const c = corpoDe(req);
@@ -599,7 +597,7 @@ export function criarRotas() {
     }
     let canalVozId = null;
     if (c.canalVozId !== undefined && c.canalVozId !== null) {
-      canalVozId = idDe(c.canalVozId);
+      canalVozId = idDe(String(c.canalVozId));
       const canal = db.canalPorId(canalVozId);
       if (!canal || canal.servidor_id !== s.id || canal.tipo !== 'voz') throw erro(400, 'Canal de voz inválido.');
       db.acessarCanal(uid, canalVozId); // lança ErroKali 403 se não tiver acesso
@@ -630,7 +628,7 @@ export function criarRotas() {
     if (!row) throw erro(404, 'Post não encontrado.');
     servidorComoMembro(uid, row.servidor_id);
     // Já é participante: entrar de novo é idempotente, independentemente do status.
-    if (db.ehParticipanteLfg(id, uid)) return lfgPublico(db.lfgPorId(id));
+    if (db.ehParticipanteLfg(id, uid)) return res.json(lfgPublico(db.lfgPorId(id)));
     if (row.status !== 'aberto') throw erro(400, 'Esse post já está fechado ou cancelado.');
     if (row.canal_voz_id) db.acessarCanal(uid, row.canal_voz_id);
     if (db.lfgParticipantes(id).length >= row.vagas) throw erro(400, 'Esse grupo já está completo.');

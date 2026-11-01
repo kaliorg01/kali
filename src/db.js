@@ -13,13 +13,20 @@ export class ErroKali extends Error {
 export const erro = (status, mensagem) => new ErroKali(status, mensagem);
 
 const RAIZ = path.resolve(import.meta.dirname, '..');
-export const CAMINHO_DB = process.env.KALI_DB
-  ? path.resolve(process.env.KALI_DB)
+const DB_ENV = process.env.KALI_DB || process.env.AURA_DB;
+export const CAMINHO_DB = DB_ENV
+  ? path.resolve(DB_ENV)
   : path.join(RAIZ, 'dados', 'kali.db');
 fs.mkdirSync(path.dirname(CAMINHO_DB), { recursive: true });
+// Instalações do tempo da AURA: renomeia dados/aura.db (+ -wal/-shm) para kali.db na primeira subida.
+if (!DB_ENV && !fs.existsSync(CAMINHO_DB)) {
+  const antigo = path.join(RAIZ, 'dados', 'aura.db');
+  for (const suf of ['', '-wal', '-shm']) if (fs.existsSync(antigo + suf)) fs.renameSync(antigo + suf, CAMINHO_DB + suf);
+}
 
-export const PASTA_AUDIOS = process.env.KALI_AUDIOS
-  ? path.resolve(process.env.KALI_AUDIOS)
+const AUDIOS_ENV = process.env.KALI_AUDIOS || process.env.AURA_AUDIOS;
+export const PASTA_AUDIOS = AUDIOS_ENV
+  ? path.resolve(AUDIOS_ENV)
   : path.join(path.dirname(CAMINHO_DB), 'audios');
 fs.mkdirSync(PASTA_AUDIOS, { recursive: true });
 
@@ -231,7 +238,9 @@ export function fecharBanco() {
   try { db.close(); } catch { /* já fechado */ }
 }
 
-export const PALETA = ['#7c5cff', '#c056f5', '#ff9a3c', '#3ee6a8', '#1d4ed8', '#c2410c', '#0e7490', '#db2777'];
+// Cores de avatar antigas (roxo/laranja da AURA) viram as azuis equivalentes.
+db.exec(`UPDATE usuarios SET cor = CASE cor WHEN '#7c5cff' THEN '#367bf0' WHEN '#c056f5' THEN '#1fa2ff' ELSE '#2fd0ff' END WHERE cor IN ('#7c5cff', '#c056f5', '#ff9a3c')`);
+export const PALETA = ['#367bf0', '#1fa2ff', '#2fd0ff', '#3ee6a8', '#1d4ed8', '#c2410c', '#0e7490', '#db2777'];
 export const corAleatoria = () => PALETA[crypto.randomInt(PALETA.length)];
 
 // ---------------------------------------------------------------- usuários

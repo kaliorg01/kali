@@ -7,7 +7,7 @@
   --roxo:#367bf0;--roxo-suave:#eaf2ff;--verde:#2f7a52;--ok:#16a34a;--aus:#d97706;--ocup:#dc2626;
   --raio:20px;--mencao:rgba(47,208,255,.12);--mencao-borda:#2fd0ff;
   --modal-fundo:rgba(8,12,22,.35);
-  --grad:linear-gradient(135deg,#367bf0 0%,#1fa2ff 55%,#2fd0ff 100%);
+  --grad:linear-gradient(135deg,#1f5fd6 0%,#2563eb 55%,#0e7490 100%);
   color-scheme:light;
 }
 :root[data-theme="dark"]{
@@ -26,9 +26,8 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 input,textarea,select{font:inherit;color:inherit}
 :focus-visible{outline:2px solid var(--roxo);outline-offset:2px}
 [hidden]{display:none!important}
-.oculto-svg{position:absolute;width:0;height:0}
 
-/* nebulosas */
+/* brilhos de fundo */
 .neb{display:none}
 [data-theme="dark"] .neb{display:block;position:fixed;border-radius:50%;filter:blur(90px);pointer-events:none;z-index:0}
 .n1{width:620px;height:620px;background:#1f4fd6;left:-160px;top:-220px;opacity:.12;animation:deriva 26s ease-in-out infinite alternate}
@@ -162,6 +161,7 @@ button.side-topo:hover{background:var(--hover)}
 .texto a{color:var(--roxo)}
 .texto .men{background:var(--roxo-suave);color:var(--roxo);border-radius:6px;padding:0 3px;font-weight:500}
 .texto .men.eu{background:rgba(47,208,255,.2);color:#2fd0ff}
+:root:not([data-theme="dark"]) .texto .men.eu{background:rgba(3,105,161,.12);color:#0369a1}
 .tag{font-size:10px;padding:1px 6px;border-radius:6px;background:var(--grad);color:#fff;margin-left:6px;vertical-align:2px}
 .reacoes{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
 .reacao{font-size:12px;padding:3px 8px;border-radius:999px;background:var(--chip);border:1px solid var(--chip-borda);display:inline-flex;gap:4px;align-items:center}
@@ -177,7 +177,7 @@ button.side-topo:hover{background:var(--hover)}
 .edicao small{color:var(--fraco);font-size:11px}
 .edicao small b{color:var(--roxo);font-weight:500;cursor:pointer}
 .av.ia{background:var(--card);border:1px solid var(--chip-borda)}
-.av.ia svg{width:24px;height:24px}
+.av.ia img{width:24px;height:24px}
 .nome-ia{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent;font-weight:600}
 .card{border:1px solid var(--borda);background:var(--card);border-radius:var(--raio);padding:16px 18px;margin-top:8px;max-width:620px}
 .card h3{font-size:15px;margin-bottom:4px}

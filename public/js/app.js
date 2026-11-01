@@ -4,7 +4,6 @@
 
   // ---------- utilidades ----------
   const $ = (s, el = document) => el.querySelector(s);
-  const SVG = 'http://www.w3.org/2000/svg';
   function h(tag, props, ...filhos) {
     const e = document.createElement(tag);
     if (props) for (const k in props) {
@@ -28,6 +27,16 @@
   }
   const ler = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
   const salvar = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+  // Preferências do tempo da AURA (aura-*) passam para kali-* uma única vez.
+  try {
+    const antigas = [];
+    for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.startsWith('aura-')) antigas.push(k); }
+    for (const k of antigas) {
+      const nova = 'kali-' + k.slice(5);
+      if (localStorage.getItem(nova) === null) localStorage.setItem(nova, localStorage.getItem(k));
+      localStorage.removeItem(k);
+    }
+  } catch (e) {}
   const hora = (ms) => new Date(ms).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
   function dia(ms) {
     const d = new Date(ms), hoje = new Date();
@@ -186,14 +195,13 @@
   }
 
   // ---------- navegação ----------
-  // Tema por servidor: cada servidor ganha seu degradê (o primeiro mantém o da ORYON).
-  const TEMAS = [['#367bf0', '#1fa2ff', '#2fd0ff'], ['#06b6d4', '#3b82f6', '#8b5cf6'], ['#10b981', '#22d3ee', '#3b82f6'], ['#f43f5e', '#fb923c', '#facc15'], ['#ec4899', '#8b5cf6', '#06b6d4']];
+  // Tema por servidor: cada servidor ganha um degradê azul/ciano (escuro o bastante pra texto branco).
+  const TEMAS = [['#1f5fd6', '#2563eb', '#0e7490'], ['#1e40af', '#2563eb', '#0369a1'], ['#0e7490', '#0284c7', '#1d4ed8'], ['#1d4ed8', '#0369a1', '#0f766e'], ['#0b5fb8', '#1d4ed8', '#155e75']];
   function aplicarTemaServidor(id) {
     const st = document.documentElement.style;
     if (!id) { st.removeProperty('--grad'); st.removeProperty('--roxo'); return; }
     const [a, b, c] = TEMAS[(id - 1) % TEMAS.length];
     st.setProperty('--grad', `linear-gradient(135deg,${a} 0%,${b} 55%,${c} 100%)`);
-    st.setProperty('--roxo', a);
   }
   async function selecionarServidor(id) {
     sairAssistir();

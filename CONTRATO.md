@@ -1,6 +1,6 @@
 # KALI — contrato v1
 
-App de comunidade estilo Discord, 100% em português (BR). Visual = tema Nebulosa da ORYON (referência: `../layout.html`).
+App de comunidade estilo Discord, 100% em português (BR). Visual = tema hacker preto com azul/ciano, fonte JetBrains Mono nos títulos e logo do dragão (`public/img/`).
 
 ## Stack
 - Node 24, ESM (`"type":"module"`). Dependências: só `express` e `socket.io` (+ `socket.io-client` em devDependencies para testes).
@@ -34,7 +34,7 @@ scripts/teste.js     teste de integração (REST + socket.io-client)
 - Toda ação checa: logado + membro do servidor do canal (ou participante da DM). Dono-only: criar/apagar canal, renomear/apagar servidor.
 - Limite: 5 mensagens / 3 s por usuário → `{erro:"Calma! Muitas mensagens."}`.
 - Erros REST: status 4xx + `{erro:"texto em pt-BR"}`. Socket: ack `{erro}`.
-- Cores de avatar: sorteada de uma paleta ao cadastrar (`#7c5cff #c056f5 #ff9a3c #3ee6a8 #1d4ed8 #c2410c #0e7490 #db2777`).
+- Cores de avatar: sorteada de uma paleta ao cadastrar (`#367bf0 #1fa2ff #2fd0ff #3ee6a8 #1d4ed8 #c2410c #0e7490 #db2777`).
 - XSS: o front NUNCA põe texto de usuário via innerHTML; usa textContent/createElement. Menções `@usuario` e links são montados em nós DOM.
 
 ## Objetos
@@ -110,9 +110,9 @@ Desconectar o último socket do usuário → sai da voz e emite `presenca` offli
 Mesh WebRTC só áudio, STUN `stun:stun.l.google.com:19302`. Quem entra recebe `pares` e cria offer para cada um; os outros respondem. `dados` = `{sdp}` ou `{candidato}`. Mudo = desliga track; surdo = muta todos os <audio> remotos (+ mudo). "Falando" = AnalyserNode com limiar, emite `voz:estado` só quando muda.
 
 ## UI (public/)
-Layout de 4 colunas do `../layout.html`: trilho de servidores (logo ∞ = DMs, servidores com sigla, `+` criar/entrar por convite), barra de canais (texto/voz, usuários na voz com anel verde ao falar, rodapé com usuário + mic + fone + tema), chat (topo com # canal, botão "✦ O que eu perdi?", busca local, membros), painel de membros (online/ausente/offline agrupados).
+Layout de 4 colunas: trilho de servidores (logo do dragão = DMs, servidores com sigla, `+` criar/entrar por convite), barra de canais (texto/voz, usuários na voz com anel verde ao falar, rodapé com usuário + mic + fone + tema), chat (topo com # canal, botão "✦ O que eu perdi?", busca local, membros), painel de membros (online/ausente/offline agrupados).
 Chat: mensagens agrupadas por autor (≤5 min), hora, editado, reações (clicar alterna; botão 😀 com 8 emojis rápidos), editar/apagar no hover, "X está digitando…", carregar mais ao rolar ao topo, divisória "Novas mensagens", menções em destaque, Enter envia / Shift+Enter quebra linha.
-Badges de não lidos por canal e servidor. Modais (criar servidor, entrar por convite, criar canal, copiar convite, perfil/status) no estilo cartão Oryon. Toasts para erros. Tema escuro Nebulosa (padrão) e claro, salvo em localStorage com try/catch. Responsivo: <760px mostra uma coluna por vez.
+Badges de não lidos por canal e servidor. Modais (criar servidor, entrar por convite, criar canal, copiar convite, perfil/status) no estilo cartão escuro. Toasts para erros. Tema escuro preto (padrão) e claro, salvo em localStorage com try/catch. Responsivo: <760px mostra uma coluna por vez.
 
 ## Novidades v1 (diferenciais — implementar depois do núcleo acima)
 1. **O que eu perdi?** — já descrito (Resumo).

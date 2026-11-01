@@ -10,7 +10,7 @@ const BASE = `http://localhost:${PORTA}`;
 const RAIZ = path.resolve(import.meta.dirname, '..');
 const PASTA_TEMP = fs.mkdtempSync(path.join(os.tmpdir(), 'kali-teste-'));
 const BANCO = path.join(PASTA_TEMP, 'kali-teste.db');
-const PALETA = ['#7c5cff', '#c056f5', '#ff9a3c', '#3ee6a8', '#1d4ed8', '#c2410c', '#0e7490', '#db2777'];
+const PALETA = ['#367bf0', '#1fa2ff', '#2fd0ff', '#3ee6a8', '#1d4ed8', '#c2410c', '#0e7490', '#db2777'];
 
 let passou = 0;
 let falhou = 0;
@@ -930,7 +930,7 @@ async function testes() {
     r = await rafa.req('GET', `/servidores/${srv.id}/lfg?jogo=Inexistente`);
     check('filtrar por jogo sem resultado → []', r.status === 200 && r.json.length === 0, r.json);
 
-    evNova = esperar(sT, 'lfg:atualizada', (d) => d.id === lfgId);
+    evNova = esperar(sL, 'lfg:atualizada', (d) => d.id === lfgId);
     r = await rafa.req('POST', `/lfg/${lfgId}/entrar`);
     const atualizou = await evNova;
     check('entrar no LFG → ocupados sobe pra 2', r.status === 200 && r.json?.ocupados === 2 && r.json?.status === 'cheio', r);
