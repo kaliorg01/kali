@@ -107,6 +107,20 @@ button.side-topo:hover{background:var(--hover)}
 .msg.bloqueada{opacity:.7}
 .sec-menu{padding:10px 10px 4px;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--fraco)}
 .menu{max-height:min(80vh,640px);overflow-y:auto}
+/* prévia de link */
+.previa-link{display:flex;gap:12px;margin-top:6px;max-width:440px;padding:10px 12px;border-left:4px solid var(--roxo);border-radius:8px;background:var(--chip)}
+.previa-link.carregando{display:none}
+.previa-txt{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.previa-txt small{color:var(--fraco);font-size:12px}
+.previa-txt a{color:var(--roxo);font-weight:600;text-decoration:none}
+.previa-txt a:hover{text-decoration:underline}
+.previa-txt p{color:var(--suave);font-size:13px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.previa-link img{width:80px;height:80px;object-fit:cover;border-radius:8px;flex:none}
+/* eventos */
+.eventos li{align-items:center}
+.data-ev{display:flex;flex-direction:column;align-items:center;justify-content:center;width:46px;height:50px;border-radius:10px;background:var(--grad);color:#fff;flex:none;margin-top:0!important;font-size:inherit!important}
+.data-ev b{font-size:18px;line-height:1}
+.data-ev small{color:#fff!important;font-size:11px;text-transform:uppercase}
 /* categorias de canais e editar canal */
 .rot.categoria{padding-top:14px}
 .rot.categoria .nome-cat{display:flex;align-items:center;gap:4px;font-size:11px;letter-spacing:.1em;color:var(--fraco);text-transform:uppercase;padding:0}

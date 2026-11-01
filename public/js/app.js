@@ -64,7 +64,7 @@
     novaDesde: new Map(), busca: '', editando: null,
     missoes: new Map(), temp: 0, assistindo: null,
     amigos: { amigos: [], recebidos: [], enviados: [] },
-    cargos: new Map(),
+    cargos: new Map(), eventos: new Map(),
   };
   // Cor de nome comprada na loja: '#hex' ou '#hex,#hex' (degradê).
   const estiloNome = (c) => !c ? null : c.includes(',')
@@ -223,6 +223,7 @@
     if (!s) return render();
     if (!E.membros.has(id)) carregarMembros(id).then(renderMembros).catch(() => {});
     if (!E.cargos.has(id)) carregarCargos(id).then(() => { renderMembros(); if (E.servidorId === id) renderLista(); }).catch(() => {});
+    if (!E.eventos.has(id)) carregarEventos(id);
     carregarMissoes(id);
     const salvo = Number(ler('kali-canal-' + id));
     const alvo = s.canais.find((c) => c.id === salvo && c.tipo === 'texto') || s.canais.find((c) => c.tipo === 'texto');
@@ -357,7 +358,10 @@
       if (s) {
         if (s.bannerImg) partes.push(h('img', { class: 'banner-srv', src: s.bannerImg, alt: '' }));
         partes.push(h('button', { class: 'side-topo', onclick: (e) => menuServidor(e.currentTarget) }, h('span', {}, s.nome), h('span', { class: 'seta' }, '▾')));
-        const corpo = h('div', { class: 'side-corpo' }, h('button', { class: 'btn-novo', onclick: modalConvite }, h('span', { style: 'font-size:18px' }, '＋'), 'Convidar amigos'));
+        const nEv = (E.eventos.get(s.id) || []).length;
+        const corpo = h('div', { class: 'side-corpo' },
+          h('button', { class: 'nav-dm', onclick: () => modalEventos(s) }, h('span', { class: 'ic' }, '📅'), nEv ? `${nEv} evento${nEv > 1 ? 's' : ''}` : 'Eventos'),
+          h('button', { class: 'btn-novo', onclick: modalConvite }, h('span', { style: 'font-size:18px' }, '＋'), 'Convidar amigos'));
         const dono = souDono(s);
         // Canais sem categoria em cima (Texto/Voz); depois cada categoria, que dá pra recolher (igual ao Discord).
         const semCat = s.canais.filter((c) => !c.categoria);
@@ -604,6 +608,10 @@
       corpo.append(h('div', { style: 'margin-top:6px;display:flex;gap:8px;align-items:center' }, au, vel));
     }
     if (m.transcricao) corpo.append(h('div', { class: 'texto', style: 'color:var(--fraco);font-size:13px' }, '🎙 transcrito pela IA: ', m.transcricao));
+    if (m.texto && !m.sistema && !m.anexo) {
+      const link = m.texto.replace(/\|\|[^|]*\|\|/g, '').match(/https?:\/\/[^\s<>"]+/)?.[0];
+      if (link) corpo.append(cartaoPrevia(link));
+    }
     if (m.anexo) {
       const a = m.anexo;
       if (a.tipo && a.tipo.startsWith('image/')) {
@@ -1357,6 +1365,7 @@
     const itens = [item('Convidar pessoas', modalConvite)];
     if (souStaffEm(s.id)) itens.push(item('Configurações do servidor', () => configServidor(s)));
     if (souDono(s)) itens.push(item('Criar canal', () => modalCanal('texto')));
+    if (souStaffEm(s.id)) itens.push(item('Criar evento', () => modalCriarEvento(s)));
     itens.push(item('Abrir ticket com a staff', modalTicket));
     const atual = canalAtual();
     if (atual && atual.ticket && (atual.ticket === E.eu.id || souStaffEm(s.id))) itens.push(item('Fechar este ticket', () => apagarCanal(atual)));
@@ -1376,6 +1385,51 @@
     E.presenca.set(d.outro.id, d.outro.status);
     E.modo = 'dm'; E.servidorId = null;
     await abrirCanal(d.canalId);
+  }
+  // ---------- prévia de link (o servidor busca e protege; imagem vem pelo servidor) ----------
+  const previas = new Map(); // url → Promise
+  function cartaoPrevia(url) {
+    const el = h('div', { class: 'previa-link carregando' });
+    if (!previas.has(url)) previas.set(url, api('GET', '/previa?url=' + encodeURIComponent(url)).catch(() => ({ vazio: true })));
+    previas.get(url).then((d) => {
+      if (!d || d.vazio) return el.remove();
+      el.classList.remove('carregando');
+      el.replaceChildren(...[h('div', { class: 'previa-txt' }, h('small', {}, d.site),
+        h('a', { href: url, target: '_blank', rel: 'noopener noreferrer' }, d.titulo), d.descricao ? h('p', {}, d.descricao) : null),
+        d.imagem ? h('img', { src: d.imagem, alt: '', loading: 'lazy', onerror: (e) => e.target.remove() }) : null].filter(Boolean));
+    });
+    return el;
+  }
+  // ---------- eventos do servidor ----------
+  async function carregarEventos(sid) {
+    try { E.eventos.set(sid, await api('GET', `/servidores/${sid}/eventos`)); } catch (e) { return; }
+    if (sid === E.servidorId) renderSide();
+  }
+  const quandoEvento = (ms) => new Date(ms).toLocaleString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  function modalEventos(s) {
+    const lista = E.eventos.get(s.id) || [];
+    const staff = souStaffEm(s.id);
+    abrirModal({ titulo: '📅 Eventos de ' + s.nome, sub: lista.length ? 'Marque presença pra galera saber quem vai.' : 'Nenhum evento marcado.',
+      corpo: [h('ul', { class: 'novidades eventos' }, lista.map((e) => h('li', {},
+        h('div', { class: 'data-ev' }, h('b', {}, new Date(e.inicio).getDate()), h('small', {}, new Date(e.inicio).toLocaleString('pt-BR', { month: 'short' }))),
+        h('div', { style: 'flex:1;min-width:0' }, h('b', {}, e.titulo), h('small', {}, quandoEvento(e.inicio) + (e.inicio < Date.now() ? ' · 🔴 acontecendo' : '') + ` · ${e.interessados} vai(ão)`),
+          e.descricao ? h('small', { style: 'display:block' }, e.descricao) : null),
+        h('div', { class: 'acoes-cargo' },
+          h('button', { type: 'button', class: 'bt' + (e.euVou ? '' : ' prim'), onclick: async () => { await api('POST', `/eventos/${e.id}/interesse`).catch((err) => toast(err.message, 'erro')); await carregarEventos(s.id); modalEventos(s); } }, e.euVou ? 'Vou ✓' : 'Eu vou'),
+          staff ? h('button', { type: 'button', class: 'bt', title: 'Cancelar evento', onclick: async () => { if (!confirm('Cancelar ' + e.titulo + '?')) return; await api('DELETE', `/eventos/${e.id}`).catch((err) => toast(err.message, 'erro')); await carregarEventos(s.id); modalEventos(s); } }, '🗑') : null)))),
+        staff ? h('button', { type: 'button', class: 'bt prim', style: 'margin-top:8px', onclick: () => modalCriarEvento(s) }, 'Criar evento') : null] });
+  }
+  function modalCriarEvento(s) {
+    const titulo = h('input', { maxlength: 80, placeholder: 'Ex: Campeonato de Valorant' });
+    const desc = h('input', { maxlength: 500, placeholder: 'Detalhes (opcional)' });
+    const d = new Date(Date.now() + 3600e3); d.setMinutes(0, 0, 0);
+    const pad = (n) => String(n).padStart(2, '0');
+    const quando = h('input', { type: 'datetime-local', value: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:00` });
+    abrirModal({ titulo: 'Criar evento', sub: 'em ' + s.nome, corpo: [campo('Nome do evento', titulo), campo('Quando', quando), campo('Descrição', desc)], botao: 'Criar evento',
+      acao: async () => {
+        await api('POST', `/servidores/${s.id}/eventos`, { titulo: titulo.value.trim(), descricao: desc.value.trim(), inicio: new Date(quando.value).getTime() });
+        await carregarEventos(s.id); toast('Evento criado 📅', 'ok');
+      } });
   }
   // ---------- tela Amigos (abas Online / Todos / Pendentes / Bloqueados / Adicionar amigo) ----------
   function abrirAmigos() {
@@ -2121,6 +2175,7 @@
     sock.on('canal:apagado', aoCanalApagado);
     sock.on('servidor:atualizado', aoServidorAtualizado);
     sock.on('servidor:apagado', aoServidorApagado);
+    sock.on('eventos:atualizado', ({ servidorId }) => carregarEventos(servidorId));
     sock.on('loja:ganhou', ({ nome }) => toast(`Você ganhou "${nome}"! Abra a Loja pra usar.`, 'ok'));
     sock.on('castigo', ({ servidor, ate }) => toast(ate ? `⏳ Você levou castigo em ${servidor} até ${hora(ate)}.` : `✅ Seu castigo em ${servidor} acabou.`, ate ? 'erro' : 'ok'));
     sock.on('cargos:atualizado', async ({ servidorId }) => {

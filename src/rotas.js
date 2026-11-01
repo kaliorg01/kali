@@ -15,6 +15,7 @@ import { publicarMensagem, caminhoAnexo, pareceGolpe, respostaValida, quantosOnl
   emitirLfg, ganharXpLfg, lfgPublico,
 } from './tempo-real.js';
 import { gerarResumo } from './resumo.js';
+import { buscarSeguro, previaDe } from './previa.js';
 
 const RE_USUARIO = /^[a-z0-9_.]{3,20}$/;
 const RE_CANAL_TEXTO = /^[a-z0-9-]{1,30}$/;
@@ -756,6 +757,72 @@ export function criarRotas() {
     if (!item || !item.ativo) throw erro(404, 'Item não encontrado.');
     if (!db.darItem(alvo.id, item.id)) throw erro(400, `${alvo.nome} já tem esse item.`);
     emitir(`u:${alvo.id}`, 'loja:ganhou', { nome: item.nome });
+    res.json({ ok: true });
+  });
+
+  // ------------------------------------------------------------ prévia de link (com proteção contra rede interna)
+  const usoPrevia = new Map(); // uid → timestamps do último minuto
+  const limitarPrevia = (uid) => {
+    const agora = Date.now(), l = (usoPrevia.get(uid) || []).filter((t) => agora - t < 60e3);
+    if (l.length >= 60) throw erro(429, 'Calma: prévias demais.');
+    l.push(agora); usoPrevia.set(uid, l);
+  };
+  r.get('/previa', exigirLogin, async (req, res) => {
+    limitarPrevia(req.usuario.id);
+    const url = typeof req.query.url === 'string' ? req.query.url.slice(0, 1000) : '';
+    if (!/^https?:\/\//i.test(url)) throw erro(400, 'Link inválido.');
+    const d = await previaDe(url);
+    res.set('Cache-Control', 'private, max-age=3600');
+    res.json(d ? { ...d, imagem: d.imagem ? '/api/previa/imagem?url=' + encodeURIComponent(d.imagem) : null } : { vazio: true });
+  });
+  r.get('/previa/imagem', exigirLogin, async (req, res) => {
+    limitarPrevia(req.usuario.id);
+    const url = typeof req.query.url === 'string' ? req.query.url.slice(0, 1500) : '';
+    let r2;
+    try { r2 = await buscarSeguro(url, { max: 2_500_000 }); } catch { throw erro(404, 'Imagem indisponível.'); }
+    const tipo = tipoDaImagem(r2.corpo);
+    if (!tipo) throw erro(415, 'Não é imagem.');
+    res.set('Cache-Control', 'private, max-age=86400');
+    res.type(tipo).send(r2.corpo);
+  });
+
+  // ------------------------------------------------------------ eventos do servidor
+  const eventoPublico = (e, uid) => ({ id: e.id, titulo: e.titulo, descricao: e.descricao, inicio: e.inicio, criadoPor: e.criado_por,
+    interessados: db.interessadosEvento(e.id).length, euVou: db.interessadosEvento(e.id).includes(uid) });
+  r.get('/servidores/:id/eventos', exigirLogin, (req, res) => {
+    const s = servidorComoMembro(req.usuario.id, idDe(req.params.id));
+    res.json(db.eventosDoServidor(s.id).map((e) => eventoPublico(e, req.usuario.id)));
+  });
+  r.post('/servidores/:id/eventos', exigirLogin, (req, res) => {
+    const uid = req.usuario.id;
+    const s = servidorComoStaff(uid, idDe(req.params.id));
+    const c = corpoDe(req);
+    const titulo = typeof c.titulo === 'string' ? c.titulo.trim().slice(0, 80) : '';
+    const descricao = typeof c.descricao === 'string' ? c.descricao.trim().slice(0, 500) : '';
+    if (!titulo) throw erro(400, 'Dê um nome pro evento.');
+    if (!Number.isSafeInteger(c.inicio) || c.inicio < Date.now() - 60e3 || c.inicio > Date.now() + 365 * 86400e3) throw erro(400, 'Data do evento inválida.');
+    if (db.eventosDoServidor(s.id).length >= 30) throw erro(400, 'Eventos demais marcados.');
+    const id = db.criarEvento(s.id, titulo, descricao, c.inicio, uid);
+    const avisos = db.canalDeAvisos(s.id);
+    const quando = new Date(c.inicio).toLocaleString('pt-BR', { weekday: 'long', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
+    if (avisos) publicarMensagem(avisos, { autorId: null, texto: `📅 Novo evento: **${titulo}** — ${quando}. Abre "Eventos" no topo dos canais pra marcar presença!`, sistema: true });
+    emitir(`s:${s.id}`, 'eventos:atualizado', { servidorId: s.id });
+    res.status(201).json(eventoPublico(db.eventoPorId(id), uid));
+  });
+  r.post('/eventos/:id/interesse', exigirLogin, (req, res) => {
+    const e = db.eventoPorId(idDe(req.params.id));
+    if (!e) throw erro(404, 'Evento não encontrado.');
+    servidorComoMembro(req.usuario.id, e.servidor_id);
+    db.alternarInteresse(e.id, req.usuario.id);
+    emitir(`s:${e.servidor_id}`, 'eventos:atualizado', { servidorId: e.servidor_id });
+    res.json(eventoPublico(e, req.usuario.id));
+  });
+  r.delete('/eventos/:id', exigirLogin, (req, res) => {
+    const e = db.eventoPorId(idDe(req.params.id));
+    if (!e) throw erro(404, 'Evento não encontrado.');
+    servidorComoStaff(req.usuario.id, e.servidor_id);
+    db.apagarEvento(e.id);
+    emitir(`s:${e.servidor_id}`, 'eventos:atualizado', { servidorId: e.servidor_id });
     res.json({ ok: true });
   });
 

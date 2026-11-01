@@ -295,6 +295,36 @@ export function equipar(uid, tipo, itemId) {
   q(`UPDATE usuarios SET ${coluna} = ? WHERE id = ?`).run(itemId, uid);
 }
 
+// ---------------------------------------------------------------- eventos do servidor
+db.exec(`
+CREATE TABLE IF NOT EXISTS eventos (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  servidor_id INTEGER NOT NULL REFERENCES servidores(id) ON DELETE CASCADE,
+  titulo      TEXT NOT NULL,
+  descricao   TEXT NOT NULL DEFAULT '',
+  inicio      INTEGER NOT NULL,
+  criado_por  INTEGER REFERENCES usuarios(id) ON DELETE SET NULL,
+  criado_em   INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS evento_interessados (
+  evento_id  INTEGER NOT NULL REFERENCES eventos(id) ON DELETE CASCADE,
+  usuario_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+  PRIMARY KEY (evento_id, usuario_id)
+);
+`);
+// Mostra os que ainda vão acontecer e os que começaram há menos de 6 h.
+export const eventosDoServidor = (sid) => q('SELECT * FROM eventos WHERE servidor_id = ? AND inicio > ? ORDER BY inicio').all(sid, Date.now() - 6 * 3600e3);
+export const eventoPorId = (id) => q('SELECT * FROM eventos WHERE id = ?').get(id) ?? null;
+export const criarEvento = (sid, titulo, descricao, inicio, uid) =>
+  Number(q('INSERT INTO eventos (servidor_id, titulo, descricao, inicio, criado_por, criado_em) VALUES (?, ?, ?, ?, ?, ?)').run(sid, titulo, descricao, inicio, uid, Date.now()).lastInsertRowid);
+export const apagarEvento = (id) => q('DELETE FROM eventos WHERE id = ?').run(id);
+export const interessadosEvento = (id) => q('SELECT usuario_id FROM evento_interessados WHERE evento_id = ?').all(id).map((r) => r.usuario_id);
+export function alternarInteresse(id, uid) {
+  if (q('DELETE FROM evento_interessados WHERE evento_id = ? AND usuario_id = ?').run(id, uid).changes) return false;
+  q('INSERT INTO evento_interessados (evento_id, usuario_id) VALUES (?, ?)').run(id, uid);
+  return true;
+}
+
 // ---------------------------------------------------------------- painel do dono
 export const contagens = () => ({
   usuarios: q('SELECT COUNT(*) AS n FROM usuarios').get().n,
