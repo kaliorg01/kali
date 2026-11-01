@@ -1,4 +1,4 @@
-// Tipos avançados do Aura (comunidade tipo Discord).
+// Tipos avançados do Kali (comunidade tipo Discord).
 // Branded types, unions discriminadas, generics e type guards.
 
 export type Snowflake = number & { readonly __brand: 'Snowflake' };

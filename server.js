@@ -2,7 +2,7 @@ import http from 'node:http';
 import path from 'node:path';
 import express from 'express';
 import { Server } from 'socket.io';
-import { ErroAura, apagarSessoesExpiradas, fecharBanco } from './src/db.js';
+import { ErroKali, apagarSessoesExpiradas, fecharBanco } from './src/db.js';
 import { criarRotas } from './src/rotas.js';
 import { configurarTempoReal, origemPermitida } from './src/tempo-real.js';
 
@@ -40,7 +40,7 @@ app.use(express.static(PASTA_PUBLICA, { index: false, extensions: ['html'] }));
 // Tratador de erros final: sempre responde JSON em pt-BR.
 app.use((erro, req, res, next) => {
   if (res.headersSent) return next(erro);
-  if (erro instanceof ErroAura) {
+  if (erro instanceof ErroKali) {
     return res.status(erro.status).json({ erro: erro.message });
   }
   if (erro?.type === 'entity.parse.failed') {
@@ -82,7 +82,7 @@ servidorHttp.on('error', (erro) => {
 });
 
 servidorHttp.listen(PORTA, HOST, () => {
-  console.log(`AURA rodando em http://${HOST}:${PORTA}`);
+  console.log(`KALI rodando em http://${HOST}:${PORTA}`);
 });
 
 let encerrando = false;

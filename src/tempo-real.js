@@ -2,7 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import * as db from './db.js';
-import { erro, ErroAura } from './db.js';
+import { erro, ErroKali } from './db.js';
 import { autenticarSocket } from './auth.js';
 
 let io = null;
@@ -530,8 +530,8 @@ function ouvir(socket, evento, fn) {
     try {
       resposta = (await fn(args[0])) ?? { ok: true };
     } catch (e) {
-      if (!(e instanceof ErroAura)) console.error(`[socket] erro em ${evento}:`, e);
-      resposta = { erro: e instanceof ErroAura ? e.message : 'Erro interno do servidor.' };
+      if (!(e instanceof ErroKali)) console.error(`[socket] erro em ${evento}:`, e);
+      resposta = { erro: e instanceof ErroKali ? e.message : 'Erro interno do servidor.' };
     }
     if (ack) {
       try { ack(resposta); } catch { /* cliente sumiu */ }
@@ -868,7 +868,7 @@ export function configurarTempoReal(servidorIo) {
     }
   });
   varrer();
-  const intervalo = Number(process.env.AURA_VARREDURA_MS) || 30_000;
+  const intervalo = Number(process.env.KALI_VARREDURA_MS) || 30_000;
   setInterval(varrer, intervalo).unref();
   setInterval(tickVoz, 60_000).unref();
 }

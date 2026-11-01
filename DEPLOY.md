@@ -1,4 +1,4 @@
-# Deploy Aura na VPS
+# Deploy Kali na VPS
 
 ## Requisitos na VPS
 - Docker + Docker Compose
@@ -7,7 +7,7 @@
 ## 1. Suba o projeto na VPS
 ```bash
 git clone <SEU_REPOSITORIO>
-cd aura
+cd kali
 cp .env.example .env
 # edite .env se quiser mudar a porta
 ```
@@ -30,7 +30,7 @@ docker compose restart        # reiniciar
 
 ## 5. Backup do banco
 ```bash
-docker cp aura:/app/dados/aura.db ./backup-aura.db
+docker cp kali:/app/dados/kali.db ./backup-kali.db
 ```
 
 ## Sem Docker (direto no Node)

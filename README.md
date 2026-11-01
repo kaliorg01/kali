@@ -1,4 +1,4 @@
-# AURA
+# KALI
 
 App de comunidade em tempo real estilo Discord, 100% em português: servidores, canais, chat e voz.
 
@@ -17,9 +17,9 @@ npm start
 
 ## Usar junto com os amigos
 
-Cada pessoa que roda o AURA tem um servidor próprio, separado dos outros. Pra conversar junto, **uma pessoa hospeda** e o resto entra pelo endereço dela:
+Cada pessoa que roda o KALI tem um servidor próprio, separado dos outros. Pra conversar junto, **uma pessoa hospeda** e o resto entra pelo endereço dela:
 
 - **Mesma rede (Wi‑Fi/LAN):** quem hospeda roda `npm start` e passa o IP local, ex.: `http://192.168.0.10:3333`
 - **Pela internet:** suba numa VPS seguindo o [DEPLOY.md](DEPLOY.md) (Docker)
 
-Os dados ficam em `dados/aura.db`, que é criado sozinho na primeira vez.
+Os dados ficam em `dados/kali.db`, que é criado sozinho na primeira vez.

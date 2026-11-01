@@ -1,4 +1,4 @@
-// AURA — voz: mesh WebRTC só de áudio, sinalização pelo socket.io.
+// KALI — voz: mesh WebRTC só de áudio, sinalização pelo socket.io.
 (function () {
   'use strict';
   const ICE = [{ urls: 'stun:stun.l.google.com:19302' }];

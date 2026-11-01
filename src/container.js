@@ -78,7 +78,7 @@ export function aplicarRotas(router, containerInstance = container) {
 
     if (r.exigirLogin) {
       cadeia.push((req, res, next) => {
-        const token = (req.headers.cookie || '').split('; ').find((c) => c.startsWith('aura_sid='));
+        const token = (req.headers.cookie || '').split('; ').find((c) => c.startsWith('kali_sid='));
         if (!token) return res.status(401).json({ erro: 'Não autorizado.' });
         next();
       });

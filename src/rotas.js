@@ -1,4 +1,4 @@
-// Rotas REST /api da AURA.
+// Rotas REST /api da KALI.
 import fs from 'node:fs';
 import express from 'express';
 import * as db from './db.js';
@@ -602,7 +602,7 @@ export function criarRotas() {
       canalVozId = idDe(c.canalVozId);
       const canal = db.canalPorId(canalVozId);
       if (!canal || canal.servidor_id !== s.id || canal.tipo !== 'voz') throw erro(400, 'Canal de voz inválido.');
-      db.acessarCanal(uid, canalVozId); // lança ErroAura 403 se não tiver acesso
+      db.acessarCanal(uid, canalVozId); // lança ErroKali 403 se não tiver acesso
     }
     let expiraEm = null;
     if (c.duracao !== undefined && c.duracao !== null) {

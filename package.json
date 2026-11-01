@@ -1,8 +1,8 @@
 {
-  "name": "aura",
+  "name": "kali",
   "version": "1.0.0",
   "private": true,
-  "description": "AURA — app de comunidade em tempo real, 100% em português",
+  "description": "KALI — app de comunidade em tempo real, 100% em português",
   "type": "module",
   "main": "server.js",
   "engines": {

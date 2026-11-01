@@ -1,25 +1,25 @@
-// Banco de dados da AURA: schema + funções de consulta (node:sqlite, só consultas parametrizadas).
+// Banco de dados da KALI: schema + funções de consulta (node:sqlite, só consultas parametrizadas).
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 
-export class ErroAura extends Error {
+export class ErroKali extends Error {
   constructor(status, mensagem) {
     super(mensagem);
     this.status = status;
   }
 }
-export const erro = (status, mensagem) => new ErroAura(status, mensagem);
+export const erro = (status, mensagem) => new ErroKali(status, mensagem);
 
 const RAIZ = path.resolve(import.meta.dirname, '..');
-export const CAMINHO_DB = process.env.AURA_DB
-  ? path.resolve(process.env.AURA_DB)
-  : path.join(RAIZ, 'dados', 'aura.db');
+export const CAMINHO_DB = process.env.KALI_DB
+  ? path.resolve(process.env.KALI_DB)
+  : path.join(RAIZ, 'dados', 'kali.db');
 fs.mkdirSync(path.dirname(CAMINHO_DB), { recursive: true });
 
-export const PASTA_AUDIOS = process.env.AURA_AUDIOS
-  ? path.resolve(process.env.AURA_AUDIOS)
+export const PASTA_AUDIOS = process.env.KALI_AUDIOS
+  ? path.resolve(process.env.KALI_AUDIOS)
   : path.join(path.dirname(CAMINHO_DB), 'audios');
 fs.mkdirSync(PASTA_AUDIOS, { recursive: true });
 
@@ -358,7 +358,7 @@ export function ehParticipanteDm(canalId, uid) {
   return !!q('SELECT 1 FROM dm_participantes WHERE canal_id = ? AND usuario_id = ?').get(canalId, uid);
 }
 
-/** Canal acessível ao usuário (membro do servidor ou participante da DM); lança ErroAura. */
+/** Canal acessível ao usuário (membro do servidor ou participante da DM); lança ErroKali. */
 export function acessarCanal(uid, canalId) {
   const canal = canalPorId(canalId);
   if (!canal) throw erro(404, 'Canal não encontrado.');

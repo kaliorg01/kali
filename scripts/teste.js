@@ -1,4 +1,4 @@
-// Teste de integração do AURA: sobe o servidor num banco temporário e exercita REST + socket.io.
+// Teste de integração do KALI: sobe o servidor num banco temporário e exercita REST + socket.io.
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -8,8 +8,8 @@ import { io as ioc } from 'socket.io-client';
 const PORTA = 3401;
 const BASE = `http://localhost:${PORTA}`;
 const RAIZ = path.resolve(import.meta.dirname, '..');
-const PASTA_TEMP = fs.mkdtempSync(path.join(os.tmpdir(), 'aura-teste-'));
-const BANCO = path.join(PASTA_TEMP, 'aura-teste.db');
+const PASTA_TEMP = fs.mkdtempSync(path.join(os.tmpdir(), 'kali-teste-'));
+const BANCO = path.join(PASTA_TEMP, 'kali-teste.db');
 const PALETA = ['#7c5cff', '#c056f5', '#ff9a3c', '#3ee6a8', '#1d4ed8', '#c2410c', '#0e7490', '#db2777'];
 
 let passou = 0;
@@ -38,7 +38,7 @@ let logServidor = '';
 let servidorSaiu = false;
 const servidor = spawn(process.execPath, ['server.js'], {
   cwd: RAIZ,
-  env: { ...process.env, PORT: String(PORTA), AURA_DB: BANCO },
+  env: { ...process.env, PORT: String(PORTA), KALI_DB: BANCO },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
 servidor.stdout.on('data', (d) => { logServidor += d; });
@@ -86,9 +86,9 @@ class Cliente {
     for (const c of sc) {
       const par = c.split(';')[0];
       const i = par.indexOf('=');
-      if (par.slice(0, i).trim() === 'aura_sid') {
+      if (par.slice(0, i).trim() === 'kali_sid') {
         const v = par.slice(i + 1).trim();
-        this.cookie = v ? `aura_sid=${v}` : '';
+        this.cookie = v ? `kali_sid=${v}` : '';
       }
     }
     const texto = await res.text();
@@ -195,7 +195,7 @@ async function testes() {
     check('POST /api desconhecido → 404 JSON', r404b.status === 404 && temErro(r404b.json), r404b);
     const eu = await anon.req('GET', '/eu');
     check('GET /eu sem cookie → 401', eu.status === 401 && temErro(eu.json), eu);
-    const lixo = await anon.req('GET', '/eu', undefined, { headers: { Cookie: 'aura_sid=' + 'f'.repeat(64) } });
+    const lixo = await anon.req('GET', '/eu', undefined, { headers: { Cookie: 'kali_sid=' + 'f'.repeat(64) } });
     check('GET /eu com cookie inventado → 401', lixo.status === 401);
   }
 
@@ -213,7 +213,7 @@ async function testes() {
   check('cor sorteada da paleta', PALETA.includes(r.json?.cor), r.json?.cor);
   check('resposta não expõe senha/hash', semSegredos(r.json));
   const sc = lia.setCookie.join(' | ');
-  check('cookie aura_sid definido', /^aura_sid=[0-9a-f]{64}$/.test(lia.cookie), lia.cookie);
+  check('cookie kali_sid definido', /^kali_sid=[0-9a-f]{64}$/.test(lia.cookie), lia.cookie);
   check('cookie HttpOnly; SameSite=Lax; Path=/; 30 dias', /HttpOnly/i.test(sc) && /SameSite=Lax/i.test(sc) && /Path=\//.test(sc) && /Max-Age=2592000/.test(sc), sc);
 
   const invalidos = ['ab', 'a b c', 'lia!', 'x'.repeat(21), '', 'ação', 123, null];
@@ -279,7 +279,7 @@ async function testes() {
   try { await conectarSocket(''); } catch (e) { erroConexao = e; }
   check('socket sem cookie é recusado (nao-autorizado)', erroConexao?.message === 'nao-autorizado', erroConexao?.message);
   erroConexao = null;
-  try { await conectarSocket('aura_sid=' + 'a'.repeat(64)); } catch (e) { erroConexao = e; }
+  try { await conectarSocket('kali_sid=' + 'a'.repeat(64)); } catch (e) { erroConexao = e; }
   check('socket com cookie inválido é recusado', erroConexao?.message === 'nao-autorizado', erroConexao?.message);
   erroConexao = null;
   try { await conectarSocket(lia.cookie, { Origin: 'http://site-malicioso.example' }); } catch (e) { erroConexao = e; }

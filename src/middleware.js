@@ -1,4 +1,4 @@
-// Middleware avançado para o Aura:
+// Middleware avançado para o Kali:
 // - Schema validation (estilo Joi/Zod leve)
 // - Rate limiting por token bucket
 // - Logging estruturado

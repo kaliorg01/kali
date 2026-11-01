@@ -5,7 +5,7 @@ import { usuarioDaSessao } from './db.js';
 
 const scrypt = promisify(crypto.scrypt);
 const TAMANHO_HASH = 64;
-export const COOKIE = 'aura_sid';
+export const COOKIE = 'kali_sid';
 const TRINTA_DIAS = 30 * 24 * 60 * 60 * 1000;
 
 export async function gerarHash(senha) {
@@ -78,7 +78,7 @@ export function exigirLogin(req, res, next) {
   next();
 }
 
-/** Middleware do socket.io: autentica pelo cookie aura_sid do handshake. */
+/** Middleware do socket.io: autentica pelo cookie kali_sid do handshake. */
 export function autenticarSocket(socket, next) {
   try {
     const token = lerCookies(socket.request.headers.cookie)[COOKIE];

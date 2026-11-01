@@ -1,4 +1,4 @@
-// AURA — cliente. Texto de usuário só entra no DOM via textContent/append (nunca innerHTML).
+// KALI — cliente. Texto de usuário só entra no DOM via textContent/append (nunca innerHTML).
 (function () {
   'use strict';
 
@@ -17,13 +17,14 @@
     for (const f of filhos.flat(Infinity)) if (f != null && f !== false) e.append(f instanceof Node ? f : String(f));
     return e;
   }
+  // Logo: public/img/icone.png (recorte quadrado do dragão); se faltar, kali.svg.
   function logo(cls) {
-    const s = document.createElementNS(SVG, 'svg');
-    s.setAttribute('class', cls || 'logo');
-    const u = document.createElementNS(SVG, 'use');
-    u.setAttribute('href', '#logo');
-    s.append(u);
-    return s;
+    const i = document.createElement('img');
+    i.className = cls || 'logo';
+    i.alt = '';
+    i.onerror = () => { i.onerror = null; i.src = '/img/kali.svg'; };
+    i.src = '/img/icone.png';
+    return i;
   }
   const ler = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
   const salvar = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
@@ -38,7 +39,7 @@
   const inicial = (t) => (Array.from((t || '?').trim())[0] || '?').toUpperCase();
   const corta = (t, n) => (t && t.length > n ? t.slice(0, n - 1) + '…' : t || '');
 
-  const CORES = ['#7c5cff', '#c056f5', '#ff9a3c', '#3ee6a8', '#1d4ed8', '#c2410c', '#0e7490', '#db2777'];
+  const CORES = ['#367bf0', '#1fa2ff', '#2fd0ff', '#3ee6a8', '#1d4ed8', '#c2410c', '#0e7490', '#db2777'];
   const EMOJIS = ['👍', '❤️', '😂', '🔥', '😮', '😢', '🎉', '👀'];
   const STATUS = {
     online: ['on', 'Online'], ausente: ['aus', 'Ausente'], ocupado: ['ocup', 'Não perturbe'],
@@ -186,7 +187,7 @@
 
   // ---------- navegação ----------
   // Tema por servidor: cada servidor ganha seu degradê (o primeiro mantém o da ORYON).
-  const TEMAS = [['#7c5cff', '#c056f5', '#ff9a3c'], ['#06b6d4', '#3b82f6', '#8b5cf6'], ['#10b981', '#22d3ee', '#3b82f6'], ['#f43f5e', '#fb923c', '#facc15'], ['#ec4899', '#8b5cf6', '#06b6d4']];
+  const TEMAS = [['#367bf0', '#1fa2ff', '#2fd0ff'], ['#06b6d4', '#3b82f6', '#8b5cf6'], ['#10b981', '#22d3ee', '#3b82f6'], ['#f43f5e', '#fb923c', '#facc15'], ['#ec4899', '#8b5cf6', '#06b6d4']];
   function aplicarTemaServidor(id) {
     const st = document.documentElement.style;
     if (!id) { st.removeProperty('--grad'); st.removeProperty('--roxo'); return; }
@@ -199,12 +200,12 @@
     aplicarTemaServidor(id);
     E.modo = 'servidor';
     E.servidorId = id;
-    salvar('aura-servidor', id);
+    salvar('kali-servidor', id);
     const s = servidorAtual();
     if (!s) return render();
     if (!E.membros.has(id)) carregarMembros(id).then(renderMembros).catch(() => {});
     carregarMissoes(id);
-    const salvo = Number(ler('aura-canal-' + id));
+    const salvo = Number(ler('kali-canal-' + id));
     const alvo = s.canais.find((c) => c.id === salvo && c.tipo === 'texto') || s.canais.find((c) => c.tipo === 'texto');
     E.canalId = null;
     $('#app').classList.remove('chat');
@@ -215,8 +216,8 @@
     aplicarTemaServidor(null);
     E.modo = 'dm';
     E.servidorId = null;
-    salvar('aura-servidor', 'dm');
-    const salvo = Number(ler('aura-canal-dm'));
+    salvar('kali-servidor', 'dm');
+    const salvo = Number(ler('kali-canal-dm'));
     const alvo = E.dms.find((d) => d.canalId === salvo) || E.dms[0];
     E.canalId = null;
     $('#app').classList.remove('chat');
@@ -231,7 +232,7 @@
     E.canalId = id;
     E.busca = '';
     E.editando = null;
-    salvar('aura-canal-' + (c.servidorId == null ? 'dm' : c.servidorId), id);
+    salvar('kali-canal-' + (c.servidorId == null ? 'dm' : c.servidorId), id);
     if (!semMobile) $('#app').classList.add('chat');
     const n = E.naoLidos[id] || 0;
     E.naoLidos[id] = 0;
@@ -320,7 +321,7 @@
         if (!voz.length) corpo.append(h('p', { class: 'vazio-lateral' }, 'Nenhum canal de voz.'));
         partes.push(corpo);
       } else {
-        partes.push(h('div', { class: 'side-topo' }, h('span', {}, 'AURA')));
+        partes.push(h('div', { class: 'side-topo' }, h('span', {}, 'KALI')));
         partes.push(h('div', { class: 'side-corpo' }, h('p', { class: 'vazio-lateral' }, 'Você ainda não está em nenhum servidor. Clica no + pra criar ou entrar num.')));
       }
     }
@@ -353,7 +354,7 @@
     if (!c || c.tipo === 'voz') {
       const semServidor = !E.servidores.length && E.modo === 'servidor';
       main.replaceChildren(h('div', { class: 'vazio' }, logo('logo-grande'),
-        h('h2', {}, semServidor ? 'Bem-vindo à AURA ✨' : E.modo === 'dm' ? 'Suas conversas' : 'Escolhe um canal'),
+        h('h2', {}, semServidor ? 'Bem-vindo à KALI ✨' : E.modo === 'dm' ? 'Suas conversas' : 'Escolhe um canal'),
         h('p', {}, semServidor ? 'Cria um servidor pra sua galera ou entra num com o código de convite.'
           : E.modo === 'dm' ? 'Manda mensagem direta pra qualquer pessoa pelo nome de usuário.' : 'Seleciona um canal de texto na barra lateral.'),
         h('div', { class: 'acoes' },
@@ -435,7 +436,7 @@
     else div.append(avatar(m.autor));
     const corpo = h('div', { class: 'corpo' });
     if (!agrupada) {
-      if (m.sistema || !m.autor) corpo.append(h('b', { class: 'nome-ia' }, 'AURA'), h('span', { class: 'tag' }, 'IA'));
+      if (m.sistema || !m.autor) corpo.append(h('b', { class: 'nome-ia' }, 'KALI'), h('span', { class: 'tag' }, 'IA'));
       else corpo.append(h('b', { class: 'autor' + (s && s.donoId === m.autor.id ? ' nome-dono' : '') }, m.autor.nome));
       corpo.append(h('time', { title: new Date(m.criadoEm).toLocaleString('pt-BR') }, hora(m.criadoEm)));
     }
@@ -520,7 +521,7 @@
         for (const d of E.dms) if (d.canalId !== m.canalId) destinos.push([d.canalId, '@ ' + d.outro.nome]);
         abrirMenu(bEnc, [h('div', { style: 'padding:6px 10px;color:var(--fraco);font-size:12px' }, 'Encaminhar para…'),
           destinos.length ? destinos.slice(0, 15).map(([id, r]) => item(r, async () => {
-            const res = await pedir('msg:enviar', { canalId: id, texto: corta(`↪ Encaminhado de ${m.autor ? m.autor.nome : 'AURA'}: ${m.texto || '🎙 áudio'}`, 2000) });
+            const res = await pedir('msg:enviar', { canalId: id, texto: corta(`↪ Encaminhado de ${m.autor ? m.autor.nome : 'KALI'}: ${m.texto || '🎙 áudio'}`, 2000) });
             toast(res.erro || 'Mensagem encaminhada ↪', res.erro ? 'erro' : 'ok');
           })) : h('div', { style: 'padding:6px 10px' }, 'Nenhum outro canal.')]);
       };
@@ -618,9 +619,9 @@
   }
   function cartaoResumo(canalId, r) {
     const lista = (titulo, msgs) => msgs && msgs.length ? [h('h4', {}, titulo), h('ul', {}, msgs.map((m) =>
-      h('li', { onclick: () => irPara(m.id) }, h('b', {}, m.autor ? m.autor.nome : 'AURA'), ': ', corta(m.texto || '🎙 áudio', 140))))] : [];
+      h('li', { onclick: () => irPara(m.id) }, h('b', {}, m.autor ? m.autor.nome : 'KALI'), ': ', corta(m.texto || '🎙 áudio', 140))))] : [];
     return h('div', { class: 'msg' }, h('div', { class: 'av ia' }, logo()),
-      h('div', { class: 'corpo' }, h('b', { class: 'nome-ia' }, 'AURA'), h('span', { class: 'tag' }, 'IA'), h('time', {}, 'agora'),
+      h('div', { class: 'corpo' }, h('b', { class: 'nome-ia' }, 'KALI'), h('span', { class: 'tag' }, 'IA'), h('time', {}, 'agora'),
         h('div', { class: 'card' },
           h('h3', {}, '✦ Resumo enquanto você estava fora'),
           h('div', { class: 'sub' }, 'Só você vê isso · ', r.frase || `${r.total || 0} mensagens`),
@@ -684,7 +685,7 @@
   }
   // ---------- perfil vitrine ----------
   const BANNERS = {
-    nebulosa: 'linear-gradient(135deg,#7c5cff,#c056f5 55%,#ff9a3c)', oceano: 'linear-gradient(135deg,#0ea5e9,#2563eb,#312e81)',
+    nebulosa: 'linear-gradient(135deg,#367bf0,#1fa2ff 55%,#2fd0ff)', oceano: 'linear-gradient(135deg,#0ea5e9,#2563eb,#312e81)',
     floresta: 'linear-gradient(135deg,#16a34a,#0d9488,#064e3b)', 'por-do-sol': 'linear-gradient(135deg,#f97316,#ef4444,#9d174d)',
     neon: 'linear-gradient(135deg,#22d3ee,#a855f7,#ec4899)', aurora: 'linear-gradient(135deg,#34d399,#60a5fa,#c084fc)',
   };
@@ -717,7 +718,7 @@
       conteudo.push(h('button', { class: 'bt prim', onclick: () => { fecharMenu(); abrirDmCom(m.usuario); } }, 'Mandar mensagem'),
         h('button', { class: 'bt', onclick: () => {
           fecharMenu();
-          salvar('aura-vigiados', JSON.stringify(vigia ? vigiados().filter((x) => x !== m.id) : [...vigiados(), m.id]));
+          salvar('kali-vigiados', JSON.stringify(vigia ? vigiados().filter((x) => x !== m.id) : [...vigiados(), m.id]));
           toast(vigia ? `Não vou mais avisar sobre ${m.nome}.` : `🔔 Te aviso quando ${m.nome} ficar online.`, 'ok');
         } }, vigia ? '🔕 Parar de avisar' : '🔔 Avisar quando ficar online'));
       const s = servidorAtual();
@@ -956,7 +957,7 @@
     const s = E.servidores.find((x) => x.canais.some((k) => k.id === m.canalId));
     if (!s) return toast('Denúncia só funciona em servidor.', 'erro');
     const motivo = h('input', { maxlength: 500, placeholder: 'Ex: ofensa, golpe, spam…' });
-    abrirModal({ titulo: '🚩 Denunciar mensagem', sub: `A mensagem de ${m.autor ? m.autor.nome : 'AURA'} vai como prova pra fila da staff.`, corpo: [campo('Motivo', motivo)], botao: 'Enviar denúncia', perigo: true,
+    abrirModal({ titulo: '🚩 Denunciar mensagem', sub: `A mensagem de ${m.autor ? m.autor.nome : 'KALI'} vai como prova pra fila da staff.`, corpo: [campo('Motivo', motivo)], botao: 'Enviar denúncia', perigo: true,
       acao: async () => { await api('POST', `/servidores/${s.id}/denuncias`, { mensagemId: m.id, motivo: motivo.value.trim() }); toast('🚩 Denúncia enviada pra staff. Valeu!', 'ok'); } });
   }
   async function painelStaff() {
@@ -1049,9 +1050,9 @@
     ['↪', 'Encaminhar mensagem', 'Manda pra outro canal ou DM com um clique.'],
     ['♿', 'Acessibilidade', 'Alto contraste e fonte grande no menu do perfil.'],
     ['💤', 'AFK inteligente', '10 min parado: fica ausente e muta o mic sozinho.'],
-    ['🟢', 'Avisa quando ficar online', 'Clica num membro → 🔔 e a AURA te avisa quando ele entrar.'],
+    ['🟢', 'Avisa quando ficar online', 'Clica num membro → 🔔 e a KALI te avisa quando ele entrar.'],
   ];
-  const modalNovidades = () => abrirModal({ titulo: '✨ Novidades da AURA', sub: 'O que chegou no app. Logo: ideias da comunidade com votação.',
+  const modalNovidades = () => abrirModal({ titulo: '✨ Novidades da KALI', sub: 'O que chegou no app. Logo: ideias da comunidade com votação.',
     corpo: h('ul', { class: 'novidades' }, NOVIDADES.map(([i, t, d]) => h('li', {}, h('span', {}, i), h('div', {}, h('b', {}, t), h('small', {}, d))))) });
 
   function modalServidor() {
@@ -1198,9 +1199,9 @@
             toast(m ? `⛔ Modo foco por ${r}` : 'Modo foco desligado', 'ok');
           } catch (err) { toast(err.message, 'erro'); }
         }))])),
-      item('🔔 Som de aviso: ' + SONS[ler('aura-som') || 'plim'], () => abrirMenu(ancora, [
+      item('🔔 Som de aviso: ' + SONS[ler('kali-som') || 'plim'], () => abrirMenu(ancora, [
         h('div', { style: 'padding:6px 10px;color:var(--fraco);font-size:12px' }, 'Toca quando te mencionam ou chega DM'),
-        Object.entries(SONS).map(([k, r]) => item(((ler('aura-som') || 'plim') === k ? '✓ ' : '') + r, () => { salvar('aura-som', k); tocarSom(k); }))])),
+        Object.entries(SONS).map(([k, r]) => item(((ler('kali-som') || 'plim') === k ? '✓ ' : '') + r, () => { salvar('kali-som', k); tocarSom(k); }))])),
       item(document.documentElement.classList.contains('streamer') ? '🎥 Modo streamer (ligado)' : '🎥 Modo streamer', () => {
         const ligar = !document.documentElement.classList.contains('streamer');
         aplicarStreamer(ligar);
@@ -1317,11 +1318,11 @@
   }
 
   // ---------- "Me lembra disso" (guardado neste navegador) ----------
-  const lerLembretes = () => { try { return JSON.parse(ler('aura-lembretes') || '[]'); } catch (e) { return []; } };
+  const lerLembretes = () => { try { return JSON.parse(ler('kali-lembretes') || '[]'); } catch (e) { return []; } };
   function lembrar(m, min, rotulo) {
     const lista = lerLembretes();
-    lista.push({ msgId: m.id, canalId: m.canalId, autor: m.autor ? m.autor.nome : 'AURA', texto: corta(m.texto || '🎙 áudio', 120), quando: Date.now() + min * 60e3 });
-    salvar('aura-lembretes', JSON.stringify(lista));
+    lista.push({ msgId: m.id, canalId: m.canalId, autor: m.autor ? m.autor.nome : 'KALI', texto: corta(m.texto || '🎙 áudio', 120), quando: Date.now() + min * 60e3 });
+    salvar('kali-lembretes', JSON.stringify(lista));
     if (window.Notification && Notification.permission === 'default') Notification.requestPermission().catch(() => {});
     toast(`⏰ Combinado! Te lembro em ${rotulo.toLowerCase()}.`, 'ok');
   }
@@ -1329,10 +1330,10 @@
     const lista = lerLembretes(), agora = Date.now();
     const vencidos = lista.filter((l) => l.quando <= agora);
     if (!vencidos.length) return;
-    salvar('aura-lembretes', JSON.stringify(lista.filter((l) => l.quando > agora)));
+    salvar('kali-lembretes', JSON.stringify(lista.filter((l) => l.quando > agora)));
     for (const l of vencidos) {
       toast(`⏰ Lembrete — ${l.autor}: ${l.texto}`, 'ok');
-      try { if (window.Notification && Notification.permission === 'granted') new Notification('⏰ Lembrete da AURA', { body: `${l.autor}: ${l.texto}` }); } catch (e) {}
+      try { if (window.Notification && Notification.permission === 'granted') new Notification('⏰ Lembrete da KALI', { body: `${l.autor}: ${l.texto}` }); } catch (e) {}
     }
   }, 15000);
 
@@ -1363,7 +1364,7 @@
     if (tipo === 'time' ? n < 2 || n > 20 : n < 5 || n > 120) return null;
     return { tipo, n, extra: corta(r[3].trim(), 60) };
   }
-  const vigiados = () => { try { return JSON.parse(ler('aura-vigiados') || '[]'); } catch (e) { return []; } };
+  const vigiados = () => { try { return JSON.parse(ler('kali-vigiados') || '[]'); } catch (e) { return []; } };
   // /alerta texto: só vale do dono do servidor; vira faixa vermelha + som pra todo mundo
   const RE_ALERTA = /^\/alerta\s+([\s\S]+)$/i;
   function alertaDe(m) {
@@ -1458,21 +1459,21 @@
   // ---------- modo streamer: esconde convites e prévias de DM ----------
   function aplicarStreamer(ligado) {
     document.documentElement.classList.toggle('streamer', ligado);
-    salvar('aura-streamer', ligado ? '1' : '');
+    salvar('kali-streamer', ligado ? '1' : '');
   }
-  aplicarStreamer(ler('aura-streamer') === '1');
+  aplicarStreamer(ler('kali-streamer') === '1');
 
   // ---------- acessibilidade: alto contraste e fonte grande ----------
-  for (const c of ['contraste', 'fonte-grande']) document.documentElement.classList.toggle(c, ler('aura-' + c) === '1');
+  for (const c of ['contraste', 'fonte-grande']) document.documentElement.classList.toggle(c, ler('kali-' + c) === '1');
   function alternarAcess(c, rotulo) {
     const ligar = !document.documentElement.classList.contains(c);
     document.documentElement.classList.toggle(c, ligar);
-    salvar('aura-' + c, ligar ? '1' : '');
+    salvar('kali-' + c, ligar ? '1' : '');
     toast(`${rotulo} ${ligar ? 'ligado' : 'desligado'}`, 'ok');
   }
 
   // ---------- modo compacto e atalhos de teclado ----------
-  document.documentElement.classList.toggle('compacto', ler('aura-compacto') === '1');
+  document.documentElement.classList.toggle('compacto', ler('kali-compacto') === '1');
   addEventListener('keydown', (e) => {
     if (!e.ctrlKey || !e.shiftKey || !window.Voz) return;
     const k = e.key.toLowerCase();
@@ -1482,7 +1483,7 @@
     else return;
     e.preventDefault();
   });
-  const modalAtalhos = () => abrirModal({ titulo: '⌨️ Atalhos', sub: 'Funcionam com a AURA aberta e em foco.', corpo: h('ul', { class: 'novidades' },
+  const modalAtalhos = () => abrirModal({ titulo: '⌨️ Atalhos', sub: 'Funcionam com a KALI aberta e em foco.', corpo: h('ul', { class: 'novidades' },
     [['Ctrl + Shift + M', 'Mutar / desmutar microfone'], ['Ctrl + Shift + D', 'Ensurdecer'], ['Ctrl + Shift + L', 'Sair da call'], ['Enter', 'Enviar mensagem'], ['Esc', 'Fechar janelas e menus']]
       .map(([t, d]) => h('li', {}, h('div', {}, h('b', {}, t), h('small', {}, d))))) });
 
@@ -1506,7 +1507,7 @@
   function alternarTema() {
     const t = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
     document.documentElement.dataset.theme = t;
-    salvar('aura-tema', t);
+    salvar('kali-tema', t);
     renderSide();
   }
 
@@ -1520,7 +1521,7 @@
       tocarSom('zap');
       try { if (window.Notification && Notification.permission === 'granted') new Notification('🚨 Alerta da staff', { body: corta(alertaDe(m), 140) }); } catch (e) {}
     }
-    if (nova && m.autor && m.autor.id !== E.eu.id && E.eu.status !== 'foco' && (mencionaEu(m) || E.dms.some((x) => x.canalId === m.canalId))) tocarSom(ler('aura-som') || 'plim');
+    if (nova && m.autor && m.autor.id !== E.eu.id && E.eu.status !== 'foco' && (mencionaEu(m) || E.dms.some((x) => x.canalId === m.canalId))) tocarSom(ler('kali-som') || 'plim');
     if (arr && !arr.some((x) => x.id === m.id)) { arr.push(m); arr.sort((a, b) => a.id - b.id); }
     const d = E.dms.find((x) => x.canalId === m.canalId);
     if (d) { d.ultima = m; E.dms = [d, ...E.dms.filter((x) => x !== d)]; }
@@ -1616,7 +1617,7 @@
       else {
         if ((E.presenca.get(usuarioId) || 'offline') === 'offline' && status !== 'offline' && vigiados().includes(usuarioId)) {
           toast(`🟢 ${nomeDe(usuarioId)} ficou online!`, 'ok');
-          tocarSom(ler('aura-som') || 'plim');
+          tocarSom(ler('kali-som') || 'plim');
         }
         E.presenca.set(usuarioId, status);
       }
@@ -1678,7 +1679,7 @@
       return;
     }
     conectar();
-    const salvo = ler('aura-servidor');
+    const salvo = ler('kali-servidor');
     if (salvo === 'dm') return abrirDms();
     const s = E.servidores.find((x) => x.id === Number(salvo)) || E.servidores[0];
     if (s) await selecionarServidor(s.id); else render();

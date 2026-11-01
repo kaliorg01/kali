@@ -1,12 +1,12 @@
-# AURA — contrato v1
+# KALI — contrato v1
 
 App de comunidade estilo Discord, 100% em português (BR). Visual = tema Nebulosa da ORYON (referência: `../layout.html`).
 
 ## Stack
 - Node 24, ESM (`"type":"module"`). Dependências: só `express` e `socket.io` (+ `socket.io-client` em devDependencies para testes).
-- Banco: `node:sqlite` (DatabaseSync), arquivo `dados/aura.db` (criar pasta se faltar). Sem ORM.
+- Banco: `node:sqlite` (DatabaseSync), arquivo `dados/kali.db` (criar pasta se faltar). Sem ORM.
 - Senha: `crypto.scrypt` com salt aleatório, comparação com `timingSafeEqual`.
-- Sessão: token aleatório (32 bytes hex) na tabela `sessoes`, cookie `aura_sid` (httpOnly, sameSite=lax, path=/, 30 dias).
+- Sessão: token aleatório (32 bytes hex) na tabela `sessoes`, cookie `kali_sid` (httpOnly, sameSite=lax, path=/, 30 dias).
 - Porta: `process.env.PORT || 3333`. `npm start` = `node server.js`. `npm test` = `node scripts/teste.js`.
 - Frontend: HTML/CSS/JS puro em `public/`, sem build. Cliente socket em `/socket.io/socket.io.js`.
 
@@ -76,7 +76,7 @@ Resumo (não lidas do canal desde `lido` do usuário; se 0, últimas 30):
 `{total, participantes:[nome], destaques:[Mensagem] (até 3, mais reações/mais longas), perguntas:[Mensagem] (com "?", até 3), mencoes:[Mensagem] (com @meuusuario), frase:"texto curto em pt-BR"}`
 
 ## Socket.io
-Auth pelo cookie `aura_sid` no handshake; sem sessão → `next(new Error("nao-autorizado"))`.
+Auth pelo cookie `kali_sid` no handshake; sem sessão → `next(new Error("nao-autorizado"))`.
 Ao conectar o servidor coloca o socket nas salas `u:<usuarioId>`, `s:<servidorId>` (cada servidor) e `c:<canalDmId>` (cada DM). Ao entrar/criar servidor via REST, sockets do usuário entram na sala nova.
 
 Cliente → servidor (todos com ack `(resposta)`; erro = `{erro}`):
@@ -132,7 +132,7 @@ Clipes automáticos, bots com IA sem código, loja de temas, criptografia ponta 
 1. **Rádio da call** — música sincronizada na sala de voz; qualquer pessoa da call adiciona música na fila (sem votação), toca em ordem.
 2. **Procurando grupo** — post "preciso de duo, Valorant, prata" com filtro por jogo/rank; quem topar entra direto na call.
 3. **Perfil vitrine** — banner animado, jogos favoritos, selos, música que está ouvindo.
-4. **Loja de cosméticos** — molduras de avatar e efeitos no nome; parte compra com XP, parte com assinatura **AURA+**.
+4. **Loja de cosméticos** — molduras de avatar e efeitos no nome; parte compra com XP, parte com assinatura **KALI+**.
 5. **Moderação automática (IA)** — bloqueia golpe de link, spam e ofensa, nível ajustável por servidor.
 6. **Busca perguntando (IA)** — "quando falaram do torneio?" acha a conversa.
 7. **"Me lembra disso"** — lembrete a partir de qualquer mensagem.
@@ -157,7 +157,7 @@ Clipes automáticos, bots com IA sem código, loja de temas, criptografia ponta 
 26. **Stories** — status com foto/vídeo que some em 24 h.
 27. **Mural "jogando agora"** — o que os amigos estão jogando, botão pra pedir pra entrar.
 28. **Convite bonito** — cartão animado pra mandar no WhatsApp/Instagram.
-29. **Comando de voz** — "AURA, toca tal música", "AURA, muta o Rafa".
+29. **Comando de voz** — "KALI, toca tal música", "KALI, muta o Rafa".
 30. **Assistente do servidor (IA)** — responde dúvidas usando regras e histórico do servidor.
 31. **Tela 1080p 60fps grátis** — compartilhar tela em alta sem assinatura.
 32. **Arquivos grandes grátis** — até 500 MB.
@@ -213,7 +213,7 @@ Clipes automáticos, bots com IA sem código, loja de temas, criptografia ponta 
 82. **Aniversários** — parabéns automático no dia, com destaque no servidor.
 83. **Atalhos globais** — mutar e sair da call por tecla, mesmo com o jogo em tela cheia.
 84. **Links na bio** — redes sociais e link da live no perfil.
-85. **Presentear** — dar cosmético ou AURA+ pra um amigo.
+85. **Presentear** — dar cosmético ou KALI+ pra um amigo.
 86. **Encaminhar mensagem** — pra outro canal, servidor ou DM.
 87. **Postar clipe no TikTok e no Instagram** — direto do app.
 88. **Layout personalizável** — mover painéis, modo compacto.
