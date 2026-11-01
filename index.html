@@ -56,6 +56,7 @@
   } catch (e) {
     return offline('root@kali:~$ servidor offline (o PC do host está desligado). Tenta mais tarde.');
   }
+  if (location.hash === '#painel') url = url.replace(/\/?$/, '/painel');
   botao.href = url;
   botao.removeAttribute('aria-disabled');
   status.textContent = 'root@kali:~$ conectado. Entrando…';
