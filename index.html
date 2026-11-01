@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KALI</title>
+<meta name="description" content="KALI — app de comunidade em tempo real, 100% em português.">
+<link rel="icon" type="image/png" href="icone.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700&display=swap">
+<style>
+  :root{--mono:"JetBrains Mono",Consolas,"Courier New",monospace;--texto:#f2f4f8;--suave:#a3a9b5;--ok:#3ee6a8;--erro:#ff6b88;--grad:linear-gradient(135deg,#1f5fd6 0%,#2563eb 55%,#0e7490 100%)}
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{background:#000;color:var(--texto);font-family:"Segoe UI",system-ui,-apple-system,Roboto,sans-serif;display:grid;place-items:center;padding:16px;
+    background-image:linear-gradient(rgba(54,123,240,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(54,123,240,.05) 1px,transparent 1px);background-size:32px 32px}
+  main{width:min(420px,100%);text-align:center;border:1px solid rgba(255,255,255,.1);background:rgba(14,15,19,.86);border-radius:28px;padding:34px 26px 28px;box-shadow:0 24px 70px rgba(0,0,0,.6)}
+  img{width:200px;max-width:70%;height:auto;border-radius:16px}
+  h1{font-family:var(--mono);font-size:34px;letter-spacing:.3em;padding-left:.3em;margin:14px 0 6px}
+  .prompt{font-family:var(--mono);font-size:13px;color:var(--ok);min-height:1.4em}
+  .prompt.erro{color:var(--erro)}
+  .cursor{animation:pisca 1s steps(1) infinite}
+  @keyframes pisca{50%{opacity:0}}
+  .bt{display:block;margin-top:22px;padding:13px;border-radius:14px;background:var(--grad);color:#fff;font-weight:600;text-decoration:none;box-shadow:0 8px 24px rgba(54,123,240,.35)}
+  .bt[aria-disabled="true"]{opacity:.45;pointer-events:none}
+  .sec{display:inline-block;margin-top:16px;color:var(--suave);font-size:13px}
+  .sec:hover{color:var(--texto)}
+</style>
+</head>
+<body>
+<main>
+  <img src="logo-dragao.png" alt="Dragão do KALI">
+  <h1>KALI</h1>
+  <p class="prompt" id="status">root@kali:~$ procurando o servidor<span class="cursor">_</span></p>
+  <a class="bt" id="entrar" href="#" aria-disabled="true">Entrar no KALI</a>
+  <a class="sec" href="https://github.com/kaliorg01/kali">Baixar e rodar no seu PC →</a>
+</main>
+<script>
+(async function () {
+  'use strict';
+  const status = document.getElementById('status');
+  const botao = document.getElementById('entrar');
+  const offline = (msg) => { status.textContent = msg; status.classList.add('erro'); };
+  let url;
+  try {
+    const r = await fetch('link.json?t=' + Date.now(), { cache: 'no-store' });
+    url = (await r.json()).url;
+  } catch (e) { /* sem link publicado */ }
+  if (!url || !/^https:\/\/[a-z0-9-]+\.trycloudflare\.com\/?$/.test(url)) return offline('root@kali:~$ servidor offline. Tenta de novo mais tarde.');
+  // O link só vale enquanto o PC do host estiver ligado: testa antes de mandar a pessoa pra lá.
+  const tempo = new AbortController();
+  setTimeout(() => tempo.abort(), 8000);
+  try {
+    await fetch(url, { mode: 'no-cors', signal: tempo.signal });
+  } catch (e) {
+    return offline('root@kali:~$ servidor offline (o PC do host está desligado). Tenta mais tarde.');
+  }
+  botao.href = url;
+  botao.removeAttribute('aria-disabled');
+  status.textContent = 'root@kali:~$ conectado. Entrando…';
+  setTimeout(() => location.replace(url), 1200);
+})();
+</script>
+</body>
+</html>
