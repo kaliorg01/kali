@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="pt-BR" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Entrar — AURA</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%237c5cff'/%3E%3Cstop offset='.55' stop-color='%23c056f5'/%3E%3Cstop offset='1' stop-color='%23ff9a3c'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath fill='none' stroke='url(%23g)' stroke-width='5.2' stroke-linecap='round' d='M24 24c-4.2-5.6-7.6-8.4-11.2-8.4a8.4 8.4 0 0 0 0 16.8c3.6 0 7-2.8 11.2-8.4s7.6-8.4 11.2-8.4a8.4 8.4 0 0 1 0 16.8c-3.6 0-7-2.8-11.2-8.4z'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/css/app.css">
+<script>try{var t=localStorage.getItem('aura-tema');if(t==='light'||t==='dark')document.documentElement.dataset.theme=t}catch(e){}</script>
+</head>
+<body class="pagina-entrar">
+<div class="neb n1"></div><div class="neb n2"></div><div class="neb n3"></div>
+<form class="entrar-card" id="form" novalidate>
+  <div class="marca">
+    <svg viewBox="0 0 48 48" aria-hidden="true"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7c5cff"/><stop offset=".55" stop-color="#c056f5"/><stop offset="1" stop-color="#ff9a3c"/></linearGradient></defs><path fill="none" stroke="url(#g)" stroke-width="5.2" stroke-linecap="round" d="M24 24c-4.2-5.6-7.6-8.4-11.2-8.4a8.4 8.4 0 0 0 0 16.8c3.6 0 7-2.8 11.2-8.4s7.6-8.4 11.2-8.4a8.4 8.4 0 0 1 0 16.8c-3.6 0-7-2.8-11.2-8.4z"/></svg>
+    <h1>AURA</h1>
+    <p>Sua galera, sua vibe.</p>
+  </div>
+  <div class="abas" role="tablist">
+    <button type="button" class="ativa" data-aba="entrar">Entrar</button>
+    <button type="button" data-aba="registrar">Criar conta</button>
+  </div>
+  <label class="campo"><span>Usuário</span><input id="usuario" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="20" placeholder="ex: carter_br" required></label>
+  <label class="campo" id="campoNome" hidden><span>Nome de exibição (opcional)</span><input id="nome" maxlength="32" placeholder="Como a galera vai te ver"></label>
+  <label class="campo"><span>Senha</span><input id="senha" type="password" autocomplete="current-password" maxlength="200" placeholder="Mínimo 6 caracteres" required></label>
+  <p class="erro-form" id="erro" role="alert"></p>
+  <button class="bt prim" id="botao" type="submit">Entrar</button>
+</form>
+<script>
+(function () {
+  'use strict';
+  let aba = 'entrar';
+  const $ = (s) => document.querySelector(s);
+  fetch('/api/eu').then((r) => { if (r.ok) location.replace('/'); }).catch(() => {});
+  document.querySelectorAll('.abas button').forEach((b) => b.onclick = () => {
+    aba = b.dataset.aba;
+    document.querySelectorAll('.abas button').forEach((x) => x.classList.toggle('ativa', x === b));
+    $('#campoNome').hidden = aba !== 'registrar';
+    $('#botao').textContent = aba === 'registrar' ? 'Criar conta' : 'Entrar';
+    $('#senha').autocomplete = aba === 'registrar' ? 'new-password' : 'current-password';
+    $('#erro').textContent = '';
+  });
+  $('#usuario').addEventListener('input', (e) => { e.target.value = e.target.value.toLowerCase(); });
+  $('#form').onsubmit = async (e) => {
+    e.preventDefault();
+    const usuario = $('#usuario').value.trim(), senha = $('#senha').value;
+    if (!/^[a-z0-9_.]{3,20}$/.test(usuario)) { $('#erro').textContent = 'Usuário: 3 a 20 caracteres (letras minúsculas, números, "_" ou ".").'; return; }
+    if (senha.length < 6) { $('#erro').textContent = 'A senha precisa ter pelo menos 6 caracteres.'; return; }
+    const corpo = { usuario, senha };
+    if (aba === 'registrar' && $('#nome').value.trim()) corpo.nome = $('#nome').value.trim();
+    $('#botao').disabled = true; $('#erro').textContent = '';
+    try {
+      const r = await fetch('/api/' + aba, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corpo) });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.erro || 'Não deu certo. Tenta de novo.');
+      location.replace('/');
+    } catch (err) {
+      $('#erro').textContent = err.message === 'Failed to fetch' ? 'Servidor fora do ar.' : err.message;
+    } finally { $('#botao').disabled = false; }
+  };
+})();
+</script>
+</body>
+</html>

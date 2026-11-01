@@ -1,0 +1,22 @@
+{
+  "name": "aura",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AURA — app de comunidade em tempo real, 100% em português",
+  "type": "module",
+  "main": "server.js",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "test": "node scripts/teste.js"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "socket.io": "^4.8.1"
+  },
+  "devDependencies": {
+    "socket.io-client": "^4.8.1"
+  }
+}

@@ -1,0 +1,1687 @@
+// AURA — cliente. Texto de usuário só entra no DOM via textContent/append (nunca innerHTML).
+(function () {
+  'use strict';
+
+  // ---------- utilidades ----------
+  const $ = (s, el = document) => el.querySelector(s);
+  const SVG = 'http://www.w3.org/2000/svg';
+  function h(tag, props, ...filhos) {
+    const e = document.createElement(tag);
+    if (props) for (const k in props) {
+      const v = props[k];
+      if (v == null || v === false) continue;
+      if (k === 'class') e.className = v;
+      else if (k.startsWith('on') && typeof v === 'function') e.addEventListener(k.slice(2), v);
+      else e.setAttribute(k, v === true ? '' : v);
+    }
+    for (const f of filhos.flat(Infinity)) if (f != null && f !== false) e.append(f instanceof Node ? f : String(f));
+    return e;
+  }
+  function logo(cls) {
+    const s = document.createElementNS(SVG, 'svg');
+    s.setAttribute('class', cls || 'logo');
+    const u = document.createElementNS(SVG, 'use');
+    u.setAttribute('href', '#logo');
+    s.append(u);
+    return s;
+  }
+  const ler = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+  const salvar = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+  const hora = (ms) => new Date(ms).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  function dia(ms) {
+    const d = new Date(ms), hoje = new Date();
+    const ontem = new Date(); ontem.setDate(hoje.getDate() - 1);
+    if (d.toDateString() === hoje.toDateString()) return 'Hoje';
+    if (d.toDateString() === ontem.toDateString()) return 'Ontem';
+    return d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
+  }
+  const inicial = (t) => (Array.from((t || '?').trim())[0] || '?').toUpperCase();
+  const corta = (t, n) => (t && t.length > n ? t.slice(0, n - 1) + '…' : t || '');
+
+  const CORES = ['#7c5cff', '#c056f5', '#ff9a3c', '#3ee6a8', '#1d4ed8', '#c2410c', '#0e7490', '#db2777'];
+  const EMOJIS = ['👍', '❤️', '😂', '🔥', '😮', '😢', '🎉', '👀'];
+  const STATUS = {
+    online: ['on', 'Online'], ausente: ['aus', 'Ausente'], ocupado: ['ocup', 'Não perturbe'],
+    foco: ['ocup', 'Modo foco'], offline: ['off', 'Offline'],
+  };
+
+  // ---------- estado ----------
+  const E = {
+    eu: null, servidores: [], dms: [], modo: 'servidor', servidorId: null, canalId: null,
+    msgs: new Map(), fim: new Set(), carregandoAntigas: false,
+    membros: new Map(), presenca: new Map(), voz: new Map(),
+    naoLidos: {}, mencoes: {}, digitando: new Map(), resumo: new Map(), rascunho: new Map(),
+    novaDesde: new Map(), busca: '', editando: null,
+    missoes: new Map(), temp: 0, assistindo: null,
+  };
+  const TEMPOS = [[0, 'Desligado', '⏱'], [60, '1 minuto', '1m'], [600, '10 minutos', '10m'], [3600, '1 hora', '1h'], [86400, '24 horas', '24h']];
+  const restante = (ate) => {
+    const s = Math.max(0, Math.round((ate - Date.now()) / 1000));
+    return s >= 3600 ? Math.ceil(s / 3600) + 'h' : s >= 60 ? Math.ceil(s / 60) + 'min' : s + 's';
+  };
+  setInterval(() => document.querySelectorAll('.expira').forEach((el) => { el.textContent = '⏱ ' + restante(Number(el.dataset.ate)); }), 1000);
+  let sock = null;
+
+  // ---------- rede ----------
+  async function api(metodo, url, corpo) {
+    const r = await fetch('/api' + url, {
+      method: metodo,
+      headers: corpo ? { 'Content-Type': 'application/json' } : {},
+      body: corpo ? JSON.stringify(corpo) : undefined,
+    });
+    if (r.status === 401 && url !== '/sair') { location.href = '/entrar.html'; throw new Error('Sessão expirada.'); }
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.erro || 'Algo deu errado.');
+    return d;
+  }
+  const pedir = (ev, dados) => new Promise((res) => {
+    if (!sock || !sock.connected) return res({ erro: 'Sem conexão. Tentando reconectar…' });
+    sock.timeout(8000).emit(ev, dados, (err, r) => res(err ? { erro: 'Sem resposta do servidor.' } : r || {}));
+  });
+
+  // ---------- toasts, menus, modais ----------
+  function toast(texto, tipo) {
+    if (!tipo && E.eu && E.eu.status === 'foco') return; // modo foco: sem avisos
+    const t = h('div', { class: 'toast ' + (tipo || '') }, texto);
+    $('#toasts').append(t);
+    setTimeout(() => t.remove(), 3800);
+  }
+
+  let menuAberto = null;
+  function fecharMenu() { if (menuAberto) { menuAberto.remove(); menuAberto = null; } }
+  function abrirMenu(ancora, conteudo, cls) {
+    fecharMenu();
+    const m = h('div', { class: 'menu ' + (cls || '') }, conteudo);
+    document.body.append(m);
+    const r = ancora.getBoundingClientRect();
+    let x = r.left, y = r.bottom + 6;
+    if (x + m.offsetWidth > innerWidth - 8) x = innerWidth - m.offsetWidth - 8;
+    if (y + m.offsetHeight > innerHeight - 8) y = r.top - m.offsetHeight - 6;
+    m.style.left = Math.max(8, x) + 'px';
+    m.style.top = Math.max(8, y) + 'px';
+    menuAberto = m;
+  }
+  const item = (texto, acao, cls) => h('button', { class: cls || '', type: 'button', onclick: () => { fecharMenu(); acao(); } }, texto);
+  document.addEventListener('mousedown', (e) => { if (menuAberto && !menuAberto.contains(e.target)) fecharMenu(); });
+
+  let modalAberto = null;
+  function fecharModal() { if (modalAberto) { modalAberto.remove(); modalAberto = null; } }
+  function abrirModal({ titulo, sub, corpo, botao, acao, perigo }) {
+    fecharModal();
+    const erro = h('p', { class: 'erro-form', hidden: true });
+    const ok = botao ? h('button', { class: 'bt ' + (perigo ? 'perigo' : 'prim'), type: 'submit' }, botao) : null;
+    const form = h('form', { class: 'modal', novalidate: true },
+      h('h2', {}, titulo), sub ? h('p', { class: 'sub' }, sub) : null, corpo || [], erro,
+      h('div', { class: 'acoes' }, h('button', { class: 'bt', type: 'button', onclick: fecharModal }, botao ? 'Cancelar' : 'Fechar'), ok));
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      if (!acao) return fecharModal();
+      ok.disabled = true; erro.hidden = true;
+      try { await acao(); fecharModal(); } catch (err) { erro.textContent = err.message; erro.hidden = false; } finally { ok.disabled = false; }
+    };
+    const fundo = h('div', { class: 'fundo-modal' }, form);
+    fundo.addEventListener('mousedown', (e) => { if (e.target === fundo) fecharModal(); });
+    document.body.append(fundo);
+    modalAberto = fundo;
+    const primeiro = form.querySelector('input'); if (primeiro) primeiro.focus();
+    return form;
+  }
+  const campo = (rotulo, input) => h('label', { class: 'campo' }, h('span', {}, rotulo), input);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { fecharMenu(); fecharModal(); } });
+
+  // ---------- consultas ao estado ----------
+  const servidorAtual = () => E.servidores.find((s) => s.id === E.servidorId) || null;
+  const souDono = (s) => !!s && s.donoId === E.eu.id;
+  function acharCanal(id) {
+    for (const s of E.servidores) { const c = s.canais.find((x) => x.id === id); if (c) return c; }
+    const dm = E.dms.find((d) => d.canalId === id);
+    return dm ? { id: dm.canalId, servidorId: null, nome: dm.outro.nome, tipo: 'texto', dm } : null;
+  }
+  const canalAtual = () => (E.canalId ? acharCanal(E.canalId) : null);
+  function statusDe(uid) {
+    if (uid === E.eu.id) return sock && sock.connected ? (E.eu.status || 'online') : 'offline';
+    return E.presenca.get(uid) || 'offline';
+  }
+  const st = (uid) => STATUS[statusDe(uid)] || STATUS.offline;
+  const rotStatus = (u) => u.statusTexto || (statusDe(u.id) === 'foco' && u.focoAte ? '⛔ foco até ' + hora(u.focoAte) : st(u.id)[1]);
+  function avatar(u, cls, comStatus) {
+    const a = h('div', { class: 'av ' + (cls || '') }, inicial(u && (u.nome || u.usuario)));
+    a.style.background = (u && u.cor) || '#6b7280';
+    if (comStatus && u) a.append(h('i', { class: 'st ' + st(u.id)[0] }));
+    return a;
+  }
+  const regexMencao = () => new RegExp('@' + E.eu.usuario.replace(/[.]/g, '\\.') + '(?![a-z0-9_.])', 'i');
+  const mencionaEu = (m) => !!m.texto && m.autor?.id !== E.eu.id && regexMencao().test(m.texto);
+  const naoLidosServidor = (s) => s.canais.reduce((t, c) => t + (E.naoLidos[c.id] || 0), 0);
+
+  // ---------- carregar ----------
+  async function carregarTudo() {
+    const [servidores, dms] = await Promise.all([api('GET', '/servidores'), api('GET', '/dms')]);
+    E.servidores = servidores;
+    E.dms = dms;
+    E.naoLidos = {};
+    for (const s of servidores) Object.assign(E.naoLidos, s.naoLidos || {});
+    for (const d of dms) { E.naoLidos[d.canalId] = d.naoLidos || 0; E.presenca.set(d.outro.id, d.outro.status); }
+    E.membros.clear();
+  }
+  async function carregarMembros(sid) {
+    const lista = await api('GET', `/servidores/${sid}/membros`);
+    E.membros.set(sid, lista);
+    for (const m of lista) if (m.id !== E.eu.id) E.presenca.set(m.id, m.status);
+  }
+  async function carregarMensagens(id, antes) {
+    const lista = await api('GET', `/canais/${id}/mensagens?limite=50${antes ? '&antes=' + antes : ''}`);
+    if (lista.length < 50) E.fim.add(id);
+    const atual = E.msgs.get(id) || [];
+    const ids = new Set(atual.map((m) => m.id));
+    const todas = atual.concat(lista.filter((m) => !ids.has(m.id)));
+    todas.sort((a, b) => a.id - b.id);
+    E.msgs.set(id, todas);
+  }
+  const lidoTimers = new Map();
+  function marcarLido(id) {
+    clearTimeout(lidoTimers.get(id));
+    lidoTimers.set(id, setTimeout(() => api('POST', `/canais/${id}/lido`).catch(() => {}), 400));
+  }
+
+  // ---------- navegação ----------
+  // Tema por servidor: cada servidor ganha seu degradê (o primeiro mantém o da ORYON).
+  const TEMAS = [['#7c5cff', '#c056f5', '#ff9a3c'], ['#06b6d4', '#3b82f6', '#8b5cf6'], ['#10b981', '#22d3ee', '#3b82f6'], ['#f43f5e', '#fb923c', '#facc15'], ['#ec4899', '#8b5cf6', '#06b6d4']];
+  function aplicarTemaServidor(id) {
+    const st = document.documentElement.style;
+    if (!id) { st.removeProperty('--grad'); st.removeProperty('--roxo'); return; }
+    const [a, b, c] = TEMAS[(id - 1) % TEMAS.length];
+    st.setProperty('--grad', `linear-gradient(135deg,${a} 0%,${b} 55%,${c} 100%)`);
+    st.setProperty('--roxo', a);
+  }
+  async function selecionarServidor(id) {
+    sairAssistir();
+    aplicarTemaServidor(id);
+    E.modo = 'servidor';
+    E.servidorId = id;
+    salvar('aura-servidor', id);
+    const s = servidorAtual();
+    if (!s) return render();
+    if (!E.membros.has(id)) carregarMembros(id).then(renderMembros).catch(() => {});
+    carregarMissoes(id);
+    const salvo = Number(ler('aura-canal-' + id));
+    const alvo = s.canais.find((c) => c.id === salvo && c.tipo === 'texto') || s.canais.find((c) => c.tipo === 'texto');
+    E.canalId = null;
+    $('#app').classList.remove('chat');
+    if (alvo) await abrirCanal(alvo.id, true); else render();
+  }
+  async function abrirDms() {
+    sairAssistir();
+    aplicarTemaServidor(null);
+    E.modo = 'dm';
+    E.servidorId = null;
+    salvar('aura-servidor', 'dm');
+    const salvo = Number(ler('aura-canal-dm'));
+    const alvo = E.dms.find((d) => d.canalId === salvo) || E.dms[0];
+    E.canalId = null;
+    $('#app').classList.remove('chat');
+    if (alvo) await abrirCanal(alvo.canalId, true); else render();
+  }
+  async function abrirCanal(id, semMobile) {
+    const c = acharCanal(id);
+    if (!c) return;
+    if (c.tipo === 'voz') return entrarVoz(c);
+    if (gravacao) gravacao.parar(false);
+    if (E.assistindo && E.assistindo !== id) sairAssistir();
+    E.canalId = id;
+    E.busca = '';
+    E.editando = null;
+    salvar('aura-canal-' + (c.servidorId == null ? 'dm' : c.servidorId), id);
+    if (!semMobile) $('#app').classList.add('chat');
+    const n = E.naoLidos[id] || 0;
+    E.naoLidos[id] = 0;
+    E.mencoes[id] = 0;
+    render();
+    if (c.tipo === 'assistir') entrarAssistir(id);
+    if (!E.msgs.has(id) || !E.fim.has(id) && E.msgs.get(id).length < 20) {
+      try { await carregarMensagens(id); } catch (err) {
+        if (c.comSenha && /senha/i.test(err.message)) { E.msgs.delete(id); return modalSenhaCanal(c); }
+        toast(err.message, 'erro');
+      }
+    }
+    const arr = E.msgs.get(id) || [];
+    if (n > 0 && arr.length) E.novaDesde.set(id, arr[Math.max(0, arr.length - n)].id); else E.novaDesde.delete(id);
+    if (E.canalId === id) renderLista({ fim: true });
+    marcarLido(id);
+  }
+
+  // ---------- render geral ----------
+  function render() { renderRail(); renderSide(); renderMain(); renderMembros(); }
+
+  function renderRail() {
+    const rail = $('#rail');
+    const nDm = E.dms.reduce((t, d) => t + (E.naoLidos[d.canalId] || 0), 0);
+    const bDm = h('button', { class: 'srv logo-btn' + (E.modo === 'dm' ? ' ativo' : ''), title: 'Mensagens diretas', onclick: abrirDms }, logo());
+    if (nDm) bDm.append(h('span', { class: 'bad' }, nDm > 99 ? '99+' : nDm));
+    const itens = [bDm, h('div', { class: 'sep' })];
+    for (const s of E.servidores) {
+      const b = h('button', { class: 'srv' + (E.modo === 'servidor' && s.id === E.servidorId ? ' ativo' : ''), title: s.nome, onclick: () => selecionarServidor(s.id) }, s.sigla || inicial(s.nome));
+      const n = naoLidosServidor(s);
+      if (n) b.append(h('span', { class: 'bad' }, n > 99 ? '99+' : n));
+      itens.push(b);
+    }
+    itens.push(h('button', { class: 'srv add', title: 'Criar ou entrar em servidor', onclick: modalServidor }, '+'));
+    rail.replaceChildren(...itens);
+  }
+
+  function linhaCanal(c, s) {
+    const ic = c.tipo === 'voz' ? (c.espacial ? '🌌' : '🔊') : c.tipo === 'assistir' ? '🍿' : c.ticket ? '🎫' : c.comSenha ? '🔒' : '#';
+    const n = E.naoLidos[c.id] || 0, men = E.mencoes[c.id] || 0;
+    const b = h('button', { class: 'canal' + (c.id === E.canalId ? ' ativo' : '') + (n ? ' nao-lido' : ''), onclick: () => abrirCanal(c.id) },
+      h('span', { class: 'ic' }, ic), h('span', { class: 'nm' }, c.nome),
+      men ? h('span', { class: 'n mencao' }, '@' + men) : n ? h('span', { class: 'n' }, n > 99 ? '99+' : n) : null);
+    const linha = h('div', { class: 'canal-linha' }, b);
+    if (souDono(s)) linha.append(h('button', { class: 'apagar-canal', title: 'Apagar canal', onclick: () => apagarCanal(c) }, '✕'));
+    const frag = [linha];
+    if (c.tipo !== 'texto') {
+      const membros = E.voz.get(c.id) || [];
+      if (membros.length) frag.push(h('div', { class: 'voz-users' }, membros.map((m) => h('span', { class: 'voz-user' },
+        Object.assign(h('i', { class: 'mini' + (m.falando ? ' falando' : '') }, inicial(m.nome)), { style: `background:${CORES.includes(m.cor) ? m.cor : '#6b7280'}` }),
+        h('span', { class: 'nm' }, m.nome),
+        h('span', { class: 'icones' }, m.surdo ? '🔇' : m.mudo ? '🎙̸' : '')))));
+    }
+    return frag;
+  }
+
+  function renderSide() {
+    const side = $('#side');
+    const partes = [];
+    if (E.modo === 'dm') {
+      partes.push(h('div', { class: 'side-topo' }, h('span', {}, 'Mensagens diretas')));
+      const corpo = h('div', { class: 'side-corpo' }, h('button', { class: 'btn-novo', onclick: modalNovaDm }, h('span', { style: 'font-size:18px' }, '＋'), 'Nova conversa'));
+      corpo.append(h('div', { class: 'rot' }, 'Conversas'));
+      if (!E.dms.length) corpo.append(h('p', { class: 'vazio-lateral' }, 'Nenhuma conversa ainda. Chama alguém pelo nome de usuário.'));
+      for (const d of E.dms) {
+        const n = E.naoLidos[d.canalId] || 0;
+        corpo.append(h('button', { class: 'dm-item' + (d.canalId === E.canalId ? ' ativo' : ''), onclick: () => abrirCanal(d.canalId) },
+          avatar(d.outro, '', true),
+          h('span', { class: 'txt' }, h('b', {}, d.outro.nome), h('small', {}, d.ultima ? corta(d.ultima.texto || '🎙 áudio', 40) : '@' + d.outro.usuario)),
+          n ? h('span', { class: 'n' }, n) : null));
+      }
+      partes.push(corpo);
+    } else {
+      const s = servidorAtual();
+      if (s) {
+        partes.push(h('button', { class: 'side-topo', onclick: (e) => menuServidor(e.currentTarget) }, h('span', {}, s.nome), h('span', { class: 'seta' }, '▾')));
+        const corpo = h('div', { class: 'side-corpo' }, h('button', { class: 'btn-novo', onclick: modalConvite }, h('span', { style: 'font-size:18px' }, '＋'), 'Convidar amigos'));
+        const dono = souDono(s);
+        const texto = s.canais.filter((c) => c.tipo === 'texto');
+        const voz = s.canais.filter((c) => c.tipo !== 'texto');
+        corpo.append(h('div', { class: 'rot' }, 'Texto', dono ? h('button', { title: 'Criar canal de texto', onclick: () => modalCanal('texto') }, '＋') : null));
+        texto.forEach((c) => corpo.append(...linhaCanal(c, s)));
+        if (!texto.length) corpo.append(h('p', { class: 'vazio-lateral' }, 'Nenhum canal de texto.'));
+        corpo.append(h('div', { class: 'rot' }, 'Voz', dono ? h('button', { title: 'Criar canal de voz', onclick: () => modalCanal('voz') }, '＋') : null));
+        voz.forEach((c) => corpo.append(...linhaCanal(c, s)));
+        if (!voz.length) corpo.append(h('p', { class: 'vazio-lateral' }, 'Nenhum canal de voz.'));
+        partes.push(corpo);
+      } else {
+        partes.push(h('div', { class: 'side-topo' }, h('span', {}, 'AURA')));
+        partes.push(h('div', { class: 'side-corpo' }, h('p', { class: 'vazio-lateral' }, 'Você ainda não está em nenhum servidor. Clica no + pra criar ou entrar num.')));
+      }
+    }
+    // barra de voz conectada
+    const ev = window.Voz ? Voz.estado : {};
+    if (ev.canalId) {
+      const c = acharCanal(ev.canalId);
+      const srv = c && E.servidores.find((x) => x.id === c.servidorId);
+      partes.push(h('div', { class: 'voz-barra' },
+        h('div', { class: 'info' }, h('b', {}, '● Conectado à voz'), h('small', {}, (c ? c.nome : '') + (srv ? ' / ' + srv.nome : ''))),
+        h('button', { class: 'icbtn' + (ev.compartilhando ? ' ativo-tela' : ''), title: ev.compartilhando ? 'Parar de compartilhar' : 'Compartilhar tela (1080p/60fps)',
+          onclick: () => Voz.alternarTela().catch((err) => toast(err.message, 'erro')) }, '🖥️'),
+        h('button', { class: 'icbtn sair-voz', title: 'Sair da voz', onclick: () => { Voz.sair(); } }, '📞')));
+    }
+    // rodapé do usuário
+    const eu = h('button', { class: 'eu', title: 'Status e perfil', onclick: (e) => menuPerfil(e.currentTarget) },
+      avatar(E.eu, '', true), h('span', { class: 'txt' }, h('b', {}, E.eu.nome), h('small', {}, rotStatus(E.eu))));
+    eu.querySelector('.av').style.cssText += ';width:34px;height:34px';
+    const tema = document.documentElement.dataset.theme === 'dark' ? '☀' : '☾';
+    partes.push(h('div', { class: 'side-pe' }, eu,
+      h('button', { class: 'icbtn' + (ev.mudo ? ' desligado' : ''), title: ev.mudo ? 'Ativar microfone' : 'Silenciar microfone', onclick: () => Voz.alternarMudo() }, '🎤'),
+      h('button', { class: 'icbtn' + (ev.surdo ? ' desligado' : ''), title: ev.surdo ? 'Ativar áudio' : 'Desativar áudio', onclick: () => Voz.alternarSurdo() }, '🎧'),
+      h('button', { class: 'icbtn', title: 'Tema claro/escuro', onclick: alternarTema }, tema)));
+    side.replaceChildren(...partes);
+  }
+
+  function renderMain() {
+    const main = $('#main');
+    const c = canalAtual();
+    if (!c || c.tipo === 'voz') {
+      const semServidor = !E.servidores.length && E.modo === 'servidor';
+      main.replaceChildren(h('div', { class: 'vazio' }, logo('logo-grande'),
+        h('h2', {}, semServidor ? 'Bem-vindo à AURA ✨' : E.modo === 'dm' ? 'Suas conversas' : 'Escolhe um canal'),
+        h('p', {}, semServidor ? 'Cria um servidor pra sua galera ou entra num com o código de convite.'
+          : E.modo === 'dm' ? 'Manda mensagem direta pra qualquer pessoa pelo nome de usuário.' : 'Seleciona um canal de texto na barra lateral.'),
+        h('div', { class: 'acoes' },
+          semServidor ? h('button', { class: 'bt prim', onclick: modalServidor }, 'Criar ou entrar') : null,
+          E.modo === 'dm' ? h('button', { class: 'bt prim', onclick: modalNovaDm }, 'Nova conversa') : null,
+          h('button', { class: 'bt', onclick: () => $('#app').classList.remove('chat') }, 'Ver canais'))));
+      return;
+    }
+    const titulo = c.dm ? '@ ' + c.dm.outro.nome : (c.tipo === 'assistir' ? '🍿 ' : '# ') + c.nome;
+    const desc = c.dm ? '@' + c.dm.outro.usuario + (c.dm.outro.statusTexto ? ' · ' + c.dm.outro.statusTexto : '') : (servidorAtual() || {}).nome || '';
+    const busca = h('input', { placeholder: 'Buscar', 'aria-label': 'Buscar mensagens' });
+    busca.oninput = () => { E.busca = busca.value.trim().toLowerCase(); renderLista({ fim: true }); };
+    const topo = h('header', { class: 'topo' },
+      h('button', { class: 'icbtn voltar', title: 'Voltar', onclick: () => $('#app').classList.remove('chat') }, '←'),
+      h('h1', {}, titulo), h('span', { class: 'desc' }, desc),
+      h('button', { class: 'pill ia', onclick: verResumo }, '✦', h('span', { class: 'rotulo' }, ' O que eu perdi?')),
+      h('label', { class: 'pill busca' }, '⌕ ', busca),
+      h('button', { class: 'pill', title: 'Membros', onclick: alternarMembros }, '👥'));
+    const lista = h('div', { class: 'col', id: 'lista' });
+    const msgs = h('section', { class: 'msgs', id: 'msgs' }, lista);
+    msgs.addEventListener('scroll', () => { if (msgs.scrollTop < 80) carregarAntigas(); }, { passive: true });
+
+    const ta = h('textarea', { rows: 1, maxlength: 2000, placeholder: c.dm ? 'Conversar com @' + c.dm.outro.usuario : 'Conversar em #' + c.nome });
+    ta.value = E.rascunho.get(c.id) || '';
+    let ultimoDigitando = 0;
+    const ajustar = () => { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 180) + 'px'; };
+    ta.oninput = () => {
+      E.rascunho.set(c.id, ta.value);
+      ajustar();
+      if (ta.value && Date.now() - ultimoDigitando > 2000) { ultimoDigitando = Date.now(); sock && sock.emit('digitando', { canalId: c.id }); }
+    };
+    ta.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); enviar(c.id, ta); } };
+    const emoji = h('button', { class: 'icbtn', type: 'button', title: 'Emoji' }, '☺');
+    emoji.onclick = () => abrirMenu(emoji, h('div', { class: 'emojis' }, EMOJIS.map((em) => item(em, () => { ta.value += em; ta.oninput(); ta.focus(); }))));
+    const info = h('span', { class: 'gravando', hidden: true });
+    const bGrav = h('button', { class: 'icbtn', type: 'button', title: 'Mensagem de voz (até 60s, com transcrição)' }, '🎙');
+    bGrav.onclick = () => alternarGravacao(c.id, bGrav, info);
+    const curto = () => TEMPOS.find((t) => t[0] === E.temp)[2];
+    const bTemp = h('button', { class: 'icbtn' + (E.temp ? ' temp-on' : ''), type: 'button', title: 'Mensagem temporária' }, curto());
+    bTemp.onclick = () => abrirMenu(bTemp, [h('div', { style: 'padding:6px 10px;color:var(--fraco);font-size:12px' }, 'A mensagem some depois de…'),
+      TEMPOS.map(([s, r]) => item((E.temp === s ? '✓ ' : '') + r, () => { E.temp = s; bTemp.textContent = curto(); bTemp.classList.toggle('temp-on', !!s); }))]);
+    const compositor = h('div', { class: 'compositor' }, h('div', { class: 'col' },
+      h('div', { class: 'digitando', id: 'digitando' }),
+      h('div', { class: 'caixa' }, bTemp, ta, info, emoji, bGrav, h('button', { class: 'enviar', title: 'Enviar', onclick: () => enviar(c.id, ta) }, '↑')),
+      h('div', { class: 'dica' }, '@usuario menciona · /time 5 Valorant · /pomodoro 25 · /confete /fogo /explosao')));
+    main.replaceChildren(topo, c.tipo === 'assistir' ? h('section', { class: 'palco', id: 'palco' }) : '', msgs, compositor);
+    requestAnimationFrame(ajustar);
+    renderLista({ fim: true });
+    renderDigitando();
+    if (matchMedia('(min-width: 761px)').matches) ta.focus();
+  }
+
+  // ---------- mensagens ----------
+  function formatarTexto(texto) {
+    const frag = document.createDocumentFragment();
+    const re = /(https?:\/\/[^\s<>"]+|@[a-z0-9_.]{3,20})/gi;
+    let i = 0, m;
+    const eu = '@' + E.eu.usuario;
+    while ((m = re.exec(texto))) {
+      if (m.index > i) frag.append(texto.slice(i, m.index));
+      const t = m[0];
+      if (t[0] === '@') frag.append(h('span', { class: 'men' + (t.toLowerCase() === eu ? ' eu' : '') }, t));
+      else frag.append(h('a', { href: t, target: '_blank', rel: 'noopener noreferrer' }, t));
+      i = m.index + t.length;
+    }
+    if (i < texto.length) frag.append(texto.slice(i));
+    return frag;
+  }
+
+  function nodoMensagem(m, anterior) {
+    const c = acharCanal(m.canalId);
+    const s = c && E.servidores.find((x) => x.id === c.servidorId);
+    const minha = m.autor && m.autor.id === E.eu.id;
+    const agrupada = anterior && !m.sistema && !anterior.sistema && anterior.autor && m.autor &&
+      anterior.autor.id === m.autor.id && m.criadoEm - anterior.criadoEm < 5 * 60e3 && dia(m.criadoEm) === dia(anterior.criadoEm);
+    const div = h('div', { class: 'msg' + (agrupada ? ' agrupada' : '') + (mencionaEu(m) ? ' mencao' : ''), 'data-id': m.id });
+    if (agrupada) div.append(h('span', { class: 'lado' }, hora(m.criadoEm)));
+    else if (m.sistema || !m.autor) div.append(h('div', { class: 'av ia' }, logo()));
+    else div.append(avatar(m.autor));
+    const corpo = h('div', { class: 'corpo' });
+    if (!agrupada) {
+      if (m.sistema || !m.autor) corpo.append(h('b', { class: 'nome-ia' }, 'AURA'), h('span', { class: 'tag' }, 'IA'));
+      else corpo.append(h('b', { class: 'autor' + (s && s.donoId === m.autor.id ? ' nome-dono' : '') }, m.autor.nome));
+      corpo.append(h('time', { title: new Date(m.criadoEm).toLocaleString('pt-BR') }, hora(m.criadoEm)));
+    }
+    if (E.editando === m.id) {
+      const ta = h('textarea', { rows: 2, maxlength: 2000 });
+      ta.value = m.texto;
+      const salvarEd = async () => {
+        const t = ta.value.trim();
+        if (!t || t === m.texto) { E.editando = null; return renderLista(); }
+        const r = await pedir('msg:editar', { id: m.id, texto: t });
+        if (r.erro) return toast(r.erro, 'erro');
+        E.editando = null; renderLista();
+      };
+      ta.onkeydown = (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); salvarEd(); }
+        if (e.key === 'Escape') { e.stopPropagation(); E.editando = null; renderLista(); }
+      };
+      corpo.append(h('div', { class: 'edicao' }, ta, h('small', {}, 'Esc ', h('b', { onclick: () => { E.editando = null; renderLista(); } }, 'cancelar'), ' · Enter ', h('b', { onclick: salvarEd }, 'salvar'))));
+      setTimeout(() => { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); });
+    } else if (m.texto && alertaDe(m)) {
+      corpo.append(h('div', { class: 'card alerta' }, h('h3', {}, '🚨 Alerta da staff'), h('div', { class: 'texto' }, formatarTexto(alertaDe(m)))));
+    } else if (m.texto && RE_TRIBUNAL.test(m.texto)) {
+      corpo.append(cartaoTribunal(m, RE_TRIBUNAL.exec(m.texto)));
+    } else if (m.texto && enqueteDe(m.texto)) {
+      const q = enqueteDe(m.texto);
+      const votos = q.opcoes.map((_, i) => naReacao(m, NUMS[i]));
+      const total = votos.reduce((t, v) => t + v.length, 0) || 1;
+      corpo.append(h('div', { class: 'card' }, h('h3', {}, '📊 ' + q.pergunta),
+        q.opcoes.map((op, i) => {
+          const meu = votos[i].includes(E.eu.id);
+          return h('button', { class: 'opcao' + (meu ? ' minha' : ''), onclick: () => reagir(m.id, NUMS[i]) },
+            h('span', {}, `${NUMS[i]} ${op}`), h('small', {}, `${votos[i].length} voto(s)`), barra(votos[i].length / total * 100));
+        }),
+        h('div', { class: 'sub', style: 'margin-top:6px' }, 'Clica pra votar · clica de novo pra tirar')));
+    } else if (m.texto && RE_DADO.test(m.texto)) {
+      corpo.append(h('div', { class: 'card dado' }, rolar(m)));
+    } else if (m.texto && RE_PENEIRA.test(m.texto)) {
+      const quer = naReacao(m, '🙋'), autor = m.autor && m.autor.id === E.eu.id;
+      corpo.append(h('div', { class: 'card' }, h('h3', {}, '🔎 Peneira'), h('div', { class: 'texto' }, formatarTexto(m.texto.replace(RE_PENEIRA, ''))),
+        h('div', { class: 'sub', style: 'margin-top:6px' }, quer.length ? `🙋 ${quer.length} interessado(s): ` + quer.map(nomeDe).join(', ') : 'Ninguém se candidatou ainda.'),
+        h('div', { class: 'acoes' }, autor
+          ? quer.filter((id) => id !== E.eu.id).slice(0, 6).map((id) => {
+            const u = [...E.membros.values()].flat().find((x) => x.id === id);
+            return u ? h('button', { class: 'bt', onclick: () => abrirDmCom(u.usuario) }, '💬 Chamar ' + u.nome) : null;
+          })
+          : h('button', { class: 'bt' + (quer.includes(E.eu.id) ? '' : ' prim'), onclick: () => reagir(m.id, '🙋') }, quer.includes(E.eu.id) ? 'Desistir' : '🙋 Quero participar'))));
+    } else if (m.texto && comandoDe(m.texto)) {
+      corpo.append(cartaoComando(m, comandoDe(m.texto)));
+    } else if (m.texto) {
+      const ef = efeitoDe(m.texto);
+      const tx = h('div', { class: 'texto' }, ef ? h('span', { class: 'tag-efeito' }, EFEITOS[ef][0] + ' ') : null, formatarTexto(ef ? m.texto.replace(RE_EFEITO, '') : m.texto));
+      if (m.editadoEm) tx.append(h('span', { class: 'editado', title: new Date(m.editadoEm).toLocaleString('pt-BR') }, '(editado)'));
+      if (m.expiraEm) tx.append(h('span', { class: 'expira', 'data-ate': m.expiraEm, title: 'Mensagem temporária' }, '⏱ ' + restante(m.expiraEm)));
+      corpo.append(tx);
+    }
+    if (m.audio && m.audio.url) {
+      const au = h('audio', { controls: true, preload: 'none' });
+      au.src = m.audio.url;
+      const vel = h('button', { class: 'pill vel', title: 'Velocidade' }, '1x');
+      vel.onclick = () => { const v = { 1: 1.5, 1.5: 2, 2: 1 }[au.playbackRate] || 1; au.playbackRate = v; vel.textContent = String(v).replace('.', ',') + 'x'; };
+      corpo.append(h('div', { style: 'margin-top:6px;display:flex;gap:8px;align-items:center' }, au, vel));
+    }
+    if (m.transcricao) corpo.append(h('div', { class: 'texto', style: 'color:var(--fraco);font-size:13px' }, '🎙 transcrito pela IA: ', m.transcricao));
+    if (m.reacoes && m.reacoes.length) {
+      corpo.append(h('div', { class: 'reacoes' }, m.reacoes.map((r) => h('button', {
+        class: 'reacao' + (r.usuarios.includes(E.eu.id) ? ' minha' : ''), title: r.usuarios.length + ' reação(ões)',
+        onclick: () => reagir(m.id, r.emoji),
+      }, r.emoji, ' ', r.usuarios.length))));
+    }
+    div.append(corpo);
+    if (!m.sistema) {
+      const acoes = h('div', { class: 'acoes-msg' });
+      const bEmoji = h('button', { title: 'Reagir' }, '😀');
+      bEmoji.onclick = () => abrirMenu(bEmoji, h('div', { class: 'emojis' }, EMOJIS.map((em) => item(em, () => reagir(m.id, em)))));
+      const bLembrar = h('button', { title: 'Me lembra disso' }, '⏰');
+      bLembrar.onclick = () => abrirMenu(bLembrar, [h('div', { style: 'padding:6px 10px;color:var(--fraco);font-size:12px' }, 'Me lembra disso em…'),
+        [[10, '10 minutos'], [60, '1 hora'], [180, '3 horas'], [1440, 'Amanhã']].map(([min, r]) => item(r, () => lembrar(m, min, r)))]);
+      const bEnc = h('button', { title: 'Encaminhar' }, '↪');
+      bEnc.onclick = () => {
+        const destinos = [];
+        for (const sv of E.servidores) for (const k of sv.canais) if (k.tipo === 'texto' && k.id !== m.canalId) destinos.push([k.id, `# ${k.nome} · ${sv.nome}`]);
+        for (const d of E.dms) if (d.canalId !== m.canalId) destinos.push([d.canalId, '@ ' + d.outro.nome]);
+        abrirMenu(bEnc, [h('div', { style: 'padding:6px 10px;color:var(--fraco);font-size:12px' }, 'Encaminhar para…'),
+          destinos.length ? destinos.slice(0, 15).map(([id, r]) => item(r, async () => {
+            const res = await pedir('msg:enviar', { canalId: id, texto: corta(`↪ Encaminhado de ${m.autor ? m.autor.nome : 'AURA'}: ${m.texto || '🎙 áudio'}`, 2000) });
+            toast(res.erro || 'Mensagem encaminhada ↪', res.erro ? 'erro' : 'ok');
+          })) : h('div', { style: 'padding:6px 10px' }, 'Nenhum outro canal.')]);
+      };
+      acoes.append(bEmoji, bLembrar, bEnc);
+      if (!minha && s) acoes.append(h('button', { title: 'Denunciar', onclick: () => modalDenuncia(m) }, '🚩'));
+      if (minha && m.texto) acoes.append(h('button', { title: 'Editar', onclick: () => { E.editando = m.id; renderLista(); } }, '✏️'));
+      if (minha || souDono(s)) acoes.append(h('button', { class: 'perigo', title: 'Apagar', onclick: () => apagarMsg(m) }, '🗑'));
+      div.append(acoes);
+    }
+    return div;
+  }
+
+  function renderLista(opc) {
+    opc = opc || {};
+    const lista = $('#lista'), box = $('#msgs'), c = canalAtual();
+    if (!lista || !box || !c) return;
+    const perto = box.scrollHeight - box.scrollTop - box.clientHeight < 150;
+    const alturaAntes = box.scrollHeight, topoAntes = box.scrollTop;
+    const todas = E.msgs.get(c.id) || [];
+    const itens = [];
+    if (E.busca) {
+      const achadas = todas.filter((m) => (m.texto || '').toLowerCase().includes(E.busca) || (m.autor && m.autor.nome.toLowerCase().includes(E.busca)));
+      itens.push(h('div', { class: 'busca-info' }, h('span', {}, `${achadas.length} resultado(s) para “${E.busca}” nas mensagens carregadas`),
+        h('button', { onclick: () => { E.busca = ''; $('.busca input').value = ''; renderLista({ fim: true }); } }, 'Limpar')));
+      let ant = null;
+      for (const m of achadas) { itens.push(nodoMensagem(m, ant)); ant = m; }
+    } else {
+      if (E.fim.has(c.id)) {
+        itens.push(c.dm
+          ? h('div', { class: 'boas' }, avatar(c.dm.outro, '', false), h('h2', { style: 'margin-top:10px' }, c.dm.outro.nome), h('p', {}, `Esse é o começo da sua conversa com @${c.dm.outro.usuario}.`))
+          : h('div', { class: 'boas' }, h('h2', {}, `Bem-vindo ao #${c.nome} 👋`), h('p', {}, 'O começo de tudo. Chama a galera e puxa assunto.'),
+            h('div', { class: 'chips' },
+              h('button', { class: 'chip', onclick: () => { const t = $('.caixa textarea'); t.value = 'Salve, galera! 👋'; t.oninput(); t.focus(); } }, '👋 dar um oi'),
+              h('button', { class: 'chip', onclick: modalConvite }, '📨 convidar amigos'),
+              h('button', { class: 'chip', onclick: verResumo }, '✦ o que eu perdi?'))));
+      } else if (todas.length) {
+        itens.push(h('div', { class: 'carregando' }, 'Carregando mensagens antigas…'));
+      } else {
+        itens.push(h('div', { class: 'carregando' }, 'Carregando…'));
+      }
+      let ant = null, diaAnt = '';
+      const nova = E.novaDesde.get(c.id);
+      for (const m of todas) {
+        const d = dia(m.criadoEm);
+        if (d !== diaAnt) { itens.push(h('div', { class: 'div-dia' }, d)); diaAnt = d; ant = null; }
+        if (m.id === nova) { itens.push(h('div', { class: 'div-novas' }, 'Novas mensagens')); ant = null; }
+        itens.push(nodoMensagem(m, ant));
+        ant = m;
+      }
+      const r = E.resumo.get(c.id);
+      if (r) itens.push(cartaoResumo(c.id, r));
+    }
+    lista.replaceChildren(...itens);
+    if (opc.preservar) box.scrollTop = box.scrollHeight - alturaAntes + topoAntes;
+    else if (opc.fim || perto) box.scrollTop = box.scrollHeight;
+  }
+
+  async function carregarAntigas() {
+    const c = canalAtual();
+    if (!c || E.carregandoAntigas || E.fim.has(c.id) || E.busca) return;
+    const arr = E.msgs.get(c.id);
+    if (!arr || !arr.length) return;
+    E.carregandoAntigas = true;
+    try { await carregarMensagens(c.id, arr[0].id); if (E.canalId === c.id) renderLista({ preservar: true }); }
+    catch (err) { toast(err.message, 'erro'); }
+    finally { E.carregandoAntigas = false; }
+  }
+
+  async function enviar(canalId, ta) {
+    const texto = ta.value.trim();
+    if (!texto) return;
+    ta.value = '';
+    E.rascunho.delete(canalId);
+    ta.style.height = 'auto';
+    const r = await pedir('msg:enviar', E.temp ? { canalId, texto, expiraEm: E.temp } : { canalId, texto });
+    if (r.erro) { toast(r.erro, 'erro'); if (!ta.value) { ta.value = texto; E.rascunho.set(canalId, texto); } return; }
+    if (r.msg) aoMensagem(r.msg);
+  }
+  async function reagir(id, emoji) { const r = await pedir('msg:reagir', { id, emoji }); if (r.erro) toast(r.erro, 'erro'); }
+  async function apagarMsg(m) {
+    if (!confirm('Apagar esta mensagem?')) return;
+    const r = await pedir('msg:apagar', { id: m.id });
+    if (r.erro) toast(r.erro, 'erro');
+  }
+
+  // ---------- resumo ----------
+  async function verResumo() {
+    const c = canalAtual();
+    if (!c) return;
+    try {
+      const r = await api('GET', `/canais/${c.id}/resumo`);
+      E.resumo.set(c.id, r);
+      if (E.canalId === c.id) renderLista({ fim: true });
+    } catch (err) { toast(err.message, 'erro'); }
+  }
+  function cartaoResumo(canalId, r) {
+    const lista = (titulo, msgs) => msgs && msgs.length ? [h('h4', {}, titulo), h('ul', {}, msgs.map((m) =>
+      h('li', { onclick: () => irPara(m.id) }, h('b', {}, m.autor ? m.autor.nome : 'AURA'), ': ', corta(m.texto || '🎙 áudio', 140))))] : [];
+    return h('div', { class: 'msg' }, h('div', { class: 'av ia' }, logo()),
+      h('div', { class: 'corpo' }, h('b', { class: 'nome-ia' }, 'AURA'), h('span', { class: 'tag' }, 'IA'), h('time', {}, 'agora'),
+        h('div', { class: 'card' },
+          h('h3', {}, '✦ Resumo enquanto você estava fora'),
+          h('div', { class: 'sub' }, 'Só você vê isso · ', r.frase || `${r.total || 0} mensagens`),
+          r.total ? [lista('Destaques', r.destaques), lista('Perguntas', r.perguntas), lista('Mencionaram você', r.mencoes)]
+            : h('p', { class: 'sub' }, 'Nada novo por aqui. Você está em dia! ✨'),
+          h('div', { class: 'acoes' }, h('button', { class: 'bt', onclick: () => { E.resumo.delete(canalId); renderLista(); } }, 'Fechar')))));
+  }
+  function irPara(id) {
+    const el = document.querySelector(`.msg[data-id="${Number(id)}"]`);
+    if (!el) return toast('Essa mensagem não está carregada.');
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    el.classList.remove('destaque'); void el.offsetWidth; el.classList.add('destaque');
+  }
+
+  // ---------- digitando ----------
+  function renderDigitando() {
+    const el = $('#digitando');
+    if (!el) return;
+    const mapa = E.digitando.get(E.canalId);
+    const agora = Date.now();
+    const nomes = mapa ? [...mapa.values()].filter((x) => x.ate > agora).map((x) => x.nome) : [];
+    el.textContent = !nomes.length ? '' : nomes.length === 1 ? `${nomes[0]} está digitando…`
+      : nomes.length <= 3 ? `${nomes.slice(0, -1).join(', ')} e ${nomes[nomes.length - 1]} estão digitando…` : 'Várias pessoas estão digitando…';
+  }
+  setInterval(renderDigitando, 1000);
+
+  // ---------- membros ----------
+  function renderMembros() {
+    const box = $('#membros');
+    const fechar = h('div', { class: 'topo-membros' }, h('span', {}, 'Membros'), h('button', { class: 'icbtn', onclick: alternarMembros }, '✕'));
+    const c = canalAtual();
+    if (E.modo === 'dm') {
+      if (!c || !c.dm) return box.replaceChildren(fechar);
+      const o = c.dm.outro;
+      const av = avatar(o, '', true);
+      const [banner, ...extras] = vitrine(o);
+      return box.replaceChildren(fechar, h('div', { class: 'perfil-dm' }, banner, av, h('h3', {}, o.nome, fazAniver(o) ? ' 🎂' : ''), h('small', {}, '@' + o.usuario + ' · ' + st(o.id)[1]),
+        o.statusTexto ? h('p', {}, o.statusTexto) : null, ...extras));
+    }
+    const s = servidorAtual();
+    const lista = s ? E.membros.get(s.id) : null;
+    if (!lista) return box.replaceChildren(fechar, h('p', { class: 'vazio-lateral' }, s ? 'Carregando membros…' : ''));
+    const grupos = { Online: [], Ausente: [], Offline: [] };
+    for (const m of lista) {
+      const x = statusDe(m.id);
+      (x === 'offline' ? grupos.Offline : x === 'ausente' ? grupos.Ausente : grupos.Online).push(m);
+    }
+    const partes = [fechar, cartaoMissao(s.id)].filter(Boolean);
+    for (const [nome, membros] of Object.entries(grupos)) {
+      if (!membros.length) continue;
+      membros.sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+      partes.push(h('div', { class: 'rot' }, `${nome} — ${membros.length}`));
+      for (const m of membros) {
+        const b = h('button', { class: 'membro' + (nome === 'Offline' ? ' offline' : ''), onclick: (e) => cartaoMembro(e.currentTarget, m) },
+          avatar(m, '', true), h('span', { class: 'txt' }, h('b', {}, m.nome, fazAniver(m) ? ' 🎂' : '', SELO_CARGO[m.cargo] ? h('span', { class: 'coroa', title: m.cargo }, SELO_CARGO[m.cargo]) : null),
+            h('small', {}, rotStatus(m))));
+        partes.push(b);
+      }
+    }
+    box.replaceChildren(...partes);
+  }
+  // ---------- perfil vitrine ----------
+  const BANNERS = {
+    nebulosa: 'linear-gradient(135deg,#7c5cff,#c056f5 55%,#ff9a3c)', oceano: 'linear-gradient(135deg,#0ea5e9,#2563eb,#312e81)',
+    floresta: 'linear-gradient(135deg,#16a34a,#0d9488,#064e3b)', 'por-do-sol': 'linear-gradient(135deg,#f97316,#ef4444,#9d174d)',
+    neon: 'linear-gradient(135deg,#22d3ee,#a855f7,#ec4899)', aurora: 'linear-gradient(135deg,#34d399,#60a5fa,#c084fc)',
+  };
+  const hojeMMDD = () => { const d = new Date(); return `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+  const fazAniver = (u) => !!(u && u.vitrine && u.vitrine.aniversario && u.vitrine.aniversario === hojeMMDD());
+  function vitrine(u) {
+    const v = (u && u.vitrine) || {};
+    const banner = h('div', { class: 'banner-perfil' });
+    banner.style.background = BANNERS[v.banner] || BANNERS.nebulosa;
+    const partes = [banner];
+    if (v.bio) partes.push(h('p', { class: 'bio' }, v.bio));
+    if (v.jogos && v.jogos.length) partes.push(h('div', { class: 'jogos' }, v.jogos.map((j) => h('span', { class: 'chip' }, '🎮 ' + j))));
+    if (v.links && v.links.length) partes.push(h('div', { class: 'links-bio' }, v.links.map((l) => {
+      let host = l; try { host = new URL(l).hostname.replace(/^www\./, ''); } catch (e) {}
+      return h('a', { href: l, target: '_blank', rel: 'noopener noreferrer' }, '🔗 ' + host);
+    })));
+    if (v.aniversario) {
+      const [mm, dd] = v.aniversario.split('-');
+      partes.push(h('small', { class: 'aniver' }, (fazAniver(u) ? '🎉 Aniversário HOJE! ' : '🎂 ') + `${dd}/${mm}`));
+    }
+    return partes;
+  }
+
+  function cartaoMembro(ancora, m) {
+    const [banner, ...extras] = vitrine(m); // banner → avatar → nome → @ → recado → bio/jogos/links/aniver
+    const conteudo = [banner, avatar(m, 'av-vitrine', true), h('h3', {}, m.nome, fazAniver(m) ? ' 🎂' : ''),
+      h('small', {}, '@' + m.usuario + ' · ' + st(m.id)[1] + (m.nivel ? ` · ⭐ nível ${m.nivel}` : '')), m.statusTexto ? h('p', {}, m.statusTexto) : null, ...extras];
+    if (m.id !== E.eu.id) {
+      const vigia = vigiados().includes(m.id);
+      conteudo.push(h('button', { class: 'bt prim', onclick: () => { fecharMenu(); abrirDmCom(m.usuario); } }, 'Mandar mensagem'),
+        h('button', { class: 'bt', onclick: () => {
+          fecharMenu();
+          salvar('aura-vigiados', JSON.stringify(vigia ? vigiados().filter((x) => x !== m.id) : [...vigiados(), m.id]));
+          toast(vigia ? `Não vou mais avisar sobre ${m.nome}.` : `🔔 Te aviso quando ${m.nome} ficar online.`, 'ok');
+        } }, vigia ? '🔕 Parar de avisar' : '🔔 Avisar quando ficar online'));
+      const s = servidorAtual();
+      if (s && E.modo === 'servidor') {
+        const meu = nivelDe(s.id, E.eu.id), dele = nivelDe(s.id, m.id);
+        if (meu === 4) conteudo.push(h('hr'), ['adm', 'mod', 'membro'].filter((c) => c !== m.cargo).map((c) =>
+          h('button', { class: 'bt', onclick: () => { fecharMenu(); moderar(c, m); } }, c === 'membro' ? '⬇️ Tirar cargo' : `${SELO_CARGO[c]} Tornar ${c}`)));
+        if (meu >= 2 && meu > dele) conteudo.push(
+          h('button', { class: 'bt', onclick: () => { fecharMenu(); moderar('expulsar', m); } }, '👢 Expulsar'),
+          h('button', { class: 'bt perigo', onclick: () => { fecharMenu(); moderar('banir', m); } }, '⛔ Banir'),
+          h('button', { class: 'bt', onclick: () => { fecharMenu(); const t = $('.caixa textarea'); if (t) { t.value = `/tribunal @${m.usuario} `; t.oninput(); t.focus(); } } }, '⚖️ Levar ao tribunal'));
+      }
+    }
+    abrirMenu(ancora, conteudo, 'menu-perfil');
+  }
+  // ---------- missões, XP e ranking ----------
+  async function carregarMissoes(sid) {
+    try { E.missoes.set(sid, await api('GET', `/servidores/${sid}/missoes`)); if (sid === E.servidorId) renderMembros(); } catch (e) {}
+  }
+  const barra = (p) => { const i = h('i'); i.style.width = Math.max(0, Math.min(100, p)) + '%'; return h('div', { class: 'barra' }, i); };
+  function cartaoMissao(sid) {
+    const m = E.missoes.get(sid);
+    if (!m) return null;
+    const pend = m.missoes.find((x) => !x.completa) || m.missoes[0];
+    return h('div', { class: 'missao' },
+      h('div', { class: 'missao-topo' }, h('b', {}, '🏆 Missão da semana'), h('button', { class: 'pill', onclick: () => modalRanking(sid) }, 'Ranking')),
+      pend ? [h('small', {}, pend.titulo), barra(pend.valor / pend.meta * 100), h('small', {}, `${pend.valor}/${pend.meta}${pend.completa ? ' · completa ✅' : ' · +250 XP e selo'}`)] : null,
+      h('small', { class: 'nivel' }, `⭐ Nível ${m.nivel} · ${m.xp}/${m.proximoNivelXp} XP`),
+      m.selos.length ? h('div', { class: 'selos' }, m.selos.map((x) => h('span', { title: x.titulo }, x.emoji))) : null);
+  }
+  async function modalRanking(sid) {
+    try {
+      const lista = await api('GET', `/servidores/${sid}/ranking`);
+      abrirModal({ titulo: '🏆 Ranking do servidor', sub: 'Quem mais movimentou a galera.', corpo: lista.length
+        ? h('ol', { class: 'ranking' }, lista.map((x, i) => h('li', {}, h('span', {}, ['🥇', '🥈', '🥉'][i] || i + 1 + 'º'), avatar(x.usuario), h('b', {}, x.usuario.nome), h('small', {}, `Nível ${x.nivel} · ${x.xp} XP`))))
+        : h('p', { class: 'sub' }, 'Ninguém pontuou ainda. Manda mensagem e entra na call!') });
+    } catch (err) { toast(err.message, 'erro'); }
+  }
+
+  // ---------- mensagem de voz com transcrição ----------
+  let gravacao = null;
+  async function alternarGravacao(canalId, botao, info) {
+    if (gravacao) return gravacao.parar(true);
+    if (!window.MediaRecorder) return toast('Seu navegador não grava áudio.', 'erro');
+    let stream;
+    try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); } catch (e) { return toast('Não consegui acessar seu microfone.', 'erro'); }
+    const rec = new MediaRecorder(stream, MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? { mimeType: 'audio/webm;codecs=opus' } : undefined);
+    const pedacos = [], inicio = Date.now();
+    let texto = '', fala = null;
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SR) {
+      try {
+        fala = new SR(); fala.lang = 'pt-BR'; fala.continuous = true;
+        fala.onresult = (e) => { for (let i = e.resultIndex; i < e.results.length; i++) if (e.results[i].isFinal) texto += e.results[i][0].transcript + ' '; };
+        fala.start();
+      } catch (e) { fala = null; }
+    }
+    rec.ondataavailable = (e) => { if (e.data.size) pedacos.push(e.data); };
+    const relogio = setInterval(() => {
+      const s = Math.floor((Date.now() - inicio) / 1000);
+      info.textContent = `● Gravando ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')} — ⏹ envia`;
+      if (s >= 60 && gravacao) gravacao.parar(true);
+    }, 250);
+    info.textContent = '● Gravando 0:00 — ⏹ envia';
+    info.hidden = false; botao.textContent = '⏹'; botao.classList.add('gravando-on');
+    gravacao = {
+      parar(mandar) {
+        clearInterval(relogio); gravacao = null;
+        info.hidden = true; botao.textContent = '🎙'; botao.classList.remove('gravando-on');
+        const dur = Math.min(60, Math.max(0.5, (Date.now() - inicio) / 1000));
+        rec.onstop = async () => {
+          stream.getTracks().forEach((t) => t.stop());
+          if (!mandar) return;
+          if (fala) await new Promise((r) => setTimeout(r, 500)); // espera o último trecho transcrito
+          const q = new URLSearchParams({ duracao: dur.toFixed(1) });
+          if (texto.trim()) q.set('transcricao', texto.trim().slice(0, 1500));
+          try {
+            const r = await fetch(`/api/canais/${canalId}/audio?${q}`, { method: 'POST', headers: { 'Content-Type': 'audio/webm' }, body: new Blob(pedacos, { type: 'audio/webm' }) });
+            const d = await r.json().catch(() => ({}));
+            if (!r.ok) throw new Error(d.erro || 'Não consegui enviar o áudio.');
+            aoMensagem(d);
+          } catch (err) { toast(err.message, 'erro'); }
+        };
+        try { if (fala) fala.stop(); } catch (e) {}
+        rec.stop();
+      },
+    };
+    rec.start(250);
+  }
+
+  // ---------- assistir junto ----------
+  let yt = null, video = null, aplicando = 0, estadoA = null, ytPromessa = null;
+  async function entrarAssistir(id) {
+    if (E.assistindo === id) return montarPalco();
+    E.assistindo = id;
+    const r = await pedir('assistir:entrar', { canalId: id });
+    if (r.erro) { E.assistindo = null; return toast(r.erro, 'erro'); }
+    estadoA = r.estado || null;
+    montarPalco();
+  }
+  function sairAssistir() {
+    if (!E.assistindo) return;
+    if (sock) sock.emit('assistir:sair', { canalId: E.assistindo });
+    E.assistindo = null; estadoA = null;
+    destruirPlayer();
+  }
+  function destruirPlayer() { try { if (yt) yt.destroy(); } catch (e) {} yt = null; video = null; }
+  function montarPalco() {
+    const palco = $('#palco');
+    if (!palco) return;
+    destruirPlayer();
+    const url = h('input', { placeholder: 'Cola um link do YouTube ou de vídeo .mp4/.webm', 'aria-label': 'Link do vídeo' });
+    const form = h('form', { class: 'palco-barra' }, url, h('button', { class: 'bt prim' }, 'Tocar pra todo mundo'));
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      const r = await pedir('assistir:definir', { canalId: E.assistindo, url: url.value.trim() });
+      if (r.erro) toast(r.erro, 'erro'); else url.value = '';
+    };
+    palco.replaceChildren(h('div', { class: 'palco-tela' }), form, h('small', { class: 'palco-quem' }));
+    aplicarEstado();
+  }
+  const tempoEsperado = (e) => (e.tempo || 0) + (e.tocando ? (Date.now() - e.atualizadoEm) / 1000 : 0);
+  function carregarYT() {
+    if (window.YT && YT.Player) return Promise.resolve();
+    if (!ytPromessa) ytPromessa = new Promise((res, rej) => {
+      window.onYouTubeIframeAPIReady = res;
+      const s = document.createElement('script');
+      s.src = 'https://www.youtube.com/iframe_api';
+      s.onerror = () => { ytPromessa = null; rej(); };
+      document.head.append(s);
+    });
+    return ytPromessa;
+  }
+  function aplicarEstado() {
+    const tela = $('.palco-tela'), e = estadoA;
+    if (!tela) return;
+    const quem = $('.palco-quem');
+    if (quem) quem.textContent = e && e.espectadores && e.espectadores.length ? '👀 Assistindo: ' + e.espectadores.map((x) => x.nome).join(', ') : '';
+    if (!e || !e.url) {
+      destruirPlayer(); delete tela.dataset.url;
+      tela.replaceChildren(h('div', { class: 'palco-vazio' }, '🍿 Ninguém escolheu o vídeo ainda. Cola um link aí embaixo.'));
+      return;
+    }
+    if (tela.dataset.url !== e.url) {
+      destruirPlayer();
+      tela.dataset.url = e.url;
+      aplicando = Date.now();
+      if (e.tipo === 'youtube') {
+        const alvo = h('div');
+        tela.replaceChildren(alvo);
+        carregarYT().then(() => {
+          if (tela.dataset.url !== e.url) return;
+          yt = new YT.Player(alvo, { videoId: e.videoId, playerVars: { autoplay: 1, playsinline: 1, rel: 0 },
+            events: { onReady: sincronizar, onStateChange: (ev) => { if (ev.data === 1) controle('play', yt.getCurrentTime()); else if (ev.data === 2) controle('pause', yt.getCurrentTime()); } } });
+        }).catch(() => toast('Não consegui carregar o YouTube.', 'erro'));
+      } else {
+        video = h('video', { controls: true, playsinline: true });
+        video.src = e.url;
+        video.addEventListener('play', () => controle('play', video.currentTime));
+        video.addEventListener('pause', () => controle('pause', video.currentTime));
+        video.addEventListener('seeked', () => controle('seek', video.currentTime));
+        video.addEventListener('loadedmetadata', sincronizar, { once: true });
+        tela.replaceChildren(video);
+      }
+      return;
+    }
+    sincronizar();
+  }
+  function sincronizar() {
+    const e = estadoA;
+    if (!e) return;
+    aplicando = Date.now();
+    const alvo = tempoEsperado(e);
+    if (yt && yt.getCurrentTime) {
+      if (Math.abs(yt.getCurrentTime() - alvo) > 1.5) yt.seekTo(alvo, true);
+      if (e.tocando) yt.playVideo(); else yt.pauseVideo();
+    } else if (video) {
+      if (Math.abs(video.currentTime - alvo) > 1.5) video.currentTime = alvo;
+      if (e.tocando) video.play().catch(() => {}); else video.pause();
+    }
+  }
+  function controle(acao, tempo) {
+    const e = estadoA;
+    if (!E.assistindo || !e || Date.now() - aplicando < 1000) return;
+    // ignora eventos que só repetem o estado atual (evita eco entre clientes)
+    if (acao !== 'seek' && (acao === 'play') === !!e.tocando && Math.abs(tempo - tempoEsperado(e)) < 2) return;
+    sock.emit('assistir:controle', { canalId: E.assistindo, acao, tempo }, (r) => { if (r && r.erro) toast(r.erro, 'erro'); });
+  }
+
+  // ---------- staff: cargos, moderação, senha, tickets, denúncias, tribunal ----------
+  const NIVEL = { dono: 4, adm: 3, mod: 2, membro: 1 };
+  const SELO_CARGO = { dono: '👑', adm: '🛡️', mod: '🔧' };
+  const membroDe = (sid, uid) => (E.membros.get(sid) || []).find((m) => m.id === uid);
+  const nivelDe = (sid, uid) => NIVEL[(membroDe(sid, uid) || {}).cargo] || (uid === (E.servidores.find((s) => s.id === sid) || {}).donoId ? 4 : 1);
+  const souStaffEm = (sid) => nivelDe(sid, E.eu.id) >= 2;
+  async function moderar(acao, m) {
+    const s = servidorAtual();
+    try {
+      if (acao === 'expulsar') {
+        if (!confirm(`Expulsar ${m.nome} do servidor?`)) return;
+        await api('DELETE', `/servidores/${s.id}/membros/${m.id}`);
+        toast(`👢 ${m.nome} foi expulso.`, 'ok');
+      } else if (acao === 'banir') {
+        const motivo = prompt(`Banir ${m.nome}? Motivo (opcional):`);
+        if (motivo === null) return;
+        await api('POST', `/servidores/${s.id}/banir`, { usuarioId: m.id, motivo });
+        toast(`⛔ ${m.nome} foi banido.`, 'ok');
+      } else {
+        const r = await api('PATCH', `/servidores/${s.id}/membros/${m.id}`, { cargo: acao });
+        aoMembroAtualizado({ servidorId: s.id, membro: r });
+        toast(`Cargo de ${m.nome}: ${acao}`, 'ok');
+      }
+    } catch (err) { toast(err.message, 'erro'); }
+  }
+  function aoMembroAtualizado({ servidorId, membro }) {
+    const lista = E.membros.get(servidorId);
+    if (lista) { const i = lista.findIndex((x) => x.id === membro.id); if (i >= 0) lista[i] = Object.assign(lista[i], membro); }
+    if (servidorId === E.servidorId) { renderMembros(); renderLista(); }
+  }
+  function modalSenhaCanal(c) {
+    const senha = h('input', { type: 'password', maxlength: 64, placeholder: 'Senha do canal' });
+    abrirModal({ titulo: '🔒 ' + c.nome, sub: 'Esse canal tem senha. Pede pra staff se não souber.', corpo: [campo('Senha', senha)], botao: 'Entrar',
+      acao: async () => {
+        await api('POST', `/canais/${c.id}/desbloquear`, { senha: senha.value });
+        E.msgs.delete(c.id); E.fim.delete(c.id);
+        await abrirCanal(c.id);
+      } });
+  }
+  function modalTicket() {
+    const s = servidorAtual();
+    const assunto = h('input', { maxlength: 200, placeholder: 'Ex: fui xingado na call, preciso de ajuda' });
+    abrirModal({ titulo: '🎫 Abrir ticket', sub: 'Abre um canal privado só entre você e a staff.', corpo: [campo('Assunto', assunto)], botao: 'Abrir ticket',
+      acao: async () => { const c = await api('POST', `/servidores/${s.id}/tickets`, { assunto: assunto.value.trim() }); aoCanalNovo(c); await abrirCanal(c.id); } });
+  }
+  function modalDenuncia(m) {
+    const s = E.servidores.find((x) => x.canais.some((k) => k.id === m.canalId));
+    if (!s) return toast('Denúncia só funciona em servidor.', 'erro');
+    const motivo = h('input', { maxlength: 500, placeholder: 'Ex: ofensa, golpe, spam…' });
+    abrirModal({ titulo: '🚩 Denunciar mensagem', sub: `A mensagem de ${m.autor ? m.autor.nome : 'AURA'} vai como prova pra fila da staff.`, corpo: [campo('Motivo', motivo)], botao: 'Enviar denúncia', perigo: true,
+      acao: async () => { await api('POST', `/servidores/${s.id}/denuncias`, { mensagemId: m.id, motivo: motivo.value.trim() }); toast('🚩 Denúncia enviada pra staff. Valeu!', 'ok'); } });
+  }
+  async function painelStaff() {
+    const s = servidorAtual();
+    try {
+      const lista = await api('GET', `/servidores/${s.id}/denuncias`);
+      const marcar = async (d, estado) => { try { await api('PATCH', `/denuncias/${d.id}`, { estado }); painelStaff(); } catch (err) { toast(err.message, 'erro'); } };
+      abrirModal({ titulo: '🛡️ Painel da staff', sub: `${lista.filter((d) => d.estado === 'aberta').length} denúncia(s) aberta(s) em ${s.nome}`,
+        corpo: lista.length ? h('ul', { class: 'denuncias' }, lista.map((d) => h('li', { class: d.estado },
+          h('b', {}, `🚩 ${d.motivo}`), h('small', {}, `por ${d.autor.nome}${d.alvo ? ' · contra ' + d.alvo.nome : ''} · ${dia(d.criadoEm)} ${hora(d.criadoEm)} · ${d.estado}`),
+          d.texto ? h('blockquote', {}, d.texto) : null,
+          d.estado === 'aberta' ? h('div', { class: 'acoes' },
+            h('button', { class: 'bt', type: 'button', onclick: () => marcar(d, 'resolvida') }, '✅ Resolver'),
+            h('button', { class: 'bt', type: 'button', onclick: () => marcar(d, 'descartada') }, '🗑 Descartar'),
+            d.alvo ? h('button', { class: 'bt perigo', type: 'button', onclick: async () => { fecharModal(); await moderar('banir', d.alvo); marcar(d, 'resolvida'); } }, '⛔ Banir') : null) : null)))
+          : h('p', { class: 'sub' }, 'Nenhuma denúncia. Servidor em paz ✨') });
+    } catch (err) { toast(err.message, 'erro'); }
+  }
+  // /tribunal @usuario motivo: staff vota com ✅/❌; maioria da staff libera o banimento
+  const RE_TRIBUNAL = /^\/tribunal\s+@([a-z0-9_.]{3,20})\s*([\s\S]*)$/i;
+  function cartaoTribunal(m, r) {
+    const s = E.servidores.find((x) => x.canais.some((k) => k.id === m.canalId));
+    const lista = s ? E.membros.get(s.id) || [] : [];
+    const staff = lista.filter((x) => NIVEL[x.cargo] >= 2);
+    const alvo = lista.find((x) => x.usuario === r[1].toLowerCase());
+    const sim = naReacao(m, '✅').filter((id) => staff.some((x) => x.id === id));
+    const nao = naReacao(m, '❌').filter((id) => staff.some((x) => x.id === id));
+    const aprovado = staff.length && sim.length > staff.length / 2;
+    const souStaff = s && souStaffEm(s.id);
+    return h('div', { class: 'card tribunal' }, h('h3', {}, `⚖️ Tribunal da staff — @${r[1]}`),
+      r[2] ? h('div', { class: 'texto' }, 'Motivo: ', r[2]) : null,
+      h('div', { class: 'sub', style: 'margin-top:6px' }, `✅ ${sim.length} a favor · ❌ ${nao.length} contra · ${staff.length} na staff · ${aprovado ? 'APROVADO pela maioria' : 'precisa de maioria da staff'}`),
+      souStaff ? h('div', { class: 'acoes' },
+        h('button', { class: 'bt', onclick: () => reagir(m.id, '✅') }, '✅ Banir'),
+        h('button', { class: 'bt', onclick: () => reagir(m.id, '❌') }, '❌ Não banir'),
+        aprovado && alvo ? h('button', { class: 'bt perigo', onclick: () => moderar('banir', alvo) }, '⚖️ Executar banimento') : null)
+        : h('div', { class: 'sub' }, 'Só a staff vota.'));
+  }
+
+  function alternarMembros() {
+    const app = $('#app');
+    if (matchMedia('(max-width: 1100px)').matches) app.classList.toggle('ver-membros');
+    else app.classList.toggle('sem-membros');
+  }
+
+  // ---------- servidores, canais, convites ----------
+  function adicionarServidor(s) {
+    const i = E.servidores.findIndex((x) => x.id === s.id);
+    if (i >= 0) E.servidores[i] = Object.assign(E.servidores[i], s); else E.servidores.push(s);
+    Object.assign(E.naoLidos, s.naoLidos || {});
+  }
+  const MODELOS = {
+    amigos: { nome: '👋 Amigos (básico)', canais: [['memes', 'texto'], ['Cinema', 'assistir']] },
+    fps: { nome: '🎯 FPS / competitivo', canais: [['partidas', 'texto'], ['clipes', 'texto'], ['Squad 1', 'voz'], ['Squad 2', 'voz']] },
+    rp: { nome: '🎭 RP', canais: [['regras', 'texto'], ['personagens', 'texto'], ['off-rp', 'texto'], ['Cidade', 'voz']] },
+    estudo: { nome: '📚 Estudo', canais: [['tarefas', 'texto'], ['duvidas', 'texto'], ['Sala de estudo', 'voz']] },
+  };
+  const NOVIDADES = [
+    ['🌌', 'Sala 3D', 'Voz com áudio espacial: arrasta seu avatar no mapa.'],
+    ['🍿', 'Assistir Junto', 'YouTube ou vídeo sincronizado com a galera.'],
+    ['🏆', 'Missões e XP', 'Missão da semana, nível, selos e ranking.'],
+    ['🎙', 'Áudio com transcrição', 'Grava até 60s e a IA escreve o que você falou.'],
+    ['⏱', 'Mensagem temporária', 'Some sozinha depois do tempo escolhido.'],
+    ['⛔', 'Modo foco', 'Sem avisos por 15 min até 2 h.'],
+    ['⏰', 'Me lembra disso', 'Lembrete a partir de qualquer mensagem.'],
+    ['🎥', 'Modo streamer', 'Esconde convites e DMs enquanto você está ao vivo.'],
+    ['🎉', 'Mensagem com efeito', '/confete, /fogo e /explosao.'],
+    ['🔔', 'Sons BR + vinheta', 'Escolha o som de aviso; toca vinheta quando alguém entra na call.'],
+    ['🧩', 'Modelos prontos', 'Crie servidor de FPS, RP ou estudo já montado.'],
+    ['🎮', 'Fecha o time', '/time 5 Valorant — avisa todo mundo quando completa.'],
+    ['🍅', 'Pomodoro em grupo', '/pomodoro 25 — timer compartilhado pra estudar junto.'],
+    ['🚨', 'Alerta geral', '/alerta texto — aviso urgente do dono que chega pra todo mundo.'],
+    ['🪪', 'Perfil vitrine', 'Banner, bio, jogos favoritos, links e aniversário com parabéns automático.'],
+    ['🖥️', 'Compartilhar tela grátis', '1080p/60fps na call, sem assinatura; várias telas em grade.'],
+    ['🛡️', 'Staff completa', 'Cargos adm/mod, expulsar, banir, painel de denúncias com prova.'],
+    ['🔒', 'Canal com senha', 'Área secreta: só entra quem tem a senha (a staff entra direto).'],
+    ['🎫', 'Tickets de suporte', 'Canal privado entre você e a staff, pelo menu do servidor.'],
+    ['⚖️', 'Tribunal da staff', '/tribunal @usuario motivo — a staff vota e a maioria libera o ban.'],
+    ['🎨', 'Tema por servidor', 'Cada servidor com seu degradê próprio.'],
+    ['🎧', 'Áudio HD grátis', 'Call em estéreo com bitrate alto, tira-ruído e eco cancelado.'],
+    ['🏅', 'Selos lendários', 'Seus selos brilham no cartão da missão.'],
+    ['📊', 'Enquete', '/enquete Qual jogo hoje? | Valorant | CS2 | LoL — votação ao vivo.'],
+    ['👋', 'Boas-vindas automáticas', 'Quem entra por convite é anunciado no canal de avisos.'],
+    ['🎲', 'Dados e moeda', '/dado 2d20, /dado 6, /moeda — resultado igual pra todo mundo (bom pra RP).'],
+    ['🛡️', 'Anti-golpe', 'Bloqueia link de nitro/skin grátis e site falso de Discord/Steam.'],
+    ['🔎', 'Peneira', '/peneira procuro duo ouro — a galera se candidata e você chama no privado.'],
+    ['📐', 'Modo compacto', 'Mensagens mais juntinhas, cabe mais na tela.'],
+    ['⌨️', 'Atalhos', 'Ctrl+Shift+M muta, D ensurdece, L sai da call.'],
+    ['⏩', 'Áudio em 1,5x e 2x', 'Botão de velocidade em toda mensagem de voz.'],
+    ['↪', 'Encaminhar mensagem', 'Manda pra outro canal ou DM com um clique.'],
+    ['♿', 'Acessibilidade', 'Alto contraste e fonte grande no menu do perfil.'],
+    ['💤', 'AFK inteligente', '10 min parado: fica ausente e muta o mic sozinho.'],
+    ['🟢', 'Avisa quando ficar online', 'Clica num membro → 🔔 e a AURA te avisa quando ele entrar.'],
+  ];
+  const modalNovidades = () => abrirModal({ titulo: '✨ Novidades da AURA', sub: 'O que chegou no app. Logo: ideias da comunidade com votação.',
+    corpo: h('ul', { class: 'novidades' }, NOVIDADES.map(([i, t, d]) => h('li', {}, h('span', {}, i), h('div', {}, h('b', {}, t), h('small', {}, d))))) });
+
+  function modalServidor() {
+    let aba = 'criar';
+    const nome = h('input', { maxlength: 40, placeholder: 'Ex: Galera Gamer' });
+    const codigo = h('input', { maxlength: 120, placeholder: 'Ex: aB3dE9xZ' });
+    const modelo = h('select', {}, Object.entries(MODELOS).map(([k, m]) => h('option', { value: k }, m.nome)));
+    const cModelo = campo('Modelo pronto', modelo);
+    const cNome = campo('Nome do servidor', nome), cCod = campo('Código do convite', codigo);
+    cCod.hidden = true;
+    const bCriar = h('button', { type: 'button', class: 'ativa' }, 'Criar'), bEntrar = h('button', { type: 'button' }, 'Entrar com convite');
+    const form = abrirModal({
+      titulo: 'Seu novo canto', sub: 'Cria um servidor pra sua galera ou entra num que já existe.',
+      corpo: [h('div', { class: 'abas' }, bCriar, bEntrar), cNome, cModelo, cCod], botao: 'Criar servidor',
+      acao: async () => {
+        let s;
+        if (aba === 'criar') {
+          s = await api('POST', '/servidores', { nome: nome.value.trim() });
+          for (const [n, tipo] of MODELOS[modelo.value].canais) {
+            try { s.canais.push(await api('POST', `/servidores/${s.id}/canais`, { nome: n, tipo })); } catch (e) {}
+          }
+        } else {
+          const cod = codigo.value.trim().split('/').pop();
+          if (!cod) throw new Error('Cola o código do convite.');
+          s = await api('POST', '/convites/' + encodeURIComponent(cod));
+        }
+        adicionarServidor(s);
+        E.membros.delete(s.id);
+        await selecionarServidor(s.id);
+        toast(aba === 'criar' ? 'Servidor criado! 🎉' : 'Você entrou em ' + s.nome, 'ok');
+      },
+    });
+    const trocar = (a) => {
+      aba = a;
+      bCriar.classList.toggle('ativa', a === 'criar'); bEntrar.classList.toggle('ativa', a === 'entrar');
+      cNome.hidden = cModelo.hidden = a !== 'criar'; cCod.hidden = a !== 'entrar';
+      form.querySelector('.bt.prim').textContent = a === 'criar' ? 'Criar servidor' : 'Entrar';
+      (a === 'criar' ? nome : codigo).focus();
+    };
+    bCriar.onclick = () => trocar('criar');
+    bEntrar.onclick = () => trocar('entrar');
+  }
+  function modalConvite() {
+    const s = servidorAtual();
+    if (!s) return;
+    const copiar = h('button', { class: 'bt prim', type: 'button' }, 'Copiar');
+    copiar.onclick = async () => {
+      try { await navigator.clipboard.writeText(s.convite); copiar.textContent = 'Copiado!'; }
+      catch (e) { toast('Não consegui copiar. Seleciona o código manualmente.', 'erro'); }
+    };
+    abrirModal({ titulo: 'Convidar pra ' + s.nome, sub: 'Manda esse código pra galera. Eles entram pelo + → Entrar com convite.',
+      corpo: [h('div', { class: 'convite' }, h('code', {}, s.convite), copiar)] });
+  }
+  function modalCanal(tipoInicial) {
+    const s = servidorAtual();
+    if (!s) return;
+    let tipo = tipoInicial || 'texto';
+    const nome = h('input', { maxlength: 30, placeholder: 'novo-canal' });
+    const bT = h('button', { type: 'button' }, h('b', {}, '# Texto'), 'Mensagens, memes, links');
+    const bV = h('button', { type: 'button' }, h('b', {}, '🔊 Voz'), 'Call com a galera');
+    const bA = h('button', { type: 'button' }, h('b', {}, '🍿 Assistir'), 'Vídeo junto');
+    const senhaCanal = h('input', { type: 'password', maxlength: 64, placeholder: 'Deixe vazio pra canal aberto' });
+    const marcar = () => {
+      bT.classList.toggle('ativa', tipo === 'texto'); bV.classList.toggle('ativa', tipo === 'voz'); bA.classList.toggle('ativa', tipo === 'assistir');
+      nome.placeholder = tipo === 'texto' ? 'novo-canal' : tipo === 'voz' ? 'Sala da galera' : 'Cinema';
+    };
+    bT.onclick = () => { tipo = 'texto'; marcar(); nome.focus(); };
+    bV.onclick = () => { tipo = 'voz'; marcar(); nome.focus(); };
+    bA.onclick = () => { tipo = 'assistir'; marcar(); nome.focus(); };
+    const cx3d = h('input', { type: 'checkbox' });
+    const linha3d = h('label', { class: 'campo', style: 'display:flex;gap:8px;align-items:center' }, cx3d, h('span', { style: 'margin:0' }, '🌌 Sala 3D — áudio espacial (só voz)'));
+    nome.oninput = () => { if (tipo === 'texto') nome.value = nome.value.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''); };
+    marcar();
+    abrirModal({ titulo: 'Criar canal', sub: 'em ' + s.nome, corpo: [h('div', { class: 'tipos' }, bT, bV, bA), campo('Nome do canal', nome), linha3d, campo('🔒 Senha (opcional, só texto)', senhaCanal)], botao: 'Criar canal',
+      acao: async () => {
+        const corpo = { nome: nome.value.trim(), tipo };
+        if (tipo === 'voz' && cx3d.checked) corpo.espacial = true;
+        if (tipo === 'texto' && senhaCanal.value) corpo.senha = senhaCanal.value;
+        const c = await api('POST', `/servidores/${s.id}/canais`, corpo);
+        aoCanalNovo(c);
+        if (c.tipo !== 'voz') abrirCanal(c.id);
+      } });
+  }
+  async function apagarCanal(c) {
+    if (!confirm(`Apagar o canal "${c.nome}"? Todas as mensagens somem.`)) return;
+    try { await api('DELETE', '/canais/' + c.id); aoCanalApagado({ id: c.id, servidorId: c.servidorId }); } catch (err) { toast(err.message, 'erro'); }
+  }
+  function menuServidor(ancora) {
+    const s = servidorAtual();
+    if (!s) return;
+    const itens = [item('📨 Convidar pessoas', modalConvite), item('🎫 Abrir ticket com a staff', modalTicket)];
+    if (souStaffEm(s.id)) itens.push(item('🛡️ Painel da staff', painelStaff));
+    const atual = canalAtual();
+    if (atual && atual.ticket && (atual.ticket === E.eu.id || souStaffEm(s.id))) itens.push(item('🔒 Fechar este ticket', () => apagarCanal(atual)));
+    if (souDono(s)) {
+      itens.push(item('＃ Criar canal', () => modalCanal('texto')), item('✏️ Renomear servidor', () => {
+        const nome = h('input', { maxlength: 40 }); nome.value = s.nome;
+        abrirModal({ titulo: 'Renomear servidor', corpo: [campo('Nome', nome)], botao: 'Salvar',
+          acao: async () => { aoServidorAtualizado(await api('PATCH', '/servidores/' + s.id, { nome: nome.value.trim() })); } });
+      }), h('hr'), item('🗑 Apagar servidor', () => {
+        abrirModal({ titulo: 'Apagar ' + s.nome + '?', sub: 'Isso apaga todos os canais e mensagens pra sempre.', botao: 'Apagar', perigo: true,
+          acao: async () => { await api('DELETE', '/servidores/' + s.id); aoServidorApagado({ id: s.id }); } });
+      }, 'perigo'));
+    } else {
+      itens.push(h('hr'), item('🚪 Sair do servidor', async () => {
+        if (!confirm('Sair de ' + s.nome + '?')) return;
+        try { await api('POST', `/servidores/${s.id}/sair`); aoServidorApagado({ id: s.id }); } catch (err) { toast(err.message, 'erro'); }
+      }, 'perigo'));
+    }
+    abrirMenu(ancora, itens);
+  }
+
+  // ---------- DMs e perfil ----------
+  async function abrirDmCom(usuario) {
+    const d = await api('POST', '/dms', { usuario });
+    if (!E.dms.some((x) => x.canalId === d.canalId)) E.dms.unshift(d);
+    E.presenca.set(d.outro.id, d.outro.status);
+    E.modo = 'dm'; E.servidorId = null;
+    await abrirCanal(d.canalId);
+  }
+  function modalNovaDm() {
+    const u = h('input', { maxlength: 20, placeholder: 'nome_de_usuario' });
+    u.oninput = () => { u.value = u.value.toLowerCase().replace(/^@/, ''); };
+    abrirModal({ titulo: 'Nova conversa', sub: 'Digita o nome de usuário da pessoa.', corpo: [campo('Usuário', u)], botao: 'Conversar',
+      acao: () => abrirDmCom(u.value.trim()) });
+  }
+  function menuPerfil(ancora) {
+    const definir = async (status) => {
+      const r = await pedir('presenca', { status });
+      if (r.erro) return toast(r.erro, 'erro');
+      E.eu.status = status; renderSide(); renderMembros();
+    };
+    abrirMenu(ancora, [
+      h('div', { style: 'padding:8px 10px 4px' }, h('b', {}, E.eu.nome), h('div', { style: 'color:var(--fraco);font-size:12px' }, '@' + E.eu.usuario)),
+      h('hr'),
+      ['online', 'ausente', 'ocupado'].map((x) => item([h('span', { class: 'bolinha ' + STATUS[x][0] }), STATUS[x][1]], () => definir(x))),
+      h('hr'),
+      item(E.eu.status === 'foco' ? '⛔ Modo foco (ligado)' : '⛔ Modo foco', () => abrirMenu(ancora, [
+        h('div', { style: 'padding:6px 10px;color:var(--fraco);font-size:12px' }, 'Sem avisos por…'),
+        [[15, '15 minutos'], [30, '30 minutos'], [60, '1 hora'], [120, '2 horas'], [0, 'Desligar foco']].map(([m, r]) => item(r, async () => {
+          try {
+            E.eu = Object.assign(E.eu, await api('PATCH', '/eu', { focoMinutos: m }));
+            renderSide(); renderMembros();
+            toast(m ? `⛔ Modo foco por ${r}` : 'Modo foco desligado', 'ok');
+          } catch (err) { toast(err.message, 'erro'); }
+        }))])),
+      item('🔔 Som de aviso: ' + SONS[ler('aura-som') || 'plim'], () => abrirMenu(ancora, [
+        h('div', { style: 'padding:6px 10px;color:var(--fraco);font-size:12px' }, 'Toca quando te mencionam ou chega DM'),
+        Object.entries(SONS).map(([k, r]) => item(((ler('aura-som') || 'plim') === k ? '✓ ' : '') + r, () => { salvar('aura-som', k); tocarSom(k); }))])),
+      item(document.documentElement.classList.contains('streamer') ? '🎥 Modo streamer (ligado)' : '🎥 Modo streamer', () => {
+        const ligar = !document.documentElement.classList.contains('streamer');
+        aplicarStreamer(ligar);
+        toast(ligar ? '🎥 Modo streamer ligado: convites e DMs escondidos' : 'Modo streamer desligado', 'ok');
+      }),
+      item('♿ Alto contraste', () => alternarAcess('contraste', '♿ Alto contraste')),
+      item('🔠 Fonte grande', () => alternarAcess('fonte-grande', '🔠 Fonte grande')),
+      item('📐 Modo compacto', () => alternarAcess('compacto', '📐 Modo compacto')),
+      item('⌨️ Atalhos', modalAtalhos),
+      item('✨ Novidades do app', modalNovidades),
+      item('✏️ Editar perfil', modalPerfil),
+      item('🚪 Sair da conta', async () => { await api('POST', '/sair').catch(() => {}); location.href = '/entrar.html'; }, 'perigo'),
+    ]);
+  }
+  function modalPerfil() {
+    const nome = h('input', { maxlength: 32 }); nome.value = E.eu.nome;
+    const status = h('input', { maxlength: 80, placeholder: 'Ex: jogando Valorant 🎮' }); status.value = E.eu.statusTexto || '';
+    let cor = E.eu.cor;
+    const cores = h('div', { class: 'cores' }, CORES.map((c) => {
+      const b = h('button', { type: 'button', class: c === cor ? 'ativa' : '', title: c });
+      b.style.background = c;
+      b.onclick = () => { cor = c; cores.querySelectorAll('button').forEach((x) => x.classList.toggle('ativa', x === b)); };
+      return b;
+    }));
+    const v = E.eu.vitrine || {};
+    const bio = h('input', { maxlength: 190, placeholder: 'Ex: main suporte, jogo de noite 🎧' }); bio.value = v.bio || '';
+    let banner = v.banner || 'nebulosa';
+    const banners = h('div', { class: 'cores' }, Object.entries(BANNERS).map(([k, g]) => {
+      const b = h('button', { type: 'button', class: 'banner-op' + (k === banner ? ' ativa' : ''), title: k });
+      b.style.background = g;
+      b.onclick = () => { banner = k; banners.querySelectorAll('button').forEach((x) => x.classList.toggle('ativa', x === b)); };
+      return b;
+    }));
+    const jogos = h('input', { maxlength: 160, placeholder: 'Valorant, LoL, Minecraft (até 5)' }); jogos.value = (v.jogos || []).join(', ');
+    const links = h('textarea', { rows: 2, maxlength: 1100, placeholder: 'https://twitch.tv/voce (um por linha, até 5)', class: 'campo-area' }); links.value = (v.links || []).join('\n');
+    const aniver = h('input', { maxlength: 5, placeholder: 'DD/MM' });
+    if (v.aniversario) { const [mm, dd] = v.aniversario.split('-'); aniver.value = `${dd}/${mm}`; }
+    abrirModal({ titulo: 'Seu perfil vitrine', corpo: [campo('Nome de exibição', nome), campo('Recado', status), h('div', { class: 'campo' }, h('span', {}, 'Cor do avatar'), cores),
+      h('div', { class: 'campo' }, h('span', {}, 'Banner'), banners), campo('Bio', bio), campo('Jogos favoritos', jogos), campo('Links na bio', links), campo('Aniversário', aniver)], botao: 'Salvar',
+      acao: async () => {
+        const a = aniver.value.trim();
+        const m = /^(\d{1,2})\/(\d{1,2})$/.exec(a);
+        if (a && !m) throw new Error('Aniversário no formato DD/MM.');
+        E.eu = Object.assign(E.eu, await api('PATCH', '/eu', {
+          nome: nome.value.trim(), statusTexto: status.value.trim(), cor, bio: bio.value.trim(), banner,
+          jogos: jogos.value.split(',').map((x) => x.trim()).filter(Boolean),
+          links: links.value.split('\n').map((x) => x.trim()).filter(Boolean),
+          aniversario: m ? `${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}` : '',
+        }));
+        renderSide(); renderMembros(); toast('Perfil atualizado ✨', 'ok');
+      } });
+  }
+
+  // ---------- voz ----------
+  async function entrarVoz(c) {
+    try { await Voz.entrar(c.id, !!c.espacial); Voz.posicoes(E.voz.get(c.id), E.eu.id); renderMapa(); toast('Você entrou em ' + c.nome, 'ok'); } catch (err) { toast(err.message, 'erro'); }
+  }
+
+  // Telas compartilhadas na call: grade flutuante (1 tela grande, 2+ em grade). Os <video> são reaproveitados pra não piscar.
+  const videosTela = new Map();
+  function renderTelas() {
+    let painel = $('#telas');
+    const lista = [];
+    if (Voz.minhaTela) lista.push([E.eu.id, Voz.minhaTela, 'Você']);
+    Voz.telas.forEach((st, uid) => lista.push([uid, st, nomeDe(uid)]));
+    if (!lista.length) { if (painel) painel.remove(); videosTela.clear(); return; }
+    if (!painel) { painel = h('div', { class: 'telas', id: 'telas' }); document.body.append(painel); }
+    painel.classList.toggle('varias', lista.length > 1);
+    const vivos = new Set();
+    const cards = lista.map(([uid, st, nome]) => {
+      vivos.add(uid);
+      let v = videosTela.get(uid);
+      if (!v) { v = h('video', { autoplay: true, playsinline: true }); v.muted = true; videosTela.set(uid, v); }
+      if (v.srcObject !== st) v.srcObject = st;
+      return h('div', { class: 'tela' }, v, h('span', {}, '🖥️ ' + nome),
+        h('button', { class: 'icbtn', title: 'Tela cheia', onclick: () => (v.requestFullscreen ? v.requestFullscreen() : null) }, '⛶'));
+    });
+    for (const k of [...videosTela.keys()]) if (!vivos.has(k)) videosTela.delete(k);
+    painel.replaceChildren(
+      h('div', { class: 'telas-topo' }, h('b', {}, `🖥️ Telas na call (${lista.length})`),
+        h('button', { class: 'icbtn', title: 'Minimizar', onclick: () => painel.classList.toggle('mini') }, '–')),
+      h('div', { class: 'telas-grade' }, cards));
+    videosTela.forEach((v) => { if (v.paused) v.play().catch(() => {}); });
+  }
+
+  // Sala 3D: mapa flutuante; arraste seu avatar e o som dos outros muda de lado/distância.
+  let ultimoMover = 0, arrastando = false;
+  function renderMapa() {
+    if (arrastando) return; // não redesenha no meio do arraste
+    let mapa = $('#mapa3d');
+    const ev = Voz.estado;
+    if (!ev.canalId || !ev.espacial) { if (mapa) mapa.remove(); return; }
+    if (!mapa) { mapa = h('div', { class: 'mapa3d', id: 'mapa3d' }); document.body.append(mapa); }
+    const area = h('div', { class: 'mapa-area' });
+    for (const m of E.voz.get(ev.canalId) || []) {
+      const eu = m.usuarioId === E.eu.id;
+      const p = h('i', { class: 'mapa-av' + (m.falando ? ' falando' : '') + (eu ? ' eu' : ''), title: m.nome }, inicial(m.nome));
+      p.style.background = CORES.includes(m.cor) ? m.cor : '#6b7280';
+      p.style.left = (typeof m.x === 'number' ? m.x : 0.5) * 100 + '%';
+      p.style.top = (typeof m.y === 'number' ? m.y : 0.5) * 100 + '%';
+      if (eu) p.onpointerdown = (e) => {
+        p.setPointerCapture(e.pointerId); arrastando = true;
+        p.onpointermove = (ev2) => {
+          const r = area.getBoundingClientRect();
+          const x = Math.min(1, Math.max(0, (ev2.clientX - r.left) / r.width)), y = Math.min(1, Math.max(0, (ev2.clientY - r.top) / r.height));
+          p.style.left = x * 100 + '%'; p.style.top = y * 100 + '%';
+          if (Date.now() - ultimoMover > 80) { ultimoMover = Date.now(); Voz.mover(x, y); }
+        };
+        p.onpointerup = () => { p.onpointermove = null; arrastando = false; };
+      };
+      area.append(p);
+    }
+    mapa.replaceChildren(h('b', {}, '🌌 Sala 3D'), h('small', {}, 'Arraste você pelo mapa'), area);
+  }
+
+  // ---------- "Me lembra disso" (guardado neste navegador) ----------
+  const lerLembretes = () => { try { return JSON.parse(ler('aura-lembretes') || '[]'); } catch (e) { return []; } };
+  function lembrar(m, min, rotulo) {
+    const lista = lerLembretes();
+    lista.push({ msgId: m.id, canalId: m.canalId, autor: m.autor ? m.autor.nome : 'AURA', texto: corta(m.texto || '🎙 áudio', 120), quando: Date.now() + min * 60e3 });
+    salvar('aura-lembretes', JSON.stringify(lista));
+    if (window.Notification && Notification.permission === 'default') Notification.requestPermission().catch(() => {});
+    toast(`⏰ Combinado! Te lembro em ${rotulo.toLowerCase()}.`, 'ok');
+  }
+  setInterval(() => {
+    const lista = lerLembretes(), agora = Date.now();
+    const vencidos = lista.filter((l) => l.quando <= agora);
+    if (!vencidos.length) return;
+    salvar('aura-lembretes', JSON.stringify(lista.filter((l) => l.quando > agora)));
+    for (const l of vencidos) {
+      toast(`⏰ Lembrete — ${l.autor}: ${l.texto}`, 'ok');
+      try { if (window.Notification && Notification.permission === 'granted') new Notification('⏰ Lembrete da AURA', { body: `${l.autor}: ${l.texto}` }); } catch (e) {}
+    }
+  }, 15000);
+
+  // ---------- mensagem com efeito: /confete, /fogo, /explosao no começo da mensagem ----------
+  const EFEITOS = { confete: ['🎉', ['🎉', '🎊', '✨', '🥳']], fogo: ['🔥', ['🔥', '🔥', '💥']], explosao: ['💥', ['💥', '✨', '💫']] };
+  const RE_EFEITO = /^\/(confete|fogo|explosao)\s*/i;
+  const efeitoDe = (t) => { const r = RE_EFEITO.exec(t || ''); return r ? r[1].toLowerCase() : null; };
+  function dispararEfeito(ef) {
+    const camada = h('div', { class: 'camada-efeito', 'aria-hidden': 'true' });
+    const lista = EFEITOS[ef][1];
+    for (let i = 0; i < 36; i++) {
+      const p = h('span', {}, lista[i % lista.length]);
+      p.style.left = (i * 37 % 100) + '%';
+      p.style.animationDelay = (i % 9) * 0.08 + 's';
+      p.style.fontSize = 18 + (i * 7 % 18) + 'px';
+      camada.append(p);
+    }
+    document.body.append(camada);
+    setTimeout(() => camada.remove(), 3200);
+  }
+
+  // ---------- /time N jogo (fecha o time) e /pomodoro N (estudo em grupo): cartões feitos de mensagem + reações ----------
+  const RE_CMD = /^\/(time|pomodoro)\s+(\d{1,3})\s*([\s\S]*)$/i;
+  function comandoDe(t) {
+    const r = RE_CMD.exec(t || '');
+    if (!r) return null;
+    const tipo = r[1].toLowerCase(), n = Number(r[2]);
+    if (tipo === 'time' ? n < 2 || n > 20 : n < 5 || n > 120) return null;
+    return { tipo, n, extra: corta(r[3].trim(), 60) };
+  }
+  const vigiados = () => { try { return JSON.parse(ler('aura-vigiados') || '[]'); } catch (e) { return []; } };
+  // /alerta texto: só vale do dono do servidor; vira faixa vermelha + som pra todo mundo
+  const RE_ALERTA = /^\/alerta\s+([\s\S]+)$/i;
+  function alertaDe(m) {
+    const r = RE_ALERTA.exec(m.texto || '');
+    if (!r || !m.autor) return null;
+    const s = E.servidores.find((x) => x.canais.some((k) => k.id === m.canalId));
+    return s && s.donoId === m.autor.id ? r[1].trim() : null;
+  }
+  const RE_PENEIRA = /^\/peneira\s+/i;
+  // /enquete Pergunta | opção 1 | opção 2 … (até 6): votos = reações coloridas (o servidor só aceita emoji pictográfico)
+  const NUMS = ['🟣', '🟠', '🟢', '🔵', '🟡', '🔴'];
+  function enqueteDe(t) {
+    const r = /^\/enquete\s+([\s\S]+)$/i.exec(t || '');
+    if (!r) return null;
+    const partes = r[1].split('|').map((x) => x.trim()).filter(Boolean);
+    return partes.length >= 3 ? { pergunta: corta(partes[0], 140), opcoes: partes.slice(1, 7).map((o) => corta(o, 60)) } : null;
+  }
+  // /dado 2d20, /dado 6, /moeda: resultado vem do id da mensagem (dado pelo servidor), igual pra todo mundo
+  const RE_DADO = /^\/(dado(\s+(\d{1,2})?d?(\d{1,3}))?|moeda)\s*$/i;
+  function rolar(m) {
+    let x = (m.id * 2654435761) >>> 0;
+    const prox = () => { x = (x + 0x6d2b79f5) >>> 0; let t = Math.imul(x ^ (x >>> 15), 1 | x); t ^= t + Math.imul(t ^ (t >>> 7), 61 | t); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+    const r = RE_DADO.exec(m.texto);
+    if (r[1].toLowerCase() === 'moeda') return [h('h3', {}, '💰 Cara ou coroa'), h('div', { class: 'resultado' }, prox() < 0.5 ? 'Cara' : 'Coroa')];
+    const qtd = Math.min(10, Math.max(1, Number(r[3]) || 1)), lados = Math.min(100, Math.max(2, Number(r[4]) || 6));
+    const vals = Array.from({ length: qtd }, () => 1 + Math.floor(prox() * lados));
+    return [h('h3', {}, `🎲 ${qtd}d${lados}`), h('div', { class: 'resultado' }, vals.join(' + ') + (qtd > 1 ? ` = ${vals.reduce((a, b) => a + b, 0)}` : ''))];
+  }
+  const naReacao = (m, em) => ((m.reacoes || []).find((r) => r.emoji === em) || { usuarios: [] }).usuarios;
+  function nomeDe(uid) {
+    if (uid === E.eu.id) return E.eu.nome;
+    for (const l of E.membros.values()) { const x = l.find((u) => u.id === uid); if (x) return x.nome; }
+    return 'alguém';
+  }
+  const textoPomo = (fim) => {
+    const s = Math.ceil((fim - Date.now()) / 1000);
+    return s > 0 ? `⏳ ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')} restantes` : '✅ Acabou! Pausa de 5 min ☕';
+  };
+  function cartaoComando(m, c) {
+    if (c.tipo === 'time') {
+      const dentro = naReacao(m, '✋'), falta = c.n - dentro.length, eu = dentro.includes(E.eu.id);
+      const s = E.servidores.find((x) => x.canais.some((k) => k.id === m.canalId));
+      const voz = s && s.canais.find((x) => x.tipo === 'voz');
+      return h('div', { class: 'card' }, h('h3', {}, `🎮 Fecha o time${c.extra ? ' — ' + c.extra : ''}`),
+        h('div', { class: 'sub' }, falta > 0 ? `Falta ${falta} pro ${c.n}!` : '✅ Time fechado! Bora pra call', dentro.length ? ' · ' + dentro.map(nomeDe).join(', ') : ''),
+        barra(dentro.length / c.n * 100),
+        h('div', { class: 'acoes' },
+          h('button', { class: 'bt' + (eu ? '' : ' prim'), onclick: () => reagir(m.id, '✋') }, eu ? 'Sair do time' : '✋ Tô dentro'),
+          falta <= 0 && voz ? h('button', { class: 'bt prim', onclick: () => entrarVoz(voz) }, '🔊 Entrar na call') : null));
+    }
+    const fim = m.criadoEm + c.n * 60e3, foco = naReacao(m, '🍅');
+    const b = barra(0);
+    Object.assign(b.firstChild.dataset, { fim, total: c.n * 60e3 });
+    b.firstChild.className = 'pomo-i';
+    b.firstChild.style.width = Math.min(100, (1 - (fim - Date.now()) / (c.n * 60e3)) * 100) + '%';
+    return h('div', { class: 'card' }, h('h3', {}, `🍅 Pomodoro em grupo — ${c.n} min${c.extra ? ' · ' + c.extra : ''}`),
+      h('div', { class: 'sub pomo', 'data-fim': fim }, textoPomo(fim)), b,
+      h('div', { class: 'sub', style: 'margin-top:6px' }, foco.length ? '🍅 Focando: ' + foco.map(nomeDe).join(', ') : 'Ninguém entrou ainda.'),
+      h('div', { class: 'acoes' }, h('button', { class: 'bt' + (foco.includes(E.eu.id) ? '' : ' prim'), onclick: () => reagir(m.id, '🍅') }, foco.includes(E.eu.id) ? 'Sair do foco' : '🍅 Focar junto')));
+  }
+  setInterval(() => {
+    document.querySelectorAll('.pomo').forEach((el) => { el.textContent = textoPomo(Number(el.dataset.fim)); });
+    document.querySelectorAll('.pomo-i').forEach((el) => { el.style.width = Math.min(100, (1 - (Number(el.dataset.fim) - Date.now()) / Number(el.dataset.total)) * 100) + '%'; });
+  }, 1000);
+  function avisarTime(antes, depois) {
+    const c = comandoDe(depois.texto);
+    if (!c || c.tipo !== 'time') return;
+    const a = naReacao(antes, '✋').length, d = naReacao(depois, '✋');
+    if (a < c.n && d.length >= c.n && d.includes(E.eu.id)) { toast('🎮 Time fechado! Bora pra call', 'ok'); tocarSom('vinheta'); }
+  }
+
+  // ---------- sons de aviso (sintetizados, sem arquivo) ----------
+  const SONS = { plim: 'Plim', zap: 'Zap zap', tambor: 'Tambor', desligado: 'Sem som' };
+  let ctxSom = null;
+  function tocarSom(nome) {
+    if (nome === 'desligado') return;
+    try {
+      ctxSom = ctxSom || new (window.AudioContext || window.webkitAudioContext)();
+      const notas = { plim: [[880, 0], [1320, 0.12]], zap: [[660, 0], [990, 0.09], [660, 0.18], [990, 0.27]], tambor: [[110, 0], [90, 0.15], [140, 0.3]], vinheta: [[523, 0], [659, 0.1], [784, 0.2], [1047, 0.3]] }[nome] || [];
+      for (const [f, t] of notas) {
+        const o = ctxSom.createOscillator(), g = ctxSom.createGain(), t0 = ctxSom.currentTime + t;
+        o.type = nome === 'tambor' ? 'triangle' : 'sine';
+        o.frequency.value = f;
+        g.gain.setValueAtTime(0.2, t0);
+        g.gain.exponentialRampToValueAtTime(0.001, t0 + 0.25);
+        o.connect(g).connect(ctxSom.destination);
+        o.start(t0); o.stop(t0 + 0.26);
+      }
+    } catch (e) {}
+  }
+
+  // ---------- modo streamer: esconde convites e prévias de DM ----------
+  function aplicarStreamer(ligado) {
+    document.documentElement.classList.toggle('streamer', ligado);
+    salvar('aura-streamer', ligado ? '1' : '');
+  }
+  aplicarStreamer(ler('aura-streamer') === '1');
+
+  // ---------- acessibilidade: alto contraste e fonte grande ----------
+  for (const c of ['contraste', 'fonte-grande']) document.documentElement.classList.toggle(c, ler('aura-' + c) === '1');
+  function alternarAcess(c, rotulo) {
+    const ligar = !document.documentElement.classList.contains(c);
+    document.documentElement.classList.toggle(c, ligar);
+    salvar('aura-' + c, ligar ? '1' : '');
+    toast(`${rotulo} ${ligar ? 'ligado' : 'desligado'}`, 'ok');
+  }
+
+  // ---------- modo compacto e atalhos de teclado ----------
+  document.documentElement.classList.toggle('compacto', ler('aura-compacto') === '1');
+  addEventListener('keydown', (e) => {
+    if (!e.ctrlKey || !e.shiftKey || !window.Voz) return;
+    const k = e.key.toLowerCase();
+    if (k === 'm') Voz.alternarMudo();
+    else if (k === 'd') Voz.alternarSurdo();
+    else if (k === 'l') Voz.sair();
+    else return;
+    e.preventDefault();
+  });
+  const modalAtalhos = () => abrirModal({ titulo: '⌨️ Atalhos', sub: 'Funcionam com a AURA aberta e em foco.', corpo: h('ul', { class: 'novidades' },
+    [['Ctrl + Shift + M', 'Mutar / desmutar microfone'], ['Ctrl + Shift + D', 'Ensurdecer'], ['Ctrl + Shift + L', 'Sair da call'], ['Enter', 'Enviar mensagem'], ['Esc', 'Fechar janelas e menus']]
+      .map(([t, d]) => h('li', {}, h('div', {}, h('b', {}, t), h('small', {}, d))))) });
+
+  // ---------- AFK inteligente: 10 min sem mexer → ausente + mic mudo; voltou → online ----------
+  let ultimaAtividade = Date.now(), afk = false;
+  for (const ev of ['mousemove', 'keydown', 'pointerdown', 'wheel']) addEventListener(ev, () => {
+    ultimaAtividade = Date.now();
+    if (afk) {
+      afk = false;
+      pedir('presenca', { status: 'online' }).then((r) => { if (!r.erro) { E.eu.status = 'online'; renderSide(); renderMembros(); toast('👋 Bem-vindo de volta!', 'ok'); } });
+    }
+  }, { passive: true });
+  setInterval(() => {
+    if (afk || !E.eu || E.eu.status !== 'online' || Date.now() - ultimaAtividade < 10 * 60e3) return;
+    afk = true;
+    pedir('presenca', { status: 'ausente' }).then((r) => { if (!r.erro) { E.eu.status = 'ausente'; renderSide(); renderMembros(); } });
+    if (window.Voz && Voz.estado.canalId && !Voz.estado.mudo) Voz.alternarMudo();
+  }, 30000);
+
+  // ---------- tema ----------
+  function alternarTema() {
+    const t = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+    document.documentElement.dataset.theme = t;
+    salvar('aura-tema', t);
+    renderSide();
+  }
+
+  // ---------- eventos do servidor ----------
+  function aoMensagem(m) {
+    const arr = E.msgs.get(m.canalId);
+    const nova = !arr || !arr.some((x) => x.id === m.id);
+    if (nova && m.texto && efeitoDe(m.texto) && (m.canalId === E.canalId)) dispararEfeito(efeitoDe(m.texto));
+    if (nova && m.autor && m.autor.id !== E.eu.id && alertaDe(m)) {
+      toast('🚨 Alerta da staff: ' + corta(alertaDe(m), 90), 'erro');
+      tocarSom('zap');
+      try { if (window.Notification && Notification.permission === 'granted') new Notification('🚨 Alerta da staff', { body: corta(alertaDe(m), 140) }); } catch (e) {}
+    }
+    if (nova && m.autor && m.autor.id !== E.eu.id && E.eu.status !== 'foco' && (mencionaEu(m) || E.dms.some((x) => x.canalId === m.canalId))) tocarSom(ler('aura-som') || 'plim');
+    if (arr && !arr.some((x) => x.id === m.id)) { arr.push(m); arr.sort((a, b) => a.id - b.id); }
+    const d = E.dms.find((x) => x.canalId === m.canalId);
+    if (d) { d.ultima = m; E.dms = [d, ...E.dms.filter((x) => x !== d)]; }
+    const mapa = E.digitando.get(m.canalId);
+    if (mapa && m.autor) mapa.delete(m.autor.id);
+    if (m.canalId === E.canalId) { renderLista(); renderDigitando(); marcarLido(m.canalId); if (d) renderSide(); return; }
+    if (m.autor && m.autor.id !== E.eu.id) {
+      E.naoLidos[m.canalId] = (E.naoLidos[m.canalId] || 0) + 1;
+      if (mencionaEu(m) || d) E.mencoes[m.canalId] = (E.mencoes[m.canalId] || 0) + 1;
+      if (mencionaEu(m) && E.eu.status !== 'ocupado') toast(`${m.autor.nome} mencionou você: ${corta(m.texto, 60)}`);
+      renderRail(); renderSide();
+    }
+  }
+  function trocarMsg(canalId, id, fn) {
+    const arr = E.msgs.get(canalId);
+    if (!arr) return;
+    const i = arr.findIndex((x) => x.id === id);
+    if (i < 0) return;
+    fn(arr, i);
+    if (canalId === E.canalId) renderLista();
+  }
+  function aoCanalNovo(c) {
+    const s = E.servidores.find((x) => x.id === c.servidorId);
+    if (!s || s.canais.some((x) => x.id === c.id)) return;
+    s.canais.push(c);
+    s.canais.sort((a, b) => a.posicao - b.posicao || a.id - b.id);
+    if (s.id === E.servidorId) renderSide();
+  }
+  function aoCanalApagado({ id, servidorId }) {
+    const s = E.servidores.find((x) => x.id === servidorId);
+    if (s) s.canais = s.canais.filter((c) => c.id !== id);
+    E.msgs.delete(id); E.fim.delete(id); delete E.naoLidos[id];
+    if (E.assistindo === id) sairAssistir();
+    if (window.Voz && Voz.estado.canalId === id) Voz.sair();
+    if (E.canalId === id) { toast('Esse canal foi apagado.'); selecionarServidor(servidorId); }
+    else { renderRail(); renderSide(); }
+  }
+  function aoServidorAtualizado(s) {
+    const atual = E.servidores.find((x) => x.id === s.id);
+    if (!atual) return;
+    Object.assign(atual, s);
+    render();
+  }
+  function aoServidorApagado({ id }) {
+    const s = E.servidores.find((x) => x.id === id);
+    if (!s) return;
+    if (window.Voz && s.canais.some((c) => c.id === Voz.estado.canalId)) Voz.sair();
+    E.servidores = E.servidores.filter((x) => x.id !== id);
+    E.membros.delete(id);
+    if (E.servidorId === id) {
+      const prox = E.servidores[0];
+      if (prox) selecionarServidor(prox.id); else { E.servidorId = null; E.canalId = null; render(); }
+    } else renderRail();
+  }
+
+  function conectar() {
+    sock = io({ transports: ['websocket', 'polling'] });
+    let jaConectou = false;
+    Voz.init(sock, () => { renderSide(); renderMapa(); renderTelas(); });
+    sock.on('connect', async () => {
+      $('#conexao').hidden = true;
+      if (jaConectou) {
+        try {
+          E.msgs.clear(); E.fim.clear();
+          E.eu = await api('GET', '/eu');
+          await carregarTudo();
+          if (E.modo === 'servidor' && E.servidorId && !servidorAtual()) E.servidorId = E.servidores[0] ? E.servidores[0].id : null;
+          if (E.servidorId) await carregarMembros(E.servidorId).catch(() => {});
+          const id = E.canalId;
+          E.canalId = null;
+          if (id && acharCanal(id)) await abrirCanal(id, true); else render();
+        } catch (e) {}
+      }
+      jaConectou = true;
+      renderSide(); renderMembros();
+    });
+    sock.on('disconnect', () => { $('#conexao').hidden = false; E.assistindo = null; renderSide(); });
+    sock.on('assistir:estado', (e) => { if (!e || e.canalId !== E.assistindo) return; estadoA = e; aplicarEstado(); });
+    sock.on('connect_error', (e) => { if (e && e.message === 'nao-autorizado') location.href = '/entrar.html'; else $('#conexao').hidden = false; });
+
+    sock.on('msg:nova', aoMensagem);
+    sock.on('msg:editada', (m) => trocarMsg(m.canalId, m.id, (arr, i) => { arr[i] = m; }));
+    sock.on('msg:apagada', ({ id, canalId }) => trocarMsg(canalId, id, (arr, i) => { arr.splice(i, 1); }));
+    sock.on('msg:reacoes', ({ id, canalId, reacoes }) => trocarMsg(canalId, id, (arr, i) => { const antes = arr[i]; arr[i] = Object.assign({}, antes, { reacoes }); avisarTime(antes, arr[i]); }));
+    sock.on('digitando', ({ canalId, usuario }) => {
+      if (!usuario || usuario.id === E.eu.id) return;
+      if (!E.digitando.has(canalId)) E.digitando.set(canalId, new Map());
+      E.digitando.get(canalId).set(usuario.id, { nome: usuario.nome, ate: Date.now() + 4000 });
+      if (canalId === E.canalId) renderDigitando();
+    });
+    sock.on('presenca', ({ usuarioId, status }) => {
+      if (usuarioId === E.eu.id) { if (status !== 'offline') E.eu.status = status; }
+      else {
+        if ((E.presenca.get(usuarioId) || 'offline') === 'offline' && status !== 'offline' && vigiados().includes(usuarioId)) {
+          toast(`🟢 ${nomeDe(usuarioId)} ficou online!`, 'ok');
+          tocarSom(ler('aura-som') || 'plim');
+        }
+        E.presenca.set(usuarioId, status);
+      }
+      renderMembros();
+      if (E.modo === 'dm') renderSide();
+    });
+    sock.on('membro:entrou', ({ servidorId, membro }) => {
+      const lista = E.membros.get(servidorId);
+      if (lista && !lista.some((m) => m.id === membro.id)) lista.push(membro);
+      if (membro.id !== E.eu.id) E.presenca.set(membro.id, membro.status);
+      if (servidorId === E.servidorId) renderMembros();
+    });
+    sock.on('membro:saiu', ({ servidorId, usuarioId }) => {
+      if (usuarioId === E.eu.id) return aoServidorApagado({ id: servidorId });
+      const lista = E.membros.get(servidorId);
+      if (lista) E.membros.set(servidorId, lista.filter((m) => m.id !== usuarioId));
+      if (servidorId === E.servidorId) renderMembros();
+    });
+    sock.on('canal:novo', aoCanalNovo);
+    sock.on('membro:atualizado', aoMembroAtualizado);
+    sock.on('denuncia:nova', ({ servidorId }) => {
+      const s = E.servidores.find((x) => x.id === servidorId);
+      toast(`🚩 Nova denúncia em ${s ? s.nome : 'um servidor'} — abre o Painel da staff`, 'ok');
+    });
+    sock.on('canal:apagado', aoCanalApagado);
+    sock.on('servidor:atualizado', aoServidorAtualizado);
+    sock.on('servidor:apagado', aoServidorApagado);
+    sock.on('dm:nova', (d) => {
+      if (E.dms.some((x) => x.canalId === d.canalId)) return;
+      E.dms.unshift(d);
+      E.presenca.set(d.outro.id, d.outro.status);
+      renderRail(); if (E.modo === 'dm') renderSide();
+    });
+    sock.on('voz:membros', ({ canalId, membros }) => {
+      const antes = new Set((E.voz.get(canalId) || []).map((m) => m.usuarioId));
+      if (canalId === Voz.estado.canalId && antes.size && (membros || []).some((m) => !antes.has(m.usuarioId) && m.usuarioId !== E.eu.id)) tocarSom('vinheta');
+      if (membros && membros.length) E.voz.set(canalId, membros); else E.voz.delete(canalId);
+      if (canalId === Voz.estado.canalId) { Voz.posicoes(membros, E.eu.id); renderMapa(); }
+      renderSide();
+    });
+    sock.on('xp:ganho', (d) => {
+      if (!d) return;
+      if (d.subiuNivel) toast(`⭐ Subiu pro nível ${d.nivel}!`, 'ok');
+      if (d.missaoCompleta) toast(`🏆 Missão completa: ${d.missaoCompleta.titulo}${d.missaoCompleta.selo ? ' — selo ' + d.missaoCompleta.selo.emoji : ''}`, 'ok');
+      if (d.servidorId === E.servidorId) {
+        clearTimeout(E.missaoTimer);
+        E.missaoTimer = setTimeout(() => carregarMissoes(d.servidorId), 800);
+      }
+    });
+  }
+
+  // ---------- início ----------
+  async function iniciar() {
+    try {
+      E.eu = await api('GET', '/eu');
+      await carregarTudo();
+    } catch (err) {
+      if (err.message !== 'Sessão expirada.') toast('Não consegui carregar: ' + err.message, 'erro');
+      return;
+    }
+    conectar();
+    const salvo = ler('aura-servidor');
+    if (salvo === 'dm') return abrirDms();
+    const s = E.servidores.find((x) => x.id === Number(salvo)) || E.servidores[0];
+    if (s) await selecionarServidor(s.id); else render();
+  }
+  iniciar();
+})();
