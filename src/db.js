@@ -243,6 +243,34 @@ db.exec(`UPDATE usuarios SET cor = CASE cor WHEN '#7c5cff' THEN '#367bf0' WHEN '
 export const PALETA = ['#367bf0', '#1fa2ff', '#2fd0ff', '#3ee6a8', '#1d4ed8', '#c2410c', '#0e7490', '#db2777'];
 export const corAleatoria = () => PALETA[crypto.randomInt(PALETA.length)];
 
+// ---------------------------------------------------------------- amizades
+// Uma linha por par: `de` pediu, `para` recebeu; status 'aceita' = amigos.
+db.exec(`
+CREATE TABLE IF NOT EXISTS amizades (
+  de        INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+  para      INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+  status    TEXT NOT NULL CHECK (status IN ('pendente','aceita')),
+  criado_em INTEGER NOT NULL,
+  PRIMARY KEY (de, para)
+);
+CREATE INDEX IF NOT EXISTS idx_amizades_para ON amizades(para);
+`);
+export const amizadeEntre = (a, b) =>
+  q('SELECT * FROM amizades WHERE (de = ? AND para = ?) OR (de = ? AND para = ?)').get(a, b, b, a) ?? null;
+export const pedirAmizade = (de, para) =>
+  q(`INSERT INTO amizades (de, para, status, criado_em) VALUES (?, ?, 'pendente', ?)`).run(de, para, Date.now());
+export const aceitarAmizade = (de, para) =>
+  q(`UPDATE amizades SET status = 'aceita' WHERE de = ? AND para = ? AND status = 'pendente'`).run(de, para).changes > 0;
+export const removerAmizade = (a, b) =>
+  q('DELETE FROM amizades WHERE (de = ? AND para = ?) OR (de = ? AND para = ?)').run(a, b, b, a).changes > 0;
+export const amigosDe = (uid) =>
+  q(`SELECT CASE WHEN de = ? THEN para ELSE de END AS id FROM amizades WHERE status = 'aceita' AND (de = ? OR para = ?)`)
+    .all(uid, uid, uid).map((r) => r.id);
+export const amizadesDoUsuario = (uid) =>
+  q(`SELECT a.de, a.para, a.status AS amizade, u.* FROM amizades a
+     JOIN usuarios u ON u.id = CASE WHEN a.de = ? THEN a.para ELSE a.de END
+     WHERE a.de = ? OR a.para = ? ORDER BY u.nome COLLATE NOCASE`).all(uid, uid, uid);
+
 // ---------------------------------------------------------------- usuários
 export function criarUsuario({ usuario, nome, hash, salt, cor }) {
   const r = q(`INSERT INTO usuarios (usuario, nome, senha_hash, senha_salt, cor, criado_em)

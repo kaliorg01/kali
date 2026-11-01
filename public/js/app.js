@@ -63,6 +63,7 @@
     naoLidos: {}, mencoes: {}, digitando: new Map(), resumo: new Map(), rascunho: new Map(),
     novaDesde: new Map(), busca: '', editando: null,
     missoes: new Map(), temp: 0, assistindo: null,
+    amigos: { amigos: [], recebidos: [], enviados: [] },
   };
   const TEMPOS = [[0, 'Desligado', '⏱'], [60, '1 minuto', '1m'], [600, '10 minutos', '10m'], [3600, '1 hora', '1h'], [86400, '24 horas', '24h']];
   const restante = (ate) => {
@@ -172,6 +173,7 @@
     E.naoLidos = {};
     for (const s of servidores) Object.assign(E.naoLidos, s.naoLidos || {});
     for (const d of dms) { E.naoLidos[d.canalId] = d.naoLidos || 0; E.presenca.set(d.outro.id, d.outro.status); }
+    await carregarAmigos();
     E.membros.clear();
   }
   async function carregarMembros(sid) {
@@ -266,7 +268,8 @@
     const rail = $('#rail');
     const nDm = E.dms.reduce((t, d) => t + (E.naoLidos[d.canalId] || 0), 0);
     const bDm = h('button', { class: 'srv logo-btn' + (E.modo === 'dm' ? ' ativo' : ''), title: 'Mensagens diretas', onclick: abrirDms }, logo());
-    if (nDm) bDm.append(h('span', { class: 'bad' }, nDm > 99 ? '99+' : nDm));
+    const nAvisos = nDm + E.amigos.recebidos.length;
+    if (nAvisos) bDm.append(h('span', { class: 'bad' }, nAvisos > 99 ? '99+' : nAvisos));
     const itens = [bDm, h('div', { class: 'sep' })];
     for (const s of E.servidores) {
       const b = h('button', { class: 'srv' + (E.modo === 'servidor' && s.id === E.servidorId ? ' ativo' : ''), title: s.nome, onclick: () => selecionarServidor(s.id) }, s.sigla || inicial(s.nome));
@@ -303,6 +306,27 @@
     if (E.modo === 'dm') {
       partes.push(h('div', { class: 'side-topo' }, h('span', {}, 'Mensagens diretas')));
       const corpo = h('div', { class: 'side-corpo' }, h('button', { class: 'btn-novo', onclick: modalNovaDm }, h('span', { style: 'font-size:18px' }, '＋'), 'Nova conversa'));
+      const A = E.amigos;
+      if (A.recebidos.length) {
+        corpo.append(h('div', { class: 'rot' }, `Pedidos de amizade (${A.recebidos.length})`));
+        for (const u of A.recebidos) corpo.append(h('div', { class: 'dm-item amigo' }, avatar(u, '', true),
+          h('span', { class: 'txt' }, h('b', {}, u.nome), h('small', {}, '@' + u.usuario)),
+          h('button', { class: 'icbtn', title: 'Aceitar', onclick: () => acaoAmigo('POST', `/amigos/${u.id}/aceitar`, `Agora você e ${u.nome} são amigos!`) }, '✓'),
+          h('button', { class: 'icbtn', title: 'Recusar', onclick: () => acaoAmigo('DELETE', `/amigos/${u.id}`) }, '✕')));
+      }
+      corpo.append(h('div', { class: 'rot' }, `Amigos — ${A.amigos.filter((u) => st(u.id)[0] !== 'off').length} online`,
+        h('button', { title: 'Adicionar amigo', onclick: modalAdicionarAmigo }, '＋')));
+      if (!A.amigos.length && !A.enviados.length) corpo.append(h('p', { class: 'vazio-lateral' }, 'Nenhum amigo ainda. Clica no ＋ e adiciona pelo nome de usuário.'));
+      const ordem = { on: 0, aus: 1, ocup: 1, off: 2 };
+      for (const u of [...A.amigos].sort((a, b) => ordem[st(a.id)[0]] - ordem[st(b.id)[0]])) {
+        corpo.append(h('div', { class: 'dm-item amigo' }, avatar(u, '', true),
+          h('button', { class: 'txt', title: 'Mandar mensagem', onclick: () => abrirDmCom(u.usuario).catch((err) => toast(err.message, 'erro')) },
+            h('b', {}, u.nome), h('small', {}, st(u.id)[1])),
+          h('button', { class: 'icbtn', title: 'Desfazer amizade', onclick: () => { if (confirm(`Desfazer amizade com ${u.nome}?`)) acaoAmigo('DELETE', `/amigos/${u.id}`); } }, '✕')));
+      }
+      for (const u of A.enviados) corpo.append(h('div', { class: 'dm-item amigo' }, avatar(u, '', false),
+        h('span', { class: 'txt' }, h('b', {}, u.nome), h('small', {}, 'Pedido enviado…')),
+        h('button', { class: 'icbtn', title: 'Cancelar pedido', onclick: () => acaoAmigo('DELETE', `/amigos/${u.id}`) }, '✕')));
       corpo.append(h('div', { class: 'rot' }, 'Conversas'));
       if (!E.dms.length) corpo.append(h('p', { class: 'vazio-lateral' }, 'Nenhuma conversa ainda. Chama alguém pelo nome de usuário.'));
       for (const d of E.dms) {
@@ -723,7 +747,10 @@
       h('small', {}, '@' + m.usuario + ' · ' + st(m.id)[1] + (m.nivel ? ` · ⭐ nível ${m.nivel}` : '')), m.statusTexto ? h('p', {}, m.statusTexto) : null, ...extras];
     if (m.id !== E.eu.id) {
       const vigia = vigiados().includes(m.id);
+      const ehAmigo = E.amigos.amigos.some((x) => x.id === m.id), pediu = E.amigos.enviados.some((x) => x.id === m.id);
       conteudo.push(h('button', { class: 'bt prim', onclick: () => { fecharMenu(); abrirDmCom(m.usuario); } }, 'Mandar mensagem'),
+        ehAmigo ? null : h('button', { class: 'bt', disabled: pediu, onclick: () => { fecharMenu(); adicionarAmigo(m.usuario).catch((err) => toast(err.message, 'erro')); } },
+          pediu ? 'Pedido enviado' : '👋 Adicionar amigo'),
         h('button', { class: 'bt', onclick: () => {
           fecharMenu();
           salvar('kali-vigiados', JSON.stringify(vigia ? vigiados().filter((x) => x !== m.id) : [...vigiados(), m.id]));
@@ -1180,6 +1207,26 @@
     E.presenca.set(d.outro.id, d.outro.status);
     E.modo = 'dm'; E.servidorId = null;
     await abrirCanal(d.canalId);
+  }
+  // ---------- amigos ----------
+  async function carregarAmigos() {
+    try { E.amigos = await api('GET', '/amigos'); } catch (e) { return; }
+    for (const u of [...E.amigos.amigos, ...E.amigos.recebidos, ...E.amigos.enviados]) E.presenca.set(u.id, u.status);
+  }
+  async function acaoAmigo(metodo, rota, ok) {
+    try { await api(metodo, rota); if (ok) toast(ok, 'ok'); } catch (e) { return toast(e.message, 'erro'); }
+    await carregarAmigos(); renderRail(); if (E.modo === 'dm') renderSide();
+  }
+  async function adicionarAmigo(usuario) {
+    const r = await api('POST', '/amigos', { usuario });
+    toast(r.amigos ? 'Vocês agora são amigos! 🎉' : 'Pedido de amizade enviado ✓', 'ok');
+    await carregarAmigos(); if (E.modo === 'dm') renderSide();
+  }
+  function modalAdicionarAmigo() {
+    const u = h('input', { maxlength: 20, placeholder: 'nome_de_usuario' });
+    u.oninput = () => { u.value = u.value.toLowerCase().replace(/^@/, ''); };
+    abrirModal({ titulo: 'Adicionar amigo', sub: 'Digita o nome de usuário do seu amigo (o @ dele).', corpo: [campo('Usuário', u)], botao: 'Enviar pedido',
+      acao: () => adicionarAmigo(u.value.trim()) });
   }
   function modalNovaDm() {
     const u = h('input', { maxlength: 20, placeholder: 'nome_de_usuario' });
@@ -1653,6 +1700,12 @@
     sock.on('canal:apagado', aoCanalApagado);
     sock.on('servidor:atualizado', aoServidorAtualizado);
     sock.on('servidor:apagado', aoServidorApagado);
+    sock.on('amigos:atualizado', async ({ pedidoDe, aceitoPor } = {}) => {
+      if (pedidoDe) { toast(`👋 ${pedidoDe} quer ser seu amigo — veja em Mensagens diretas`, 'ok'); tocarSom(ler('kali-som') || 'plim'); }
+      if (aceitoPor) toast(`🎉 ${aceitoPor} aceitou sua amizade!`, 'ok');
+      await carregarAmigos();
+      renderRail(); if (E.modo === 'dm') renderSide();
+    });
     sock.on('dm:nova', (d) => {
       if (E.dms.some((x) => x.canalId === d.canalId)) return;
       E.dms.unshift(d);

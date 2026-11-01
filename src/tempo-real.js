@@ -95,6 +95,7 @@ function salasDeInteresse(uid) {
     `u:${uid}`,
     ...db.servidoresDoUsuario(uid).map((s) => `s:${s.id}`),
     ...db.dmsDoUsuario(uid).map((d) => `c:${d.canal_id}`),
+    ...db.amigosDe(uid).map((id) => `u:${id}`),
   ];
 }
 

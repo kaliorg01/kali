@@ -538,6 +538,53 @@ export function criarRotas() {
     res.status(nova ? 201 : 200).json(dmPublica(id, uid));
   });
 
+  // ------------------------------------------------------------ amigos
+  const avisarAmigos = (...ids) => ids.forEach((id) => emitir(`u:${id}`, 'amigos:atualizado', {}));
+  r.get('/amigos', exigirLogin, (req, res) => {
+    const uid = req.usuario.id;
+    const out = { amigos: [], recebidos: [], enviados: [] };
+    for (const row of db.amizadesDoUsuario(uid)) {
+      const u = usuarioPublico(row);
+      if (row.amizade === 'aceita') out.amigos.push(u);
+      else (row.para === uid ? out.recebidos : out.enviados).push(u);
+    }
+    res.json(out);
+  });
+
+  r.post('/amigos', exigirLogin, (req, res) => {
+    const uid = req.usuario.id;
+    const c = corpoDe(req);
+    if (typeof c.usuario !== 'string') throw erro(400, 'Informe o nome de usuário.');
+    const alvo = db.usuarioPorNome(c.usuario.trim().toLowerCase().replace(/^@/, ''));
+    if (!alvo) throw erro(404, 'Usuário não encontrado.');
+    if (alvo.id === uid) throw erro(400, 'Você não pode se adicionar.');
+    const a = db.amizadeEntre(uid, alvo.id);
+    if (a?.status === 'aceita') throw erro(400, 'Vocês já são amigos.');
+    if (a && a.de === uid) throw erro(400, 'Pedido já enviado. Agora é com a outra pessoa.');
+    if (a) db.aceitarAmizade(alvo.id, uid); // a pessoa já tinha me pedido: vira amizade
+    else db.pedirAmizade(uid, alvo.id);
+    emitir(`u:${alvo.id}`, 'amigos:atualizado', a ? { aceitoPor: req.usuario.nome } : { pedidoDe: req.usuario.nome });
+    avisarAmigos(uid);
+    res.status(201).json({ amigos: !!a });
+  });
+
+  r.post('/amigos/:id/aceitar', exigirLogin, (req, res) => {
+    const uid = req.usuario.id;
+    const outro = idDe(req.params.id);
+    if (!db.aceitarAmizade(outro, uid)) throw erro(404, 'Pedido não encontrado.');
+    emitir(`u:${outro}`, 'amigos:atualizado', { aceitoPor: req.usuario.nome });
+    avisarAmigos(uid);
+    res.json({ ok: true });
+  });
+
+  r.delete('/amigos/:id', exigirLogin, (req, res) => {
+    const uid = req.usuario.id;
+    const outro = idDe(req.params.id);
+    if (!db.removerAmizade(uid, outro)) throw erro(404, 'Amizade não encontrada.');
+    avisarAmigos(uid, outro);
+    res.json({ ok: true });
+  });
+
   // ------------------------------------------------------------ missões e ranking
   r.get('/servidores/:id/missoes', exigirLogin, (req, res) => {
     const uid = req.usuario.id;

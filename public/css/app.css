@@ -91,6 +91,9 @@ button.side-topo:hover{background:var(--hover)}
 .dm-item.ativo{background:var(--chip);color:var(--texto)}
 .dm-item .av{width:34px;height:34px;font-size:13px}
 .dm-item .txt{min-width:0;flex:1}
+.dm-item.amigo .txt{display:flex;flex-direction:column;text-align:left}
+.dm-item.amigo .icbtn{width:28px;height:28px;border-radius:8px}
+.dm-item.amigo .icbtn:hover{background:var(--hover);color:var(--texto)}
 .dm-item b{display:block;font-weight:600;color:var(--texto);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dm-item small{display:block;font-size:12px;color:var(--fraco);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dm-item .n{font-size:11px;background:var(--ocup);color:#fff;border-radius:8px;padding:1px 6px;flex:none;font-weight:600}
@@ -310,7 +313,8 @@ img.logo,img.logo-grande{object-fit:cover;border-radius:8px}
 @media (max-width:760px){
   .app,.app.sem-membros{grid-template-columns:64px 1fr 0 0}
   .main{display:none}
-  .app.chat{grid-template-columns:0 0 1fr 0}
+  /* no chat só o .main fica no fluxo da grade (trilho/lateral somem): uma coluna só */
+  .app.chat,.app.chat.sem-membros{grid-template-columns:minmax(0,1fr)}
   .app.chat .main{display:flex}
   .app.chat .rail,.app.chat .side{display:none}
   .busca,.topo .desc{display:none}
@@ -323,6 +327,7 @@ img.logo,img.logo-grande{object-fit:cover;border-radius:8px}
   .app.ver-membros .membros{width:100%}
   .acoes-msg{right:4px}
   .dica{display:none}
+  input,textarea,select{font-size:16px} /* evita o zoom automático do iPhone ao focar */
 }
 
 /* novidades: missões, áudio, temporárias, assistir junto */
