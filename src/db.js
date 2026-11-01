@@ -29,6 +29,8 @@ export const PASTA_AUDIOS = AUDIOS_ENV
   ? path.resolve(AUDIOS_ENV)
   : path.join(path.dirname(CAMINHO_DB), 'audios');
 fs.mkdirSync(PASTA_AUDIOS, { recursive: true });
+export const PASTA_ANEXOS = path.join(path.dirname(CAMINHO_DB), 'anexos');
+fs.mkdirSync(PASTA_ANEXOS, { recursive: true });
 
 const db = new DatabaseSync(CAMINHO_DB);
 db.exec(`
@@ -143,6 +145,11 @@ CREATE TABLE IF NOT EXISTS selos (
 for (const [tabela, coluna, def] of [
   ['membros', 'cargo', "TEXT NOT NULL DEFAULT 'membro'"],
   ['canais', 'privado', 'INTEGER NOT NULL DEFAULT 0'],
+  ['mensagens', 'resposta_a', 'INTEGER'],
+  ['mensagens', 'fixada', 'INTEGER NOT NULL DEFAULT 0'],
+  ['mensagens', 'anexo_nome', 'TEXT'],
+  ['mensagens', 'anexo_tipo', 'TEXT'],
+  ['mensagens', 'anexo_tamanho', 'INTEGER'],
   ['canais', 'senha_hash', 'TEXT'],
   ['canais', 'senha_salt', 'TEXT'],
   ['canais', 'ticket_de', 'INTEGER'],
@@ -242,6 +249,68 @@ export function fecharBanco() {
 db.exec(`UPDATE usuarios SET cor = CASE cor WHEN '#7c5cff' THEN '#367bf0' WHEN '#c056f5' THEN '#1fa2ff' ELSE '#2fd0ff' END WHERE cor IN ('#7c5cff', '#c056f5', '#ff9a3c')`);
 export const PALETA = ['#367bf0', '#1fa2ff', '#2fd0ff', '#3ee6a8', '#1d4ed8', '#c2410c', '#0e7490', '#db2777'];
 export const corAleatoria = () => PALETA[crypto.randomInt(PALETA.length)];
+
+// ---------------------------------------------------------------- cargos personalizados
+// Canal ligado a cargos vira privado e o acesso (canal_acesso) espelha quem tem esses cargos.
+db.exec(`
+CREATE TABLE IF NOT EXISTS cargos (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  servidor_id INTEGER NOT NULL REFERENCES servidores(id) ON DELETE CASCADE,
+  nome        TEXT NOT NULL,
+  cor         TEXT NOT NULL,
+  criado_em   INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS membro_cargos (
+  cargo_id   INTEGER NOT NULL REFERENCES cargos(id) ON DELETE CASCADE,
+  usuario_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+  PRIMARY KEY (cargo_id, usuario_id)
+);
+CREATE TABLE IF NOT EXISTS canal_cargos (
+  canal_id INTEGER NOT NULL REFERENCES canais(id) ON DELETE CASCADE,
+  cargo_id INTEGER NOT NULL REFERENCES cargos(id) ON DELETE CASCADE,
+  PRIMARY KEY (canal_id, cargo_id)
+);
+`);
+export const cargoPorId = (id) => q('SELECT * FROM cargos WHERE id = ?').get(id) ?? null;
+export const cargosDoCanal = (canalId) => q('SELECT cargo_id FROM canal_cargos WHERE canal_id = ?').all(canalId).map((r) => r.cargo_id);
+export const cargosDoServidor = (sid) => q('SELECT id, nome, cor FROM cargos WHERE servidor_id = ? ORDER BY id').all(sid).map((c) => ({
+  ...c,
+  membros: q('SELECT usuario_id FROM membro_cargos WHERE cargo_id = ?').all(c.id).map((r) => r.usuario_id),
+  canais: q('SELECT canal_id FROM canal_cargos WHERE cargo_id = ?').all(c.id).map((r) => r.canal_id),
+}));
+export const criarCargo = (sid, nome, cor) =>
+  Number(q('INSERT INTO cargos (servidor_id, nome, cor, criado_em) VALUES (?, ?, ?, ?)').run(sid, nome, cor, Date.now()).lastInsertRowid);
+function sincronizarCanalPorCargo(canalId) {
+  const tem = cargosDoCanal(canalId).length > 0;
+  q(`UPDATE canais SET privado = CASE WHEN senha_hash IS NOT NULL OR ticket_de IS NOT NULL THEN 1 ELSE ? END WHERE id = ?`).run(tem ? 1 : 0, canalId);
+  if (!tem) return;
+  const quem = 'SELECT usuario_id FROM membro_cargos WHERE cargo_id IN (SELECT cargo_id FROM canal_cargos WHERE canal_id = ?)';
+  q(`DELETE FROM canal_acesso WHERE canal_id = ? AND usuario_id NOT IN (${quem})`).run(canalId, canalId);
+  q(`INSERT OR IGNORE INTO canal_acesso (canal_id, usuario_id) ${quem.replace('SELECT usuario_id', 'SELECT ?, usuario_id')}`).run(canalId, canalId);
+}
+const canaisDoCargo = (cargoId) => q('SELECT canal_id FROM canal_cargos WHERE cargo_id = ?').all(cargoId).map((r) => r.canal_id);
+export function definirMembrosDoCargo(cargoId, ids) {
+  transacao(() => {
+    q('DELETE FROM membro_cargos WHERE cargo_id = ?').run(cargoId);
+    for (const u of ids) q('INSERT INTO membro_cargos (cargo_id, usuario_id) VALUES (?, ?)').run(cargoId, u);
+    for (const c of canaisDoCargo(cargoId)) sincronizarCanalPorCargo(c);
+  });
+}
+export function definirCanaisDoCargo(cargoId, ids) {
+  transacao(() => {
+    const afetados = new Set([...canaisDoCargo(cargoId), ...ids]);
+    q('DELETE FROM canal_cargos WHERE cargo_id = ?').run(cargoId);
+    for (const c of ids) q('INSERT INTO canal_cargos (canal_id, cargo_id) VALUES (?, ?)').run(c, cargoId);
+    for (const c of afetados) sincronizarCanalPorCargo(c);
+  });
+}
+export function apagarCargo(cargoId) {
+  transacao(() => {
+    const afetados = canaisDoCargo(cargoId);
+    q('DELETE FROM cargos WHERE id = ?').run(cargoId);
+    for (const c of afetados) sincronizarCanalPorCargo(c);
+  });
+}
 
 // ---------------------------------------------------------------- amizades
 // Uma linha por par: `de` pediu, `para` recebeu; status 'aceita' = amigos.
@@ -409,16 +478,28 @@ export function acessarCanal(uid, canalId) {
 
 // ---------------------------------------------------------------- DMs
 export const dmsDoUsuario = (uid) =>
-  q(`SELECT c.id AS canal_id, o.usuario_id AS outro_id, c.criado_em AS criado_em
+  q(`SELECT c.id AS canal_id, MIN(o.usuario_id) AS outro_id, c.criado_em AS criado_em
      FROM dm_participantes p
      JOIN canais c ON c.id = p.canal_id AND c.tipo = 'dm'
      JOIN dm_participantes o ON o.canal_id = c.id AND o.usuario_id != p.usuario_id
-     WHERE p.usuario_id = ?`).all(uid);
+     WHERE p.usuario_id = ? GROUP BY c.id`).all(uid);
 export const dmEntre = (a, b) =>
   q(`SELECT c.id FROM canais c
      JOIN dm_participantes x ON x.canal_id = c.id AND x.usuario_id = ?
      JOIN dm_participantes y ON y.canal_id = c.id AND y.usuario_id = ?
-     WHERE c.tipo = 'dm' LIMIT 1`).get(a, b)?.id ?? null;
+     WHERE c.tipo = 'dm' AND c.nome = 'dm' LIMIT 1`).get(a, b)?.id ?? null;
+export const participantesDm = (canalId) =>
+  q('SELECT usuario_id FROM dm_participantes WHERE canal_id = ? ORDER BY usuario_id').all(canalId).map((r) => r.usuario_id);
+export function criarGrupoDm(ids, nome) {
+  return transacao(() => {
+    const r = q(`INSERT INTO canais (servidor_id, nome, tipo, posicao, criado_em) VALUES (NULL, ?, 'dm', 0, ?)`).run(nome, Date.now());
+    const id = Number(r.lastInsertRowid);
+    for (const u of ids) q('INSERT INTO dm_participantes (canal_id, usuario_id) VALUES (?, ?)').run(id, u);
+    return id;
+  });
+}
+export const sairDoGrupoDm = (canalId, uid) =>
+  q('DELETE FROM dm_participantes WHERE canal_id = ? AND usuario_id = ?').run(canalId, uid).changes > 0;
 export function criarDm(a, b) {
   return transacao(() => {
     const existente = dmEntre(a, b);
@@ -438,10 +519,12 @@ const SELECT_MSG = `SELECT m.*, u.usuario AS a_usuario, u.nome AS a_nome, u.cor 
                     FROM mensagens m LEFT JOIN usuarios u ON u.id = m.autor_id`;
 
 export function inserirMensagem({ canalId, autorId, texto, sistema = false, refCanalId = null,
-  audioDuracao = null, transcricao = null, expiraEm = null }) {
+  audioDuracao = null, transcricao = null, expiraEm = null, respostaA = null, anexo = null }) {
   const r = q(`INSERT INTO mensagens (canal_id, autor_id, texto, criado_em, sistema, ref_canal_id,
-               audio_duracao, transcricao, expira_em) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(canalId, autorId, texto, Date.now(), sistema ? 1 : 0, refCanalId, audioDuracao, transcricao, expiraEm);
+               audio_duracao, transcricao, expira_em, resposta_a, anexo_nome, anexo_tipo, anexo_tamanho)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(canalId, autorId, texto, Date.now(), sistema ? 1 : 0, refCanalId, audioDuracao, transcricao, expiraEm,
+      respostaA, anexo?.nome ?? null, anexo?.tipo ?? null, anexo?.tamanho ?? null);
   return Number(r.lastInsertRowid);
 }
 export const mensagemPorId = (id) => q(`${SELECT_MSG} WHERE m.id = ?`).get(id) || null;
@@ -523,8 +606,21 @@ export function serMensagem(row, reacoes = []) {
     if (row.transcricao) m.transcricao = row.transcricao;
   }
   if (row.expira_em != null) m.expiraEm = row.expira_em;
+  if (row.fixada) m.fixada = true;
+  if (row.anexo_nome != null) {
+    m.anexo = { url: `/api/anexos/${row.id}`, nome: row.anexo_nome, tipo: row.anexo_tipo, tamanho: row.anexo_tamanho };
+  }
+  if (row.resposta_a != null) {
+    const o = q(`${SELECT_MSG} WHERE m.id = ?`).get(row.resposta_a);
+    m.respostaA = o
+      ? { id: o.id, autor: o.a_nome ?? 'KALI', texto: (o.texto || (o.anexo_nome ? '📎 ' + o.anexo_nome : '🎙 áudio')).slice(0, 120) }
+      : { id: row.resposta_a, apagada: true };
+  }
   return m;
 }
+export const fixarMensagem = (id, fixar) => q('UPDATE mensagens SET fixada = ? WHERE id = ?').run(fixar ? 1 : 0, id);
+export const fixadasDoCanal = (canalId) =>
+  q(`${SELECT_MSG} WHERE m.canal_id = ? AND m.fixada = 1 ORDER BY m.id DESC LIMIT 50`).all(canalId);
 export function serMensagens(rows) {
   const reacoes = reacoesDe(rows.map((r) => r.id));
   return rows.map((r) => serMensagem(r, reacoes.get(r.id) || []));

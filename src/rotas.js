@@ -7,7 +7,7 @@ import {
   conferirSenha, conferirSenhaOuFingir, definirCookieSessao, exigirLogin, gerarHash, limparCookieSessao,
   limparFalhasLogin, loginBloqueado, registrarFalhaLogin, tokenDaRequisicao,
 } from './auth.js';
-import { publicarMensagem,
+import { publicarMensagem, caminhoAnexo, pareceGolpe, respostaValida,
   BONUS_MISSAO, MISSOES, anunciarMensagem, aoApagarCanal, aoApagarServidor, aoAtualizarPerfil, aoSairDoServidor,
   apagarArquivosAudio, caminhoAudio, checarLimiteMensagens, desconectarSessao, emitir, entrarSala,
   membroPublico, nivelDe, origemPermitida, salaDoCanal, semanaAtual, usuarioPublico, xpParaNivel,
@@ -46,7 +46,7 @@ function servidorComoDono(uid, sid) {
 const servidorCompleto = (row, uid) => {
   const s = db.serServidor(row);
   // tickets só aparecem pra staff e pra quem abriu
-  s.canais = s.canais.filter((c) => !c.ticket || db.ehStaff(row.id, uid) || db.temAcessoCanal(c.id, uid));
+  s.canais = s.canais.filter((c) => (!c.ticket && !db.cargosDoCanal(c.id).length) || db.ehStaff(row.id, uid) || db.temAcessoCanal(c.id, uid));
   return { ...s, naoLidos: db.naoLidosDoServidor(uid, row.id) };
 };
 const BANNERS = ['nebulosa', 'oceano', 'floresta', 'por-do-sol', 'neon', 'aurora'];
@@ -95,6 +95,17 @@ function alvoModeravel(uid, sid, alvoId) {
 }
 
 function dmPublica(canalId, uid) {
+  const canal = db.canalPorId(canalId);
+  if (canal && canal.nome !== 'dm') { // grupo no privado
+    const membros = db.participantesDm(canalId).map((id) => db.usuarioPorId(id)).filter(Boolean).map((u) => usuarioPublico(u));
+    const ultimaRow = db.ultimaMensagem(canalId);
+    return {
+      canalId, grupo: true, membros,
+      outro: { id: -canalId, usuario: membros.filter((m) => m.id !== uid).map((m) => m.usuario).join(', '), nome: canal.nome, cor: '#2563eb', status: 'offline', statusTexto: `${membros.length} membros` },
+      ultima: ultimaRow ? db.serMensagens([ultimaRow])[0] : null,
+      naoLidos: db.naoLidosDoCanal(uid, canalId),
+    };
+  }
   const outroId = db.outroDaDm(canalId, uid);
   const outro = outroId ? db.usuarioPorId(outroId) : null;
   if (!outro) return null;
@@ -503,6 +514,44 @@ export function criarRotas() {
     res.status(201).json(msg);
   });
 
+  // Anexo (foto, GIF ou arquivo): corpo binário cru, máx. 8 MB; ?nome=&legenda=&respostaA=
+  const IMAGENS = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+  r.post('/canais/:id/anexo', exigirLogin, express.raw({ type: () => true, limit: '8mb' }), (req, res) => {
+    const canal = db.acessarCanal(req.usuario.id, idDe(req.params.id));
+    if (!podeTerMensagens(canal)) throw erro(400, 'Esse canal não aceita mensagens.');
+    const buf = req.body;
+    if (!Buffer.isBuffer(buf) || !buf.length) throw erro(400, 'Arquivo vazio.');
+    const nome = typeof req.query.nome === 'string' ? req.query.nome.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').trim().slice(0, 120) : '';
+    if (!nome) throw erro(400, 'Nome do arquivo inválido.');
+    const tipoInformado = String(req.get('content-type') || '').split(';')[0].trim().toLowerCase();
+    const tipo = IMAGENS.includes(tipoInformado) ? tipoInformado : 'application/octet-stream';
+    const legenda = typeof req.query.legenda === 'string' ? req.query.legenda.trim().slice(0, 2000) : '';
+    if (legenda && pareceGolpe(legenda)) throw erro(400, '🛡️ Bloqueado: esse link parece golpe.');
+    const respostaA = req.query.respostaA ? respostaValida(Number(req.query.respostaA), canal.id) : null;
+    const uid = req.usuario.id;
+    checarLimiteMensagens(uid);
+    const id = db.inserirMensagem({ canalId: canal.id, autorId: uid, texto: legenda, respostaA, anexo: { nome, tipo, tamanho: buf.length } });
+    fs.writeFileSync(caminhoAnexo(id), buf);
+    res.status(201).json(anunciarMensagem(canal, id));
+  });
+
+  r.get('/anexos/:id', exigirLogin, (req, res) => {
+    const row = db.mensagemPorId(idDe(req.params.id));
+    if (!row || row.anexo_nome == null) throw erro(404, 'Arquivo não encontrado.');
+    db.acessarCanal(req.usuario.id, row.canal_id);
+    const arquivo = caminhoAnexo(row.id);
+    if (!fs.existsSync(arquivo)) throw erro(404, 'Arquivo não encontrado.');
+    res.set('Cache-Control', 'private, max-age=86400');
+    if (IMAGENS.includes(row.anexo_tipo)) { res.set('Content-Disposition', 'inline'); res.type(row.anexo_tipo); }
+    else { res.attachment(row.anexo_nome); res.type('application/octet-stream'); }
+    res.sendFile(arquivo);
+  });
+
+  r.get('/canais/:id/fixadas', exigirLogin, (req, res) => {
+    const canal = db.acessarCanal(req.usuario.id, idDe(req.params.id));
+    res.json(db.serMensagens(db.fixadasDoCanal(canal.id)));
+  });
+
   r.get('/audios/:id', exigirLogin, (req, res) => {
     const row = db.mensagemPorId(idDe(req.params.id));
     if (!row || row.audio_duracao == null) throw erro(404, 'Áudio não encontrado.');
@@ -536,6 +585,89 @@ export function criarRotas() {
     entrarSala(alvo.id, `c:${id}`);
     if (nova) emitir(`u:${alvo.id}`, 'dm:nova', dmPublica(id, alvo.id));
     res.status(nova ? 201 : 200).json(dmPublica(id, uid));
+  });
+
+  r.post('/dms/grupo', exigirLogin, (req, res) => {
+    const uid = req.usuario.id;
+    const c = corpoDe(req);
+    if (!Array.isArray(c.usuarios)) throw erro(400, 'Escolha quem vai no grupo.');
+    const ids = new Set([uid]);
+    for (const n of c.usuarios.slice(0, 20)) {
+      const u = typeof n === 'string' ? db.usuarioPorNome(n.trim().toLowerCase().replace(/^@/, '')) : null;
+      if (!u) throw erro(404, `Usuário "${n}" não encontrado.`);
+      ids.add(u.id);
+    }
+    if (ids.size < 3) throw erro(400, 'Um grupo precisa de pelo menos 2 pessoas além de você.');
+    if (ids.size > 10) throw erro(400, 'Máximo de 10 pessoas no grupo.');
+    const nome = (typeof c.nome === 'string' && c.nome.trim()) ? c.nome.trim().slice(0, 40) : 'Grupo';
+    if (nome === 'dm') throw erro(400, 'Nome inválido.');
+    const id = db.criarGrupoDm([...ids], nome);
+    for (const p of ids) {
+      entrarSala(p, `c:${id}`);
+      if (p !== uid) emitir(`u:${p}`, 'dm:nova', dmPublica(id, p));
+    }
+    res.status(201).json(dmPublica(id, uid));
+  });
+
+  r.delete('/dms/:id', exigirLogin, (req, res) => {
+    const uid = req.usuario.id;
+    const canal = db.acessarCanal(uid, idDe(req.params.id));
+    if (canal.tipo !== 'dm' || canal.nome === 'dm') throw erro(400, 'Só dá pra sair de grupos.');
+    db.sairDoGrupoDm(canal.id, uid);
+    res.json({ ok: true });
+  });
+
+  // ------------------------------------------------------------ cargos personalizados
+  const cargoComoStaff = (uid, id) => {
+    const cargo = db.cargoPorId(idDe(id));
+    if (!cargo) throw erro(404, 'Cargo não encontrado.');
+    servidorComoMembro(uid, cargo.servidor_id);
+    if (!db.ehStaff(cargo.servidor_id, uid)) throw erro(403, 'Só a staff mexe nos cargos.');
+    return cargo;
+  };
+  const avisarCargos = (sid) => emitir(`s:${sid}`, 'cargos:atualizado', { servidorId: sid });
+  const listaDeIds = (v) => {
+    if (!Array.isArray(v) || v.length > 500 || !v.every((x) => Number.isSafeInteger(x) && x > 0)) throw erro(400, 'Lista inválida.');
+    return [...new Set(v)];
+  };
+  r.get('/servidores/:id/cargos', exigirLogin, (req, res) => {
+    const s = servidorComoMembro(req.usuario.id, idDe(req.params.id));
+    res.json(db.cargosDoServidor(s.id));
+  });
+  r.post('/servidores/:id/cargos', exigirLogin, (req, res) => {
+    const uid = req.usuario.id;
+    const s = servidorComoMembro(uid, idDe(req.params.id));
+    if (!db.ehStaff(s.id, uid)) throw erro(403, 'Só a staff cria cargos.');
+    const c = corpoDe(req);
+    const nome = typeof c.nome === 'string' ? c.nome.trim() : '';
+    if (nome.length < 1 || nome.length > 30) throw erro(400, 'O nome do cargo precisa ter de 1 a 30 caracteres.');
+    if (typeof c.cor !== 'string' || !RE_COR.test(c.cor)) throw erro(400, 'Cor inválida.');
+    if (db.cargosDoServidor(s.id).length >= 25) throw erro(400, 'Máximo de 25 cargos por servidor.');
+    const id = db.criarCargo(s.id, nome, c.cor.toLowerCase());
+    avisarCargos(s.id);
+    res.status(201).json({ id });
+  });
+  r.delete('/cargos/:id', exigirLogin, (req, res) => {
+    const cargo = cargoComoStaff(req.usuario.id, req.params.id);
+    db.apagarCargo(cargo.id);
+    avisarCargos(cargo.servidor_id);
+    res.json({ ok: true });
+  });
+  r.put('/cargos/:id/membros', exigirLogin, (req, res) => {
+    const cargo = cargoComoStaff(req.usuario.id, req.params.id);
+    const ids = listaDeIds(corpoDe(req).usuarioIds);
+    if (ids.some((u) => !db.ehMembro(cargo.servidor_id, u))) throw erro(400, 'Alguém da lista não é membro do servidor.');
+    db.definirMembrosDoCargo(cargo.id, ids);
+    avisarCargos(cargo.servidor_id);
+    res.json({ ok: true });
+  });
+  r.put('/cargos/:id/canais', exigirLogin, (req, res) => {
+    const cargo = cargoComoStaff(req.usuario.id, req.params.id);
+    const ids = listaDeIds(corpoDe(req).canalIds);
+    if (ids.some((c) => db.canalPorId(c)?.servidor_id !== cargo.servidor_id)) throw erro(400, 'Canal inválido.');
+    db.definirCanaisDoCargo(cargo.id, ids);
+    avisarCargos(cargo.servidor_id);
+    res.json({ ok: true });
   });
 
   // ------------------------------------------------------------ amigos

@@ -92,6 +92,36 @@ button.side-topo:hover{background:var(--hover)}
 .dm-item .av{width:34px;height:34px;font-size:13px}
 .dm-item .txt{min-width:0;flex:1}
 .dm-item.amigo .txt{display:flex;flex-direction:column;text-align:left}
+.lista-check{display:flex;flex-direction:column;gap:4px;max-height:180px;overflow:auto;margin:4px 0 10px;padding:6px;border:1px solid var(--borda);border-radius:12px}
+.check-amigo{display:flex;align-items:center;gap:6px;padding:4px 6px;border-radius:8px;cursor:pointer}
+.check-amigo:hover{background:var(--hover)}
+.check-amigo small{color:var(--fraco)}
+.cargos li{align-items:center}
+.bolinha-cargo{width:14px;height:14px;border-radius:50%;flex:none;margin-top:0!important}
+.cargos li>div:nth-child(2){flex:1;min-width:0}
+.acoes-cargo{display:flex;gap:4px}
+.acoes-cargo .bt{padding:6px 8px}
+.novo-cargo{display:flex;align-items:flex-end;gap:8px}
+.novo-cargo .campo{flex:1}
+.cor-cargo{width:44px;height:40px;padding:2px;border:1px solid var(--borda);border-radius:10px;background:var(--chip);margin-bottom:12px}
+/* responder, fixar, anexos */
+.resposta-a{display:block;max-width:100%;margin:2px 0 4px;padding:2px 8px;border-left:3px solid var(--roxo);border-radius:6px;background:var(--chip);color:var(--suave);font-size:12.5px;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.resposta-a b{color:var(--texto);font-weight:600}
+.resposta-a:hover{background:var(--hover)}
+.fixada{margin-left:6px;font-size:12px}
+.respondendo{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 12px;margin-bottom:6px;border-radius:12px;background:var(--chip);border:1px solid var(--chip-borda);font-size:13px;color:var(--suave)}
+.respondendo span{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.respondendo b{color:var(--texto)}
+.respondendo button{color:var(--fraco);padding:2px 6px;border-radius:6px}
+.respondendo button:hover{background:var(--hover);color:var(--texto)}
+.anexo-img{display:inline-block;margin-top:6px;max-width:min(360px,100%)}
+.anexo-img img{display:block;max-width:100%;max-height:320px;border-radius:12px;border:1px solid var(--borda);object-fit:contain;background:var(--chip)}
+.anexo-arq{display:flex;align-items:center;gap:10px;margin-top:6px;max-width:min(360px,100%);padding:10px 12px;border:1px solid var(--borda);border-radius:12px;background:var(--chip);color:var(--texto);text-decoration:none}
+.anexo-arq:hover{border-color:var(--roxo)}
+.anexo-arq .ic{font-size:24px}
+.anexo-arq .txt{display:flex;flex-direction:column;min-width:0}
+.anexo-arq b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.anexo-arq small{color:var(--fraco);font-size:12px}
 .dm-item.amigo .icbtn{width:28px;height:28px;border-radius:8px}
 .dm-item.amigo .icbtn:hover{background:var(--hover);color:var(--texto)}
 .dm-item b{display:block;font-weight:600;color:var(--texto);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

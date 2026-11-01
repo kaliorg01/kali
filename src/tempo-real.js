@@ -153,6 +153,15 @@ export function checarLimiteMensagens(uid) {
 }
 
 export const caminhoAudio = (id) => path.join(db.PASTA_AUDIOS, `${id}.webm`);
+export const caminhoAnexo = (id) => path.join(db.PASTA_ANEXOS, String(id));
+/** Id de mensagem respondida: precisa existir e ser do mesmo canal. */
+export function respostaValida(v, canalId) {
+  if (v === undefined || v === null) return null;
+  if (!Number.isInteger(v) || v < 1) throw erro(400, 'Resposta inválida.');
+  const alvo = db.mensagemPorId(v);
+  if (!alvo || alvo.canal_id !== canalId) throw erro(400, 'A mensagem respondida não existe mais.');
+  return v;
+}
 function apagarArquivoAudio(id) {
   fs.rm(caminhoAudio(id), { force: true }, () => {});
 }
@@ -192,6 +201,7 @@ export function removerMensagem(row) {
     timersExpiracao.delete(row.id);
   }
   if (row.audio_duracao != null) apagarArquivoAudio(row.id);
+  if (row.anexo_nome != null) fs.rm(caminhoAnexo(row.id), { force: true }, () => {});
   const canal = db.canalPorId(row.canal_id);
   if (canal) emitir(salaDoCanal(canal), 'msg:apagada', { id: row.id, canalId: row.canal_id });
   return true;
@@ -575,9 +585,21 @@ function aoConectar(socket) {
     }
     const canal = db.acessarCanal(uid, canalId);
     if (!podeTerMensagens(canal)) throw erro(400, 'Esse canal não aceita mensagens de texto.');
+    const respostaA = respostaValida(d.respostaA, canal.id);
     checarLimiteMensagens(uid);
-    const msg = publicarMensagem(canal, { autorId: uid, texto, expiraEm });
+    const msg = publicarMensagem(canal, { autorId: uid, texto, expiraEm, respostaA });
     return { ok: true, msg };
+  });
+
+  ouvir(socket, 'msg:fixar', (d) => {
+    exigirObjeto(d);
+    const row = db.mensagemPorId(exigirId(d.id, 'Mensagem'));
+    if (!row || row.sistema) throw erro(404, 'Mensagem não encontrada.');
+    const canal = db.acessarCanal(uid, row.canal_id);
+    if (canal.servidor_id != null && !db.ehStaff(canal.servidor_id, uid)) throw erro(403, 'Só a staff pode fixar mensagens.');
+    db.fixarMensagem(row.id, d.fixar !== false);
+    emitir(salaDoCanal(canal), 'msg:editada', db.mensagemCompleta(row.id));
+    return { ok: true };
   });
 
   ouvir(socket, 'msg:editar', (d) => {
