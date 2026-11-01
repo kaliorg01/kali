@@ -107,6 +107,69 @@ button.side-topo:hover{background:var(--hover)}
 .msg.bloqueada{opacity:.7}
 .sec-menu{padding:10px 10px 4px;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--fraco)}
 .menu{max-height:min(80vh,640px);overflow-y:auto}
+/* DMs estilo Discord: Amigos/Loja no topo e tela de Amigos */
+.nav-dm{display:flex;align-items:center;gap:12px;width:100%;padding:10px 12px;border-radius:10px;color:var(--suave);font-weight:600;margin-bottom:2px}
+.nav-dm .ic{width:24px;text-align:center;font-size:17px}
+.nav-dm .n{margin-left:auto;font-size:11px;color:#fff;background:var(--ocup);border-radius:8px;padding:1px 6px}
+.nav-dm:hover{background:var(--hover);color:var(--texto)}
+.nav-dm.ativo{background:var(--chip);color:var(--texto)}
+.topo-amigos{flex-wrap:wrap;height:auto;min-height:54px;padding-top:8px;padding-bottom:8px}
+.topo-amigos h1{flex:none!important;margin-right:8px}
+.abas-amigos{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.abas-amigos button{padding:4px 10px;border-radius:6px;color:var(--suave);font-weight:500}
+.abas-amigos button:hover{background:var(--hover);color:var(--texto)}
+.abas-amigos button.ativa{background:var(--chip);color:var(--texto)}
+.abas-amigos .add{background:#248046;color:#fff}
+.abas-amigos .add.ativa{background:transparent;color:#3ee6a8}
+.amigos-corpo{padding-top:16px;overflow-y:auto}
+.linha-amigo{display:flex;align-items:center;gap:12px;padding:10px 8px;border-top:1px solid var(--borda-fina);border-radius:8px}
+.linha-amigo:hover{background:var(--hover)}
+.linha-amigo .txt{flex:1;min-width:0;display:flex;flex-direction:column}
+.linha-amigo .txt small{color:var(--fraco);font-weight:400}
+.linha-amigo .acoes{display:flex;gap:8px}
+.linha-amigo .icbtn{border-radius:50%;background:var(--chip)}
+.linha-amigo .icbtn.ok:hover{color:var(--ok)}
+.linha-amigo .icbtn.perigo:hover{color:var(--ocup)}
+.add-amigo{display:flex;gap:8px;align-items:center;margin-top:12px;padding:8px 8px 8px 14px;border:1px solid var(--borda);border-radius:12px;background:var(--chip)}
+.add-amigo input{flex:1;min-width:0;background:none;border:0;outline:0;color:var(--texto);padding:8px 0}
+.amigos-corpo h3{font-size:14px;letter-spacing:.04em}
+.vazio-amigos{text-align:center;padding:40px 0}
+.mais-caixa{font-size:18px;border-radius:50%!important}
+.mais-caixa.temp-on{color:var(--aus);border-color:var(--aus)}
+/* telas cheias (configurações) */
+.tela-cheia{position:fixed;inset:0;z-index:60;display:grid;grid-template-columns:minmax(200px,30%) 1fr;background:var(--bg);animation:telaIn .2s ease}
+@keyframes telaIn{from{opacity:0;transform:scale(1.03)}}
+.tela-abas{display:flex;flex-direction:column;align-items:flex-end;gap:2px;padding:48px 10px 20px;background:var(--sidebar);border-right:1px solid var(--borda);overflow-y:auto}
+.tela-abas>*{width:min(220px,100%)}
+.tela-abas button{text-align:left;padding:8px 12px;border-radius:8px;color:var(--suave);font-weight:500}
+.tela-abas button:hover{background:var(--hover);color:var(--texto)}
+.tela-abas button.ativa{background:var(--chip);color:var(--texto)}
+.tela-abas button.perigo{color:var(--ocup)}
+.tela-conteudo{padding:48px 40px 40px;overflow-y:auto;max-width:760px}
+.tela-conteudo h2{font-size:20px;margin-bottom:18px}
+.tela-fechar{position:absolute;top:40px;right:28px;width:40px;height:40px;border-radius:50%;border:2px solid var(--fraco);color:var(--suave);display:grid;place-items:center;font-size:14px}
+.tela-fechar small{position:absolute;top:44px;font-size:11px;color:var(--fraco)}
+.tela-fechar:hover{border-color:var(--texto);color:var(--texto)}
+.linha-cfg{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px 0;border-bottom:1px solid var(--borda-fina);flex-wrap:wrap}
+.linha-cfg small{display:block;color:var(--fraco);font-size:12.5px;margin-top:2px}
+.linha-cfg .ctl{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.linha-cfg input,.linha-cfg select{padding:9px 12px;border:1px solid var(--borda);border-radius:10px;background:var(--chip);color:var(--texto)}
+.cartao-conta{display:flex;align-items:center;gap:14px;padding:16px;border-radius:16px;background:var(--chip);border:1px solid var(--borda);margin-bottom:8px}
+.cartao-conta small{display:block;color:var(--fraco)}
+.av-conta{width:64px!important;height:64px!important;font-size:24px}
+.chave{width:44px;height:24px;border-radius:12px;background:var(--fraco);position:relative;transition:background .2s;flex:none}
+.chave i{position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:transform .2s}
+.chave.on{background:var(--ok)}
+.chave.on i{transform:translateX(20px)}
+@media (max-width:760px){
+  .tela-cheia{grid-template-columns:1fr;grid-template-rows:auto 1fr}
+  .tela-abas{flex-direction:row;align-items:center;padding:12px 56px 8px 10px;overflow-x:auto;border-right:0;border-bottom:1px solid var(--borda)}
+  .tela-abas>*{width:auto;flex:none}
+  .tela-abas .sec-menu{display:none}
+  .tela-conteudo{padding:20px 16px 40px}
+  .tela-fechar{top:8px;right:10px;width:34px;height:34px}
+  .tela-fechar small{display:none}
+}
 /* loja */
 .av:has(.moldura){overflow:visible}
 .av .moldura{position:absolute;left:-18%;top:-18%;width:136%;height:136%;object-fit:contain;pointer-events:none;z-index:1}

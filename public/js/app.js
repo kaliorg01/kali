@@ -237,10 +237,12 @@
     E.servidorId = null;
     salvar('kali-servidor', 'dm');
     const salvo = Number(ler('kali-canal-dm'));
-    const alvo = E.dms.find((d) => d.canalId === salvo) || E.dms[0];
+    // Igual ao Discord: o início das DMs abre a tela de Amigos.
+    void salvo;
     E.canalId = null;
+    E.telaAmigos = true;
     $('#app').classList.remove('chat');
-    if (alvo) await abrirCanal(alvo.canalId, true); else render();
+    render();
   }
   async function abrirCanal(id, semMobile) {
     const c = acharCanal(id);
@@ -314,9 +316,15 @@
     const partes = [];
     if (E.modo === 'dm') {
       partes.push(h('div', { class: 'side-topo' }, h('span', {}, 'Mensagens diretas')));
-      const corpo = h('div', { class: 'side-corpo' }, h('button', { class: 'btn-novo', onclick: modalNovaDm }, h('span', { style: 'font-size:18px' }, '＋'), 'Nova conversa'),
-        h('button', { class: 'btn-novo', onclick: modalNovoGrupo }, h('span', { style: 'font-size:16px' }, '👥'), 'Novo grupo'));
-      const A = E.amigos;
+      // Igual ao Discord: Amigos e Loja no topo, depois "Mensagens diretas ＋".
+      const pend = E.amigos.recebidos.length;
+      const corpo = h('div', { class: 'side-corpo' },
+        h('button', { class: 'nav-dm' + (E.telaAmigos ? ' ativo' : ''), onclick: abrirAmigos }, h('span', { class: 'ic' }, '👋'), 'Amigos', pend ? h('span', { class: 'n mencao' }, pend) : null),
+        h('button', { class: 'nav-dm', onclick: modalLoja }, h('span', { class: 'ic' }, '🛍'), 'Loja'));
+      const bNova = h('button', { title: 'Nova conversa ou grupo' }, '＋');
+      bNova.onclick = () => abrirMenu(bNova, [item('Nova conversa', modalNovaDm), item('Novo grupo', modalNovoGrupo)]);
+      corpo.append(h('div', { class: 'rot' }, 'Mensagens diretas', bNova));
+      const A = { recebidos: [], amigos: [], enviados: [] }; // amigos agora ficam na tela "Amigos"
       if (A.recebidos.length) {
         corpo.append(h('div', { class: 'rot' }, `Pedidos de amizade (${A.recebidos.length})`));
         for (const u of A.recebidos) corpo.append(h('div', { class: 'dm-item amigo' }, avatar(u, '', true),
@@ -324,9 +332,6 @@
           h('button', { class: 'icbtn', title: 'Aceitar', onclick: () => acaoAmigo('POST', `/amigos/${u.id}/aceitar`, `Agora você e ${u.nome} são amigos!`) }, '✓'),
           h('button', { class: 'icbtn', title: 'Recusar', onclick: () => acaoAmigo('DELETE', `/amigos/${u.id}`) }, '✕')));
       }
-      corpo.append(h('div', { class: 'rot' }, `Amigos — ${A.amigos.filter((u) => st(u.id)[0] !== 'off').length} online`,
-        h('button', { title: 'Adicionar amigo', onclick: modalAdicionarAmigo }, '＋')));
-      if (!A.amigos.length && !A.enviados.length) corpo.append(h('p', { class: 'vazio-lateral' }, 'Nenhum amigo ainda. Clica no ＋ e adiciona pelo nome de usuário.'));
       const ordem = { on: 0, aus: 1, ocup: 1, off: 2 };
       for (const u of [...A.amigos].sort((a, b) => ordem[st(a.id)[0]] - ordem[st(b.id)[0]])) {
         corpo.append(h('div', { class: 'dm-item amigo' }, avatar(u, '', true),
@@ -337,11 +342,10 @@
       for (const u of A.enviados) corpo.append(h('div', { class: 'dm-item amigo' }, avatar(u, '', false),
         h('span', { class: 'txt' }, h('b', {}, u.nome), h('small', {}, 'Pedido enviado…')),
         h('button', { class: 'icbtn', title: 'Cancelar pedido', onclick: () => acaoAmigo('DELETE', `/amigos/${u.id}`) }, '✕')));
-      corpo.append(h('div', { class: 'rot' }, 'Conversas'));
-      if (!E.dms.length) corpo.append(h('p', { class: 'vazio-lateral' }, 'Nenhuma conversa ainda. Chama alguém pelo nome de usuário.'));
+      if (!E.dms.length) corpo.append(h('p', { class: 'vazio-lateral' }, 'Nenhuma conversa ainda. Clica no ＋ ou chama um amigo.'));
       for (const d of E.dms) {
         const n = E.naoLidos[d.canalId] || 0;
-        corpo.append(h('button', { class: 'dm-item' + (d.canalId === E.canalId ? ' ativo' : ''), onclick: () => abrirCanal(d.canalId) },
+        corpo.append(h('button', { class: 'dm-item' + (!E.telaAmigos && d.canalId === E.canalId ? ' ativo' : ''), onclick: () => { E.telaAmigos = false; abrirCanal(d.canalId); } },
           avatar(d.outro, '', !d.grupo),
           h('span', { class: 'txt' }, h('b', {}, d.outro.nome), h('small', {}, d.ultima ? corta(d.ultima.texto || '🎙 áudio', 40) : '@' + d.outro.usuario)),
           n ? h('span', { class: 'n' }, n) : null));
@@ -383,16 +387,16 @@
     const eu = h('button', { class: 'eu', title: 'Status e perfil', onclick: (e) => menuPerfil(e.currentTarget) },
       avatar(E.eu, '', true), h('span', { class: 'txt' }, h('b', {}, E.eu.nome), h('small', {}, rotStatus(E.eu))));
     eu.querySelector('.av').style.cssText += ';width:34px;height:34px';
-    const tema = document.documentElement.dataset.theme === 'dark' ? '☀' : '☾';
     partes.push(h('div', { class: 'side-pe' }, eu,
       h('button', { class: 'icbtn' + (ev.mudo ? ' desligado' : ''), title: ev.mudo ? 'Ativar microfone' : 'Silenciar microfone', onclick: () => Voz.alternarMudo() }, '🎤'),
       h('button', { class: 'icbtn' + (ev.surdo ? ' desligado' : ''), title: ev.surdo ? 'Ativar áudio' : 'Desativar áudio', onclick: () => Voz.alternarSurdo() }, '🎧'),
-      h('button', { class: 'icbtn', title: 'Tema claro/escuro', onclick: alternarTema }, tema)));
+      h('button', { class: 'icbtn', title: 'Configurações', onclick: () => configUsuario() }, '⚙')));
     side.replaceChildren(...partes);
   }
 
   function renderMain() {
     const main = $('#main');
+    if (E.modo === 'dm' && E.telaAmigos) return renderAmigos(main);
     const c = canalAtual();
     if (!c || c.tipo === 'voz') {
       const semServidor = !E.servidores.length && E.modo === 'servidor';
@@ -414,14 +418,15 @@
       h('button', { class: 'icbtn voltar', title: 'Voltar', onclick: () => $('#app').classList.remove('chat') }, '←'),
       h('h1', {}, titulo), h('span', { class: 'desc' }, desc),
       h('button', { class: 'pill ia', onclick: verResumo }, '✦', h('span', { class: 'rotulo' }, ' O que eu perdi?')),
-      h('label', { class: 'pill busca' }, '⌕ ', busca),
-      h('button', { class: 'pill', title: 'Mensagens fixadas', onclick: () => modalFixadas(c.id) }, '📌'),
+      // Mesma ordem do Discord: notificações, fixadas, membros, busca.
       h('button', { class: 'pill', title: silenciado(c.id) ? 'Reativar avisos deste canal' : 'Silenciar este canal', onclick: (e) => {
         const on = alternarLocal('kali-silenciados', c.id); e.currentTarget.textContent = on ? '🔕' : '🔔';
         toast(on ? '🔕 Canal silenciado: sem som nem aviso' : '🔔 Avisos do canal reativados', 'ok');
       } }, silenciado(c.id) ? '🔕' : '🔔'),
+      h('button', { class: 'pill', title: 'Mensagens fixadas', onclick: () => modalFixadas(c.id) }, '📌'),
       c.dm && c.dm.grupo ? h('button', { class: 'pill', title: 'Sair do grupo', onclick: () => sairDoGrupo(c) }, '🚪') : null,
-      h('button', { class: 'pill', title: 'Membros', onclick: alternarMembros }, '👥'));
+      h('button', { class: 'pill', title: 'Membros', onclick: alternarMembros }, '👥'),
+      h('label', { class: 'pill busca' }, '⌕ ', busca));
     const lista = h('div', { class: 'col', id: 'lista' });
     const msgs = h('section', { class: 'msgs', id: 'msgs' }, lista);
     msgs.addEventListener('scroll', () => { if (msgs.scrollTop < 80) carregarAntigas(); }, { passive: true });
@@ -447,12 +452,19 @@
       TEMPOS.map(([s, r]) => item((E.temp === s ? '✓ ' : '') + r, () => { E.temp = s; bTemp.textContent = curto(); bTemp.classList.toggle('temp-on', !!s); }))]);
     const arq = h('input', { type: 'file', hidden: true });
     arq.onchange = () => { if (arq.files[0]) enviarArquivo(c.id, arq.files[0], ta); arq.value = ''; };
-    const bAnexo = h('button', { class: 'icbtn', type: 'button', title: 'Enviar foto, GIF ou arquivo (até 8 MB)', onclick: () => arq.click() }, '📎');
+    // Igual ao Discord: um ＋ à esquerda com arquivo e extras.
+    const bAnexo = h('button', { class: 'icbtn mais-caixa' + (E.temp ? ' temp-on' : ''), type: 'button', title: 'Enviar arquivo e mais' }, '＋');
+    bAnexo.onclick = () => abrirMenu(bAnexo, [
+      item('Enviar foto, GIF ou arquivo', () => arq.click()),
+      item('Mensagem temporária: ' + TEMPOS.find((t) => t[0] === E.temp)[1], () => abrirMenu(bAnexo, [h('div', { class: 'sec-menu' }, 'A mensagem some depois de'),
+        TEMPOS.map(([s, r]) => item((E.temp === s ? '✓ ' : '') + r, () => { E.temp = s; bAnexo.classList.toggle('temp-on', !!s); }))])),
+      item('Enquete', () => { ta.value = '/enquete Pergunta? | Opção 1 | Opção 2'; ta.oninput(); ta.focus(); }),
+    ]);
     ta.addEventListener('paste', (e) => { const f = [...(e.clipboardData?.files || [])][0]; if (f) { e.preventDefault(); enviarArquivo(c.id, f, ta); } });
     const compositor = h('div', { class: 'compositor' }, h('div', { class: 'col' },
       h('div', { class: 'digitando', id: 'digitando' }),
       h('div', { class: 'respondendo', id: 'respondendo', hidden: true }),
-      h('div', { class: 'caixa' }, bAnexo, arq, bTemp, ta, info, emoji, bGrav, h('button', { class: 'enviar', title: 'Enviar', onclick: () => enviar(c.id, ta) }, '↑')),
+      h('div', { class: 'caixa' }, bAnexo, arq, ta, info, emoji, bGrav, h('button', { class: 'enviar', title: 'Enviar', onclick: () => enviar(c.id, ta) }, '↑')),
       h('div', { class: 'dica' }, '@usuario menciona · /time 5 Valorant · /pomodoro 25 · /confete /fogo /explosao')));
     main.replaceChildren(topo, c.tipo === 'assistir' ? h('section', { class: 'palco', id: 'palco' }) : '', msgs, compositor);
     requestAnimationFrame(ajustar);
@@ -601,14 +613,14 @@
       const bEmoji = h('button', { title: 'Reagir' }, '😀');
       bEmoji.onclick = () => abrirMenu(bEmoji, h('div', { class: 'emojis' }, EMOJIS.map((em) => item(em, () => reagir(m.id, em)))));
       const bLembrar = h('button', { title: 'Me lembra disso' }, '⏰');
-      bLembrar.onclick = () => abrirMenu(bLembrar, [h('div', { style: 'padding:6px 10px;color:var(--fraco);font-size:12px' }, 'Me lembra disso em…'),
+      bLembrar.onclick = () => abrirMenu(bMais, [h('div', { style: 'padding:6px 10px;color:var(--fraco);font-size:12px' }, 'Me lembra disso em…'),
         [[10, '10 minutos'], [60, '1 hora'], [180, '3 horas'], [1440, 'Amanhã']].map(([min, r]) => item(r, () => lembrar(m, min, r)))]);
       const bEnc = h('button', { title: 'Encaminhar' }, '↪');
       bEnc.onclick = () => {
         const destinos = [];
         for (const sv of E.servidores) for (const k of sv.canais) if (k.tipo === 'texto' && k.id !== m.canalId) destinos.push([k.id, `# ${k.nome} · ${sv.nome}`]);
         for (const d of E.dms) if (d.canalId !== m.canalId) destinos.push([d.canalId, '@ ' + d.outro.nome]);
-        abrirMenu(bEnc, [h('div', { style: 'padding:6px 10px;color:var(--fraco);font-size:12px' }, 'Encaminhar para…'),
+        abrirMenu(bMais, [h('div', { style: 'padding:6px 10px;color:var(--fraco);font-size:12px' }, 'Encaminhar para…'),
           destinos.length ? destinos.slice(0, 15).map(([id, r]) => item(r, async () => {
             const res = await pedir('msg:enviar', { canalId: id, texto: corta(`↪ Encaminhado de ${m.autor ? m.autor.nome : 'KALI'}: ${m.texto || '🎙 áudio'}`, 2000) });
             toast(res.erro || 'Mensagem encaminhada ↪', res.erro ? 'erro' : 'ok');
@@ -616,14 +628,23 @@
       };
       const bResp = h('button', { title: 'Responder' }, '↩️');
       bResp.onclick = () => { E.respondendo = m; renderResposta(); $('.caixa textarea')?.focus(); };
-      acoes.append(bResp, bEmoji, bLembrar, bEnc);
-      if (!s || souStaffEm(s.id)) acoes.append(h('button', { title: m.fixada ? 'Desafixar' : 'Fixar', onclick: async () => {
-        const r = await pedir('msg:fixar', { id: m.id, fixar: !m.fixada });
-        toast(r.erro || (m.fixada ? 'Mensagem desafixada' : 'Mensagem fixada 📌'), r.erro ? 'erro' : 'ok');
-      } }, '📌'));
-      if (!minha && s) acoes.append(h('button', { title: 'Denunciar', onclick: () => modalDenuncia(m) }, '🚩'));
-      if (minha && m.texto) acoes.append(h('button', { title: 'Editar', onclick: () => { E.editando = m.id; renderLista(); } }, '✏️'));
-      if (minha || souDono(s)) acoes.append(h('button', { class: 'perigo', title: 'Apagar', onclick: () => apagarMsg(m) }, '🗑'));
+      // Igual ao Discord: reagir e responder à mostra; o resto no "⋯ Mais".
+      const bMais = h('button', { title: 'Mais' }, '⋯');
+      bMais.onclick = () => abrirMenu(bMais, [
+        minha && m.texto ? item('Editar mensagem', () => { E.editando = m.id; renderLista(); }) : null,
+        item('Responder', () => bResp.click()),
+        !s || souStaffEm(s.id) ? item(m.fixada ? 'Desafixar mensagem' : 'Fixar mensagem', async () => {
+          const r = await pedir('msg:fixar', { id: m.id, fixar: !m.fixada });
+          toast(r.erro || (m.fixada ? 'Mensagem desafixada' : 'Mensagem fixada 📌'), r.erro ? 'erro' : 'ok');
+        }) : null,
+        item('Encaminhar', () => bEnc.click()),
+        item('Me lembra disso', () => bLembrar.click()),
+        m.texto ? item('Copiar texto', () => { navigator.clipboard?.writeText(m.texto).then(() => toast('Texto copiado ✓', 'ok')).catch(() => {}); }) : null,
+        !minha && s ? item('Denunciar mensagem', () => modalDenuncia(m)) : null,
+        minha || souDono(s) ? item('Apagar mensagem', () => apagarMsg(m), 'perigo') : null,
+      ].filter(Boolean));
+      bLembrar.hidden = true; bEnc.hidden = true;
+      acoes.append(bEmoji, bResp, bMais, bLembrar, bEnc);
       div.append(acoes);
     }
     return div;
@@ -796,10 +817,16 @@
     const s = servidorAtual();
     const lista = s ? E.membros.get(s.id) : null;
     if (!lista) return box.replaceChildren(fechar, h('p', { class: 'vazio-lateral' }, s ? 'Carregando membros…' : ''));
-    const grupos = { Online: [], Ausente: [], Offline: [] };
+    // Igual ao Discord: quem está online aparece agrupado pelo cargo (com cor); offline fica no fim.
+    const cargosSrv = E.cargos.get(s.id) || [];
+    const grupos = {};
+    for (const c of cargosSrv) grupos[c.nome] = [];
+    Object.assign(grupos, { Online: [], Ausente: [], Offline: [] });
     for (const m of lista) {
-      const x = statusDe(m.id);
-      (x === 'offline' ? grupos.Offline : x === 'ausente' ? grupos.Ausente : grupos.Online).push(m);
+      const x = statusDe(m.id), cg = cargosSrv.find((c) => c.membros.includes(m.id));
+      if (x === 'offline') grupos.Offline.push(m);
+      else if (cg) grupos[cg.nome].push(m);
+      else (x === 'ausente' ? grupos.Ausente : grupos.Online).push(m);
     }
     const partes = [fechar, cartaoMissao(s.id)].filter(Boolean);
     for (const [nome, membros] of Object.entries(grupos)) {
@@ -1284,23 +1311,15 @@
   function menuServidor(ancora) {
     const s = servidorAtual();
     if (!s) return;
-    const itens = [item('📨 Convidar pessoas', modalConvite), item('🎫 Abrir ticket com a staff', modalTicket)];
-    if (souStaffEm(s.id)) itens.push(item('🛡️ Painel da staff', painelStaff), item('🎭 Cargos', () => modalCargos(s)));
+    // Mesma ordem do menu do servidor no Discord.
+    const itens = [item('Convidar pessoas', modalConvite)];
+    if (souStaffEm(s.id)) itens.push(item('Configurações do servidor', () => configServidor(s)));
+    if (souDono(s)) itens.push(item('Criar canal', () => modalCanal('texto')));
+    itens.push(item('Abrir ticket com a staff', modalTicket));
     const atual = canalAtual();
-    if (atual && atual.ticket && (atual.ticket === E.eu.id || souStaffEm(s.id))) itens.push(item('🔒 Fechar este ticket', () => apagarCanal(atual)));
-    if (souDono(s)) {
-      itens.push(item('🖼️ Ícone do servidor', () => escolherImagem(`/servidores/${s.id}/imagem/icone`)),
-        item('🌄 Banner do servidor', () => escolherImagem(`/servidores/${s.id}/imagem/banner`)));
-      itens.push(item('＃ Criar canal', () => modalCanal('texto')), item('✏️ Renomear servidor', () => {
-        const nome = h('input', { maxlength: 40 }); nome.value = s.nome;
-        abrirModal({ titulo: 'Renomear servidor', corpo: [campo('Nome', nome)], botao: 'Salvar',
-          acao: async () => { aoServidorAtualizado(await api('PATCH', '/servidores/' + s.id, { nome: nome.value.trim() })); } });
-      }), h('hr'), item('🗑 Apagar servidor', () => {
-        abrirModal({ titulo: 'Apagar ' + s.nome + '?', sub: 'Isso apaga todos os canais e mensagens pra sempre.', botao: 'Apagar', perigo: true,
-          acao: async () => { await api('DELETE', '/servidores/' + s.id); aoServidorApagado({ id: s.id }); } });
-      }, 'perigo'));
-    } else {
-      itens.push(h('hr'), item('🚪 Sair do servidor', async () => {
+    if (atual && atual.ticket && (atual.ticket === E.eu.id || souStaffEm(s.id))) itens.push(item('Fechar este ticket', () => apagarCanal(atual)));
+    if (!souDono(s)) {
+      itens.push(h('hr'), item('Sair do servidor', async () => {
         if (!confirm('Sair de ' + s.nome + '?')) return;
         try { await api('POST', `/servidores/${s.id}/sair`); aoServidorApagado({ id: s.id }); } catch (err) { toast(err.message, 'erro'); }
       }, 'perigo'));
@@ -1316,10 +1335,60 @@
     E.modo = 'dm'; E.servidorId = null;
     await abrirCanal(d.canalId);
   }
+  // ---------- tela Amigos (abas Online / Todos / Pendentes / Bloqueados / Adicionar amigo) ----------
+  function abrirAmigos() {
+    E.modo = 'dm'; E.servidorId = null; E.telaAmigos = true;
+    $('#app').classList.add('chat');
+    render();
+  }
+  function renderAmigos(main) {
+    const A = E.amigos, aba = E.abaAmigos || 'online';
+    const abas = [['online', 'Online'], ['todos', 'Todos'], ['pendentes', 'Pendentes' + (A.recebidos.length ? ` (${A.recebidos.length})` : '')], ['bloqueados', 'Bloqueados']];
+    const trocar = (a) => { E.abaAmigos = a; renderAmigos(main); };
+    const topo = h('header', { class: 'topo topo-amigos' },
+      h('button', { class: 'icbtn voltar', title: 'Voltar', onclick: () => $('#app').classList.remove('chat') }, '←'),
+      h('h1', {}, '👋 Amigos'),
+      h('div', { class: 'abas-amigos' }, abas.map(([k, r]) => h('button', { class: aba === k ? 'ativa' : '', onclick: () => trocar(k) }, r)),
+        h('button', { class: 'add' + (aba === 'adicionar' ? ' ativa' : ''), onclick: () => trocar('adicionar') }, 'Adicionar amigo')));
+    const linha = (u, sub, ...acoes) => h('div', { class: 'linha-amigo' }, avatar(u, '', true),
+      h('div', { class: 'txt' }, h('b', {}, u.nome, ' ', h('small', {}, '@' + u.usuario)), h('small', {}, sub)), h('div', { class: 'acoes' }, acoes));
+    const bt = (rot, titulo, fn, cls) => h('button', { class: 'icbtn ' + (cls || ''), title: titulo, onclick: fn }, rot);
+    const conversar = (u) => bt('💬', 'Mandar mensagem', () => { E.telaAmigos = false; abrirDmCom(u.usuario).catch((err) => toast(err.message, 'erro')); });
+    let itens = [], titulo = '';
+    if (aba === 'online' || aba === 'todos') {
+      const lista = A.amigos.filter((u) => aba === 'todos' || st(u.id)[0] !== 'off');
+      titulo = `${aba === 'online' ? 'Online' : 'Todos os amigos'} — ${lista.length}`;
+      itens = lista.map((u) => linha(u, st(u.id)[1], conversar(u),
+        bt('✕', 'Desfazer amizade', () => { if (confirm(`Desfazer amizade com ${u.nome}?`)) acaoAmigo('DELETE', `/amigos/${u.id}`); }, 'perigo')));
+    } else if (aba === 'pendentes') {
+      titulo = `Pendentes — ${A.recebidos.length + A.enviados.length}`;
+      itens = [...A.recebidos.map((u) => linha(u, 'Pedido de amizade recebido',
+        bt('✓', 'Aceitar', () => acaoAmigo('POST', `/amigos/${u.id}/aceitar`, `Agora você e ${u.nome} são amigos!`), 'ok'),
+        bt('✕', 'Recusar', () => acaoAmigo('DELETE', `/amigos/${u.id}`), 'perigo'))),
+      ...A.enviados.map((u) => linha(u, 'Pedido enviado', bt('✕', 'Cancelar pedido', () => acaoAmigo('DELETE', `/amigos/${u.id}`), 'perigo')))];
+    } else if (aba === 'bloqueados') {
+      const ids = listaLocal('kali-bloqueados');
+      titulo = `Bloqueados — ${ids.length}`;
+      itens = ids.map((id) => linha({ id, nome: nomeDe(id), usuario: String(id) }, 'Bloqueado neste aparelho',
+        h('button', { class: 'bt', onclick: () => { alternarLocal('kali-bloqueados', id); renderAmigos(main); renderLista(); } }, 'Desbloquear')));
+    } else {
+      const u = h('input', { maxlength: 20, placeholder: 'Digite o nome de usuário (o @ da pessoa)' });
+      u.oninput = () => { u.value = u.value.toLowerCase().replace(/^@/, ''); };
+      const enviar = async () => { try { await adicionarAmigo(u.value.trim()); u.value = ''; } catch (err) { toast(err.message, 'erro'); } };
+      u.onkeydown = (e) => { if (e.key === 'Enter') enviar(); };
+      main.replaceChildren(topo, h('section', { class: 'col amigos-corpo' }, h('h3', {}, 'ADICIONAR AMIGO'),
+        h('p', { class: 'sub' }, 'Você pode adicionar amigos com o nome de usuário deles.'),
+        h('div', { class: 'add-amigo' }, u, h('button', { class: 'bt prim', onclick: enviar }, 'Enviar pedido de amizade'))));
+      return;
+    }
+    main.replaceChildren(topo, h('section', { class: 'col amigos-corpo' }, h('div', { class: 'rot' }, titulo),
+      itens.length ? itens : h('p', { class: 'sub vazio-amigos' }, aba === 'online' ? 'Nenhum amigo online agora.' : 'Nada por aqui.')));
+  }
   // ---------- amigos ----------
   async function carregarAmigos() {
     try { E.amigos = await api('GET', '/amigos'); } catch (e) { return; }
     for (const u of [...E.amigos.amigos, ...E.amigos.recebidos, ...E.amigos.enviados]) E.presenca.set(u.id, u.status);
+    if (E.modo === 'dm' && E.telaAmigos && E.eu) renderMain();
   }
   async function acaoAmigo(metodo, rota, ok) {
     try { await api(metodo, rota); if (ok) toast(ok, 'ok'); } catch (e) { return toast(e.message, 'erro'); }
@@ -1448,6 +1517,90 @@
     abrirModal({ titulo: 'Nova conversa', sub: 'Digita o nome de usuário da pessoa.', corpo: [campo('Usuário', u)], botao: 'Conversar',
       acao: () => abrirDmCom(u.value.trim()) });
   }
+  // ---------- telas cheias (estilo Discord): abas à esquerda, conteúdo à direita, Esc fecha ----------
+  let telaAberta = null;
+  function fecharTela() { if (telaAberta) { telaAberta.remove(); telaAberta = null; document.removeEventListener('keydown', escTela); } }
+  function escTela(e) { if (e.key === 'Escape' && !modalAberto) fecharTela(); }
+  function abrirTela(titulo, abas, inicial) {
+    fecharTela();
+    const nav = h('nav', { class: 'tela-abas' }, h('div', { class: 'sec-menu' }, titulo));
+    const conteudo = h('div', { class: 'tela-conteudo' });
+    const mostrar = (i) => {
+      [...nav.querySelectorAll('button')].forEach((b, j) => b.classList.toggle('ativa', j === i));
+      const [rot, fn] = abas[i];
+      conteudo.replaceChildren(h('h2', {}, rot), ...[fn(() => mostrar(i))].flat(Infinity).filter(Boolean));
+    };
+    abas.forEach(([rot, , extra], i) => nav.append(h('button', { type: 'button', class: extra === 'perigo' ? 'perigo' : '', onclick: () => mostrar(i) }, rot)));
+    telaAberta = h('div', { class: 'tela-cheia' }, nav, conteudo, h('button', { type: 'button', class: 'tela-fechar', title: 'Fechar (Esc)', onclick: fecharTela }, '✕', h('small', {}, 'ESC')));
+    document.body.append(telaAberta);
+    document.addEventListener('keydown', escTela);
+    mostrar(inicial || 0);
+  }
+  const linhaCfg = (titulo, desc, ...controles) => h('div', { class: 'linha-cfg' }, h('div', {}, h('b', {}, titulo), desc ? h('small', {}, desc) : null), h('div', { class: 'ctl' }, controles));
+  const chave = (on, fn) => h('button', { type: 'button', class: 'chave' + (on ? ' on' : ''), role: 'switch', 'aria-checked': on ? 'true' : 'false', onclick: fn }, h('i'));
+  function configUsuario(inicial) {
+    const cls = (c) => document.documentElement.classList.contains(c);
+    abrirTela('Configurações de usuário', [
+      ['Minha conta', () => [
+        h('div', { class: 'cartao-conta' }, avatar(E.eu, 'av-conta'), h('div', {}, h('b', {}, E.eu.nome), h('small', {}, '@' + E.eu.usuario))),
+        linhaCfg('Nome de exibição e bio', 'Como a galera te vê.', h('button', { type: 'button', class: 'bt', onclick: modalPerfil }, 'Editar perfil')),
+      ]],
+      ['Perfil', (re) => [
+        linhaCfg('Foto de perfil', 'PNG, JPG, GIF ou WEBP até 4 MB.', h('button', { type: 'button', class: 'bt prim', onclick: () => escolherImagem('/eu/imagem/avatar') }, 'Trocar foto'),
+          E.eu.avatar ? h('button', { type: 'button', class: 'bt', onclick: async () => { await api('DELETE', '/eu/imagem/avatar').catch(() => {}); await recarregarEu(); re(); } }, 'Remover') : null),
+        linhaCfg('Banner, moldura e cor do nome', 'Itens exclusivos da Loja.', h('button', { type: 'button', class: 'bt', onclick: modalLoja }, 'Abrir Loja')),
+      ]],
+      ['Aparência', (re) => [
+        linhaCfg('Tema', null, ...['dark', 'light'].map((t) => h('button', { type: 'button', class: 'bt' + (document.documentElement.dataset.theme === t ? ' prim' : ''),
+          onclick: () => { if (document.documentElement.dataset.theme !== t) alternarTema(); re(); } }, t === 'dark' ? 'Escuro' : 'Claro'))),
+        linhaCfg('Modo compacto', 'Mensagens mais juntinhas.', chave(cls('compacto'), () => { alternarAcess('compacto', 'Modo compacto'); re(); })),
+      ]],
+      ['Acessibilidade', (re) => [
+        linhaCfg('Alto contraste', null, chave(cls('contraste'), () => { alternarAcess('contraste', 'Alto contraste'); re(); })),
+        linhaCfg('Fonte grande', null, chave(cls('fonte-grande'), () => { alternarAcess('fonte-grande', 'Fonte grande'); re(); })),
+      ]],
+      ['Notificações', (re) => {
+        const som = h('select', {}, Object.entries(SONS).map(([k, r]) => h('option', { value: k }, r)));
+        som.value = ler('kali-som') || 'plim';
+        som.onchange = () => { salvar('kali-som', som.value); tocarSom(som.value); };
+        return [
+          linhaCfg('Som de aviso', 'Toca quando te mencionam ou chega DM.', som),
+          linhaCfg('Modo foco', E.eu.status === 'foco' ? 'Ligado agora.' : 'Sem avisos por um tempo.', ...[[30, '30 min'], [60, '1 h'], [120, '2 h'], [0, 'Desligar']].map(([m, r]) =>
+            h('button', { type: 'button', class: 'bt', onclick: async () => { try { E.eu = Object.assign(E.eu, await api('PATCH', '/eu', { focoMinutos: m })); renderSide(); re(); } catch (err) { toast(err.message, 'erro'); } } }, r))),
+          linhaCfg('Modo streamer', 'Esconde convites e DMs enquanto você está ao vivo.', chave(cls('streamer'), () => { aplicarStreamer(!cls('streamer')); re(); })),
+        ];
+      }],
+      ['Atalhos e novidades', () => [
+        linhaCfg('Atalhos do teclado', null, h('button', { type: 'button', class: 'bt', onclick: modalAtalhos }, 'Ver atalhos')),
+        linhaCfg('Novidades do app', null, h('button', { type: 'button', class: 'bt', onclick: modalNovidades }, 'Ver novidades')),
+      ]],
+      ['Sair da conta', () => [linhaCfg('Sair da conta', 'Você precisa entrar de novo depois.',
+        h('button', { type: 'button', class: 'bt perigo', onclick: async () => { await api('POST', '/sair').catch(() => {}); location.href = '/entrar.html'; } }, 'Sair'))], 'perigo'],
+    ], inicial);
+  }
+  function configServidor(s) {
+    const dono = souDono(s);
+    const abas = [
+      ['Visão geral', () => {
+        const nome = h('input', { maxlength: 40, value: s.nome });
+        return [
+          linhaCfg('Nome do servidor', null, nome, dono ? h('button', { type: 'button', class: 'bt prim', onclick: async () => {
+            try { aoServidorAtualizado(await api('PATCH', '/servidores/' + s.id, { nome: nome.value.trim() })); toast('Nome salvo ✓', 'ok'); } catch (err) { toast(err.message, 'erro'); }
+          } }, 'Salvar') : null),
+          dono ? linhaCfg('Ícone do servidor', 'Aparece na barra da esquerda.', h('button', { type: 'button', class: 'bt', onclick: () => escolherImagem(`/servidores/${s.id}/imagem/icone`) }, 'Trocar ícone')) : null,
+          dono ? linhaCfg('Banner do servidor', 'Aparece em cima da lista de canais.', h('button', { type: 'button', class: 'bt', onclick: () => escolherImagem(`/servidores/${s.id}/imagem/banner`) }, 'Trocar banner')) : null,
+        ];
+      }],
+      ['Cargos', () => [linhaCfg('Cargos', 'Cor no nome e canais só pra quem tem o cargo.', h('button', { type: 'button', class: 'bt prim', onclick: () => modalCargos(s) }, 'Gerenciar cargos'))]],
+      ['Moderação', () => [linhaCfg('Painel da staff', 'Denúncias, banidos e cargos de adm/mod.', h('button', { type: 'button', class: 'bt prim', onclick: () => { fecharTela(); painelStaff(); } }, 'Abrir painel'))]],
+      ['Convites', () => [linhaCfg('Convidar pessoas', null, h('button', { type: 'button', class: 'bt prim', onclick: modalConvite }, 'Pegar convite'))]],
+    ];
+    if (dono) abas.push(['Apagar servidor', () => [linhaCfg('Apagar ' + s.nome, 'Apaga todos os canais e mensagens pra sempre.', h('button', { type: 'button', class: 'bt perigo', onclick: () => {
+      abrirModal({ titulo: 'Apagar ' + s.nome + '?', sub: 'Isso apaga todos os canais e mensagens pra sempre.', botao: 'Apagar', perigo: true,
+        acao: async () => { await api('DELETE', '/servidores/' + s.id); fecharTela(); aoServidorApagado({ id: s.id }); } });
+    } }, 'Apagar servidor'))], 'perigo']);
+    abrirTela(s.nome, abas);
+  }
   // Configurações em seções, só texto (estilo Discord).
   function menuConfig(ancora) {
     const sec = (t) => h('div', { class: 'sec-menu' }, t);
@@ -1495,10 +1648,6 @@
       ['online', 'ausente', 'ocupado'].map((x) => item([h('span', { class: 'bolinha ' + STATUS[x][0] }), STATUS[x][1]], () => definir(x))),
       h('hr'),
       item('Editar perfil', modalPerfil),
-      item('Loja', modalLoja),
-      item('Configurações', () => menuConfig(ancora)),
-      h('hr'),
-      item('Sair da conta', async () => { await api('POST', '/sair').catch(() => {}); location.href = '/entrar.html'; }, 'perigo'),
     ]);
   }
   function modalPerfil() {
