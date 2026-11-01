@@ -587,6 +587,7 @@ function aoConectar(socket) {
     }
     const canal = db.acessarCanal(uid, canalId);
     if (!podeTerMensagens(canal)) throw erro(400, 'Esse canal não aceita mensagens de texto.');
+    db.exigirSemCastigo(canal, uid);
     const respostaA = respostaValida(d.respostaA, canal.id);
     checarLimiteMensagens(uid);
     const msg = publicarMensagem(canal, { autorId: uid, texto, expiraEm, respostaA });

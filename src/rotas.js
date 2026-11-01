@@ -529,6 +529,7 @@ export function criarRotas() {
   r.post('/canais/:id/anexo', exigirLogin, express.raw({ type: () => true, limit: '8mb' }), (req, res) => {
     const canal = db.acessarCanal(req.usuario.id, idDe(req.params.id));
     if (!podeTerMensagens(canal)) throw erro(400, 'Esse canal não aceita mensagens.');
+    db.exigirSemCastigo(canal, req.usuario.id);
     const buf = req.body;
     if (!Buffer.isBuffer(buf) || !buf.length) throw erro(400, 'Arquivo vazio.');
     const nome = typeof req.query.nome === 'string' ? req.query.nome.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').trim().slice(0, 120) : '';
@@ -666,6 +667,21 @@ export function criarRotas() {
     res.set('Cache-Control', 'private, max-age=31536000, immutable');
     res.type(tipoDaImagem(cab) || 'application/octet-stream');
     res.sendFile(arquivo);
+  });
+
+  // ------------------------------------------------------------ castigo (timeout): 0 tira
+  r.post('/servidores/:id/membros/:uid/castigo', exigirLogin, (req, res) => {
+    const uid = req.usuario.id;
+    const s = servidorComoStaff(uid, idDe(req.params.id));
+    const alvo = idDe(req.params.uid);
+    if (!db.ehMembro(s.id, alvo)) throw erro(404, 'Membro não encontrado.');
+    alvoModeravel(uid, s.id, alvo);
+    const min = corpoDe(req).minutos;
+    if (![0, 1, 5, 10, 60, 1440, 10080].includes(min)) throw erro(400, 'Tempo de castigo inválido.');
+    const ate = min ? Date.now() + min * 60e3 : null;
+    db.castigar(s.id, alvo, ate);
+    emitir(`u:${alvo}`, 'castigo', { servidor: s.nome, ate });
+    res.json({ ok: true, ate });
   });
 
   // ------------------------------------------------------------ cargos personalizados

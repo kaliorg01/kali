@@ -147,6 +147,7 @@ for (const [tabela, coluna, def] of [
   ['canais', 'privado', 'INTEGER NOT NULL DEFAULT 0'],
   ['mensagens', 'resposta_a', 'INTEGER'],
   ['usuarios', 'avatar_v', 'INTEGER'],
+  ['membros', 'castigo_ate', 'INTEGER'],
   ['usuarios', 'banner_v', 'INTEGER'],
   ['servidores', 'icone_v', 'INTEGER'],
   ['servidores', 'banner_v', 'INTEGER'],
@@ -253,6 +254,17 @@ export function fecharBanco() {
 db.exec(`UPDATE usuarios SET cor = CASE cor WHEN '#7c5cff' THEN '#367bf0' WHEN '#c056f5' THEN '#1fa2ff' ELSE '#2fd0ff' END WHERE cor IN ('#7c5cff', '#c056f5', '#ff9a3c')`);
 export const PALETA = ['#367bf0', '#1fa2ff', '#2fd0ff', '#3ee6a8', '#1d4ed8', '#c2410c', '#0e7490', '#db2777'];
 export const corAleatoria = () => PALETA[crypto.randomInt(PALETA.length)];
+
+// ---------------------------------------------------------------- castigo (timeout)
+export const castigar = (sid, uid, ate) => q('UPDATE membros SET castigo_ate = ? WHERE servidor_id = ? AND usuario_id = ?').run(ate, sid, uid);
+export function exigirSemCastigo(canal, uid) {
+  if (canal.servidor_id == null) return;
+  const ate = q('SELECT castigo_ate FROM membros WHERE servidor_id = ? AND usuario_id = ?').get(canal.servidor_id, uid)?.castigo_ate;
+  if (ate && ate > Date.now()) {
+    const h = new Date(ate).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
+    throw erro(403, `⏳ Você está de castigo neste servidor até ${h}.`);
+  }
+}
 
 // ---------------------------------------------------------------- cargos personalizados
 // Canal ligado a cargos vira privado e o acesso (canal_acesso) espelha quem tem esses cargos.

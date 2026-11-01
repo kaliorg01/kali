@@ -860,6 +860,10 @@
         if (meu === 4) conteudo.push(h('hr'), ['adm', 'mod', 'membro'].filter((c) => c !== m.cargo).map((c) =>
           h('button', { class: 'bt', onclick: () => { fecharMenu(); moderar(c, m); } }, c === 'membro' ? '⬇️ Tirar cargo' : `${SELO_CARGO[c]} Tornar ${c}`)));
         if (meu >= 2 && meu > dele) conteudo.push(
+          h('button', { class: 'bt', onclick: (e) => abrirMenu(e.currentTarget, [h('div', { style: 'padding:6px 10px;color:var(--fraco);font-size:12px' }, `Castigo pra ${m.nome} (não manda mensagem)`),
+            [[1, '1 minuto'], [5, '5 minutos'], [10, '10 minutos'], [60, '1 hora'], [1440, '1 dia'], [10080, '1 semana'], [0, 'Tirar castigo']].map(([min, rot]) => item(rot, async () => {
+              try { await api('POST', `/servidores/${servidorAtual().id}/membros/${m.id}/castigo`, { minutos: min }); toast(min ? `⏳ ${m.nome} de castigo por ${rot}` : `Castigo de ${m.nome} retirado`, 'ok'); } catch (err) { toast(err.message, 'erro'); }
+            }))]) }, '⏳ Castigo'),
           h('button', { class: 'bt', onclick: () => { fecharMenu(); moderar('expulsar', m); } }, '👢 Expulsar'),
           h('button', { class: 'bt perigo', onclick: () => { fecharMenu(); moderar('banir', m); } }, '⛔ Banir'),
           h('button', { class: 'bt', onclick: () => { fecharMenu(); const t = $('.caixa textarea'); if (t) { t.value = `/tribunal @${m.usuario} `; t.oninput(); t.focus(); } } }, '⚖️ Levar ao tribunal'));
@@ -1882,6 +1886,7 @@
     sock.on('canal:apagado', aoCanalApagado);
     sock.on('servidor:atualizado', aoServidorAtualizado);
     sock.on('servidor:apagado', aoServidorApagado);
+    sock.on('castigo', ({ servidor, ate }) => toast(ate ? `⏳ Você levou castigo em ${servidor} até ${hora(ate)}.` : `✅ Seu castigo em ${servidor} acabou.`, ate ? 'erro' : 'ok'));
     sock.on('cargos:atualizado', async ({ servidorId }) => {
       try {
         await carregarCargos(servidorId);
