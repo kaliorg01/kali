@@ -2,6 +2,8 @@
 
 App de comunidade em tempo real estilo Discord, 100% em português: servidores, canais, chat e voz.
 
+**👉 Entrar agora: https://kaliorg01.github.io/kali** (sem instalar nada; funciona enquanto o servidor estiver ligado)
+
 ## Como rodar
 
 1. Instale o [Node.js 24+](https://nodejs.org)
