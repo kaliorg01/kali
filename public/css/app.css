@@ -107,6 +107,19 @@ button.side-topo:hover{background:var(--hover)}
 .msg.bloqueada{opacity:.7}
 .sec-menu{padding:10px 10px 4px;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--fraco)}
 .menu{max-height:min(80vh,640px);overflow-y:auto}
+/* emojis próprios e soundboard */
+.emoji-srv{width:22px;height:22px;object-fit:contain;vertical-align:-5px;margin:0 1px}
+.emoji-srv.grande{width:48px;height:48px}
+.emojis-srv .item{padding:4px}
+.grade-emojis{display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:8px;margin-top:12px}
+.emoji-item{position:relative;display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 6px;border:1px solid var(--borda);border-radius:12px;background:var(--chip)}
+.emoji-item img{width:40px;height:40px;object-fit:contain}
+.emoji-item small{color:var(--suave);font-size:11px;max-width:100%;overflow:hidden;text-overflow:ellipsis}
+.soundboard{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;padding:4px;min-width:240px}
+.soundboard button{display:flex;align-items:center;gap:8px;padding:10px;border-radius:10px;background:var(--chip);border:1px solid var(--chip-borda);font-weight:500}
+.soundboard button:hover{border-color:var(--roxo);background:var(--hover)}
+.soundboard button:active{transform:scale(.95)}
+.soundboard span{font-size:18px}
 /* prévia de link */
 .previa-link{display:flex;gap:12px;margin-top:6px;max-width:440px;padding:10px 12px;border-left:4px solid var(--roxo);border-radius:8px;background:var(--chip)}
 .previa-link.carregando{display:none}

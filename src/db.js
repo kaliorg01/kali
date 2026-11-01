@@ -295,6 +295,25 @@ export function equipar(uid, tipo, itemId) {
   q(`UPDATE usuarios SET ${coluna} = ? WHERE id = ?`).run(itemId, uid);
 }
 
+// ---------------------------------------------------------------- emojis próprios do servidor (imagem em dados/imagens/e<id>-emoji)
+db.exec(`
+CREATE TABLE IF NOT EXISTS emojis (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  servidor_id INTEGER NOT NULL REFERENCES servidores(id) ON DELETE CASCADE,
+  nome        TEXT NOT NULL,
+  versao      INTEGER NOT NULL,
+  criado_em   INTEGER NOT NULL,
+  UNIQUE (servidor_id, nome)
+);
+`);
+export const emojisDoServidor = (sid) => q('SELECT * FROM emojis WHERE servidor_id = ? ORDER BY nome').all(sid);
+export const emojisDoUsuario = (uid) =>
+  q('SELECT e.* FROM emojis e JOIN membros m ON m.servidor_id = e.servidor_id AND m.usuario_id = ? ORDER BY e.id').all(uid);
+export const emojiPorId = (id) => q('SELECT * FROM emojis WHERE id = ?').get(id) ?? null;
+export const criarEmoji = (sid, nome) =>
+  Number(q('INSERT INTO emojis (servidor_id, nome, versao, criado_em) VALUES (?, ?, ?, ?)').run(sid, nome, Date.now(), Date.now()).lastInsertRowid);
+export const apagarEmoji = (id) => q('DELETE FROM emojis WHERE id = ?').run(id);
+
 // ---------------------------------------------------------------- eventos do servidor
 db.exec(`
 CREATE TABLE IF NOT EXISTS eventos (

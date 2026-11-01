@@ -64,7 +64,7 @@
     novaDesde: new Map(), busca: '', editando: null,
     missoes: new Map(), temp: 0, assistindo: null,
     amigos: { amigos: [], recebidos: [], enviados: [] },
-    cargos: new Map(), eventos: new Map(),
+    cargos: new Map(), eventos: new Map(), emojis: new Map(),
   };
   // Cor de nome comprada na loja: '#hex' ou '#hex,#hex' (degradê).
   const estiloNome = (c) => !c ? null : c.includes(',')
@@ -182,6 +182,7 @@
     for (const s of servidores) Object.assign(E.naoLidos, s.naoLidos || {});
     for (const d of dms) { E.naoLidos[d.canalId] = d.naoLidos || 0; E.presenca.set(d.outro.id, d.outro.status); }
     await carregarAmigos();
+    carregarEmojis();
     E.membros.clear();
   }
   async function carregarMembros(sid) {
@@ -398,6 +399,8 @@
         h('div', { class: 'info' }, h('b', {}, '● Conectado à voz'), h('small', {}, (c ? c.nome : '') + (srv ? ' / ' + srv.nome : ''))),
         h('button', { class: 'icbtn' + (ev.compartilhando ? ' ativo-tela' : ''), title: ev.compartilhando ? 'Parar de compartilhar' : 'Compartilhar tela (1080p/60fps)',
           onclick: () => Voz.alternarTela().catch((err) => toast(err.message, 'erro')) }, '🖥️'),
+        h('button', { class: 'icbtn', title: 'Soundboard: tocar som pra call', onclick: (e) => abrirMenu(e.currentTarget, [h('div', { class: 'sec-menu' }, 'Soundboard (todo mundo da call ouve)'),
+          h('div', { class: 'soundboard' }, Object.entries(SONS_BOARD).map(([k, [ic, rot]]) => h('button', { type: 'button', onclick: async () => { const r = await pedir('voz:som', { som: k }); if (r.erro) toast(r.erro, 'erro'); } }, h('span', {}, ic), rot)))]) }, '🎵'),
         h('button', { class: 'icbtn sair-voz', title: 'Sair da voz', onclick: () => { Voz.sair(); } }, '📞')));
     }
     // rodapé do usuário
@@ -459,7 +462,9 @@
     };
     ta.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); enviar(c.id, ta); } };
     const emoji = h('button', { class: 'icbtn', type: 'button', title: 'Emoji' }, '☺');
-    emoji.onclick = () => abrirMenu(emoji, h('div', { class: 'emojis' }, EMOJIS.map((em) => item(em, () => { ta.value += em; ta.oninput(); ta.focus(); }))));
+    emoji.onclick = () => abrirMenu(emoji, [h('div', { class: 'emojis' }, EMOJIS.map((em) => item(em, () => { ta.value += em; ta.oninput(); ta.focus(); }))),
+      E.emojis.size ? [h('div', { class: 'sec-menu' }, 'Emojis dos seus servidores'), h('div', { class: 'emojis emojis-srv' },
+        [...E.emojis].map(([nome, url]) => item(h('img', { class: 'emoji-srv', src: url, alt: ':' + nome + ':', title: ':' + nome + ':' }), () => { ta.value += `:${nome}: `; ta.oninput(); ta.focus(); })))] : null]);
     const info = h('span', { class: 'gravando', hidden: true });
     const bGrav = h('button', { class: 'icbtn', type: 'button', title: 'Mensagem de voz (até 60s, com transcrição)' }, '🎙');
     bGrav.onclick = () => alternarGravacao(c.id, bGrav, info);
@@ -495,7 +500,7 @@
   // Formatação estilo Discord: `código`, ||spoiler||, **negrito**, *itálico*, links e @menções (sempre via textContent).
   function formatarTexto(texto) {
     const frag = document.createDocumentFragment();
-    const re = /(`[^`\n]{1,500}`|\|\|[^|\n]{1,500}\|\||\*\*[^*\n]{1,500}\*\*|\*[^*\s][^*\n]{0,500}\*|https?:\/\/[^\s<>"]+|@[a-z0-9_.]{3,20})/gi;
+    const re = /(`[^`\n]{1,500}`|\|\|[^|\n]{1,500}\|\||\*\*[^*\n]{1,500}\*\*|\*[^*\s][^*\n]{0,500}\*|https?:\/\/[^\s<>"]+|:[a-z0-9_]{2,32}:|@[a-z0-9_.]{3,20})/gi;
     let i = 0, m;
     const eu = '@' + E.eu.usuario;
     while ((m = re.exec(texto))) {
@@ -505,6 +510,10 @@
       else if (t.startsWith('||')) { const sp = h('span', { class: 'spoiler', title: 'Spoiler: clica pra ver' }, formatarTexto(t.slice(2, -2))); sp.onclick = () => sp.classList.add('visto'); frag.append(sp); }
       else if (t.startsWith('**')) frag.append(h('b', {}, formatarTexto(t.slice(2, -2))));
       else if (t[0] === '*') frag.append(h('i', {}, formatarTexto(t.slice(1, -1))));
+      else if (t[0] === ':' && t.length > 2 && t.endsWith(':')) {
+        const url = E.emojis.get(t.slice(1, -1).toLowerCase());
+        frag.append(url ? h('img', { class: 'emoji-srv' + (texto.trim() === t ? ' grande' : ''), src: url, alt: t, title: t }) : t);
+      }
       else if (t[0] === '@') frag.append(h('span', { class: 'men' + (t.toLowerCase() === eu ? ' eu' : '') }, t));
       else frag.append(h('a', { href: t, target: '_blank', rel: 'noopener noreferrer' }, t));
       i = m.index + t.length;
@@ -1386,6 +1395,41 @@
     E.modo = 'dm'; E.servidorId = null;
     await abrirCanal(d.canalId);
   }
+  // ---------- emojis próprios ----------
+  async function carregarEmojis() {
+    try {
+      const lista = await api('GET', '/eu/emojis');
+      E.emojis = new Map();
+      for (const e of lista) if (!E.emojis.has(e.nome)) E.emojis.set(e.nome, e.url);
+      E.emojisLista = lista;
+    } catch (e) { return; }
+    if (E.canalId) renderLista();
+  }
+  function abaEmojis(s) {
+    return (re) => {
+      const meus = (E.emojisLista || []).filter((e) => e.servidorId === s.id);
+      const nome = h('input', { maxlength: 32, placeholder: 'nome_do_emoji' });
+      nome.oninput = () => { nome.value = nome.value.toLowerCase().replace(/[^a-z0-9_]/g, ''); };
+      const arq = h('input', { type: 'file', accept: 'image/png,image/jpeg,image/gif,image/webp' });
+      const enviar = async () => {
+        const f = arq.files[0];
+        if (!f) return toast('Escolha a imagem do emoji.', 'erro');
+        const r = await fetch(`/api/servidores/${s.id}/emojis?nome=${encodeURIComponent(nome.value)}`, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: f });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) return toast(d.erro || 'Não deu pra enviar.', 'erro');
+        toast(`Emoji :${d.nome}: criado ✓`, 'ok'); await carregarEmojis(); re();
+      };
+      return [
+        h('p', { class: 'sub' }, `Use digitando :nome: em qualquer conversa. ${meus.length}/50 emojis.`),
+        linhaCfg('Novo emoji', 'Quadrado, até 512 KB. GIF animado funciona.', nome, arq, h('button', { type: 'button', class: 'bt prim', onclick: enviar }, 'Enviar')),
+        h('div', { class: 'grade-emojis' }, meus.map((e) => h('div', { class: 'emoji-item' }, h('img', { src: e.url, alt: e.nome }), h('small', {}, ':' + e.nome + ':'),
+          h('button', { type: 'button', class: 'remover-item', title: 'Apagar', onclick: async () => {
+            if (!confirm(`Apagar :${e.nome}:?`)) return;
+            try { await api('DELETE', `/emojis/${e.id}`); await carregarEmojis(); re(); } catch (err) { toast(err.message, 'erro'); }
+          } }, '✕')))),
+      ];
+    };
+  }
   // ---------- prévia de link (o servidor busca e protege; imagem vem pelo servidor) ----------
   const previas = new Map(); // url → Promise
   function cartaoPrevia(url) {
@@ -1688,6 +1732,7 @@
         ];
       }],
       ['Cargos', () => [linhaCfg('Cargos', 'Cor no nome e canais só pra quem tem o cargo.', h('button', { type: 'button', class: 'bt prim', onclick: () => modalCargos(s) }, 'Gerenciar cargos'))]],
+      ['Emojis', abaEmojis(s)],
       ['Moderação', () => [linhaCfg('Painel da staff', 'Denúncias, banidos e cargos de adm/mod.', h('button', { type: 'button', class: 'bt prim', onclick: () => { fecharTela(); painelStaff(); } }, 'Abrir painel'))]],
       ['Convites', () => [linhaCfg('Convidar pessoas', null, h('button', { type: 'button', class: 'bt prim', onclick: modalConvite }, 'Pegar convite'))]],
     ];
@@ -1969,6 +2014,39 @@
   // ---------- sons de aviso (sintetizados, sem arquivo) ----------
   const SONS = { plim: 'Plim', zap: 'Zap zap', tambor: 'Tambor', desligado: 'Sem som' };
   let ctxSom = null;
+  // Soundboard: sons sintetizados na hora (sem arquivo de áudio).
+  const SONS_BOARD = { buzina: ['📯', 'Buzina'], tambor: ['🥁', 'Ba dum tss'], vitoria: ['🏆', 'Vitória'], erro: ['❌', 'Errou'],
+    grilo: ['🦗', 'Grilo'], palmas: ['👏', 'Palmas'], sirene: ['🚨', 'Sirene'], uau: ['😮', 'Uau'] };
+  function tocarBoard(nome) {
+    try {
+      ctxSom = ctxSom || new (window.AudioContext || window.webkitAudioContext)();
+      const t = ctxSom.currentTime;
+      const tom = (f, ini, dur, tipo = 'sine', vol = 0.18, fFim) => {
+        const o = ctxSom.createOscillator(), g = ctxSom.createGain();
+        o.type = tipo; o.frequency.setValueAtTime(f, t + ini);
+        if (fFim) o.frequency.exponentialRampToValueAtTime(fFim, t + ini + dur);
+        g.gain.setValueAtTime(vol, t + ini); g.gain.exponentialRampToValueAtTime(0.001, t + ini + dur);
+        o.connect(g).connect(ctxSom.destination); o.start(t + ini); o.stop(t + ini + dur + 0.02);
+      };
+      const ruido = (ini, dur, vol = 0.25, corte = 4000) => {
+        const b = ctxSom.createBuffer(1, Math.ceil(ctxSom.sampleRate * dur), ctxSom.sampleRate), d = b.getChannelData(0);
+        for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
+        const s = ctxSom.createBufferSource(), f = ctxSom.createBiquadFilter(), g = ctxSom.createGain();
+        s.buffer = b; f.type = 'highpass'; f.frequency.value = corte; g.gain.value = vol;
+        s.connect(f).connect(g).connect(ctxSom.destination); s.start(t + ini);
+      };
+      ({
+        buzina: () => { tom(392, 0, 0.35, 'sawtooth', 0.12); tom(392, 0.45, 0.6, 'sawtooth', 0.12); },
+        tambor: () => { tom(150, 0, 0.15, 'triangle', 0.4, 60); tom(120, 0.22, 0.15, 'triangle', 0.4, 50); ruido(0.45, 0.6, 0.3, 6000); },
+        vitoria: () => [523, 659, 784, 1047].forEach((f, i) => tom(f, i * 0.12, i === 3 ? 0.6 : 0.15, 'square', 0.08)),
+        erro: () => { tom(300, 0, 0.25, 'square', 0.1); tom(200, 0.28, 0.45, 'square', 0.1); },
+        grilo: () => { for (let i = 0; i < 6; i++) tom(4500, i * 0.09 + (i > 2 ? 0.3 : 0), 0.05, 'sine', 0.06); },
+        palmas: () => { for (let i = 0; i < 10; i++) ruido(i * 0.07 + Math.random() * 0.03, 0.06, 0.35, 1500); },
+        sirene: () => { for (let i = 0; i < 3; i++) tom(600, i * 0.5, 0.25, 'sawtooth', 0.08, 1100), tom(1100, i * 0.5 + 0.25, 0.25, 'sawtooth', 0.08, 600); },
+        uau: () => tom(300, 0, 0.7, 'sine', 0.2, 700),
+      })[nome]?.();
+    } catch (e) {}
+  }
   function tocarSom(nome) {
     if (nome === 'desligado') return;
     try {
@@ -2176,6 +2254,12 @@
     sock.on('servidor:atualizado', aoServidorAtualizado);
     sock.on('servidor:apagado', aoServidorApagado);
     sock.on('eventos:atualizado', ({ servidorId }) => carregarEventos(servidorId));
+    sock.on('emojis:atualizado', () => carregarEmojis());
+    sock.on('voz:som', ({ som, de }) => {
+      if (window.Voz && Voz.estado.surdo) return; // ensurdecido não ouve o soundboard
+      tocarBoard(som);
+      if (SONS_BOARD[som]) toast(`${SONS_BOARD[som][0]} ${de}: ${SONS_BOARD[som][1]}`);
+    });
     sock.on('loja:ganhou', ({ nome }) => toast(`Você ganhou "${nome}"! Abra a Loja pra usar.`, 'ok'));
     sock.on('castigo', ({ servidor, ate }) => toast(ate ? `⏳ Você levou castigo em ${servidor} até ${hora(ate)}.` : `✅ Seu castigo em ${servidor} acabou.`, ate ? 'erro' : 'ok'));
     sock.on('cargos:atualizado', async ({ servidorId }) => {

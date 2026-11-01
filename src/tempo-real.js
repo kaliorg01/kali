@@ -21,6 +21,8 @@ const ultimoXpMensagem = new Map(); // `${uid}:${sid}` → timestamp
 const reacoesPremiadas = new Set(); // `${msgId}:${quemReagiu}`
 const timersExpiracao = new Map(); // msgId → timeout
 const timersFoco = new Map(); // usuarioId → timeout
+const SONS_BOARD = ['buzina', 'tambor', 'vitoria', 'erro', 'grilo', 'palmas', 'sirene', 'uau'];
+const ultimoSomBoard = new Map(); // usuarioId → timestamp
 
 // ------------------------------------------------------------------ utilidades
 export function origemPermitida(origem, host) {
@@ -762,6 +764,19 @@ function aoConectar(socket) {
       throw erro(400, 'Sinal inválido.');
     }
     io.to(destino.socketId).emit('voz:sinal', { de: uid, dados: limpo });
+    return { ok: true };
+  });
+
+  // Soundboard: toca um som curto pra todo mundo da call (no máximo 1 a cada 1,5 s por pessoa).
+  ouvir(socket, 'voz:som', (d) => {
+    exigirObjeto(d);
+    if (!SONS_BOARD.includes(d.som)) throw erro(400, 'Som inválido.');
+    const { canalId } = minhaVoz();
+    const agora = Date.now();
+    if (agora - (ultimoSomBoard.get(uid) || 0) < 1500) throw erro(429, 'Calma no soundboard!');
+    ultimoSomBoard.set(uid, agora);
+    const de = db.usuarioPorId(uid)?.nome || '';
+    for (const m of voz.get(canalId)?.values() || []) io.to(m.socketId).emit('voz:som', { som: d.som, de, canalId });
     return { ok: true };
   });
 

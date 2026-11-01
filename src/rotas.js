@@ -669,7 +669,7 @@ export function criarRotas() {
     res.json(atualizado);
   });
   r.get('/imagens/:arquivo', exigirLogin, (req, res) => {
-    if (!/^([us][1-9]\d{0,14}-(avatar|banner|icone)|i[1-9]\d{0,14}-item)$/.test(req.params.arquivo)) throw erro(404, 'Não encontrado.');
+    if (!/^([us][1-9]\d{0,14}-(avatar|banner|icone)|i[1-9]\d{0,14}-item|e[1-9]\d{0,14}-emoji)$/.test(req.params.arquivo)) throw erro(404, 'Não encontrado.');
     const arquivo = path.join(db.PASTA_IMAGENS, req.params.arquivo);
     if (!fs.existsSync(arquivo)) throw erro(404, 'Não encontrado.');
     const fd = fs.openSync(arquivo, 'r'); const cab = Buffer.alloc(16); fs.readSync(fd, cab, 0, 16, 0); fs.closeSync(fd);
@@ -784,6 +784,31 @@ export function criarRotas() {
     if (!tipo) throw erro(415, 'Não é imagem.');
     res.set('Cache-Control', 'private, max-age=86400');
     res.type(tipo).send(r2.corpo);
+  });
+
+  // ------------------------------------------------------------ emojis próprios (usáveis em qualquer lugar por quem é membro)
+  const emojiPublico = (e) => ({ id: e.id, nome: e.nome, servidorId: e.servidor_id, url: `/api/imagens/e${e.id}-emoji?v=${e.versao}` });
+  r.get('/eu/emojis', exigirLogin, (req, res) => res.json(db.emojisDoUsuario(req.usuario.id).map(emojiPublico)));
+  r.post('/servidores/:id/emojis', exigirLogin, express.raw({ type: () => true, limit: '512kb' }), (req, res) => {
+    const s = servidorComoStaff(req.usuario.id, idDe(req.params.id));
+    const nome = String(req.query.nome || '').toLowerCase();
+    if (!/^[a-z0-9_]{2,32}$/.test(nome)) throw erro(400, 'Nome do emoji: 2 a 32 letras minúsculas, números ou "_".');
+    if (!Buffer.isBuffer(req.body) || !tipoDaImagem(req.body)) throw erro(415, 'Envie uma imagem PNG, JPG, GIF ou WEBP (até 512 KB).');
+    if (db.emojisDoServidor(s.id).length >= 50) throw erro(400, 'Máximo de 50 emojis por servidor.');
+    if (db.emojisDoServidor(s.id).some((e) => e.nome === nome)) throw erro(400, 'Já existe um emoji com esse nome.');
+    const id = db.criarEmoji(s.id, nome);
+    fs.writeFileSync(path.join(db.PASTA_IMAGENS, `e${id}-emoji`), req.body);
+    emitir(`s:${s.id}`, 'emojis:atualizado', {});
+    res.status(201).json(emojiPublico(db.emojiPorId(id)));
+  });
+  r.delete('/emojis/:id', exigirLogin, (req, res) => {
+    const e = db.emojiPorId(idDe(req.params.id));
+    if (!e) throw erro(404, 'Emoji não encontrado.');
+    servidorComoStaff(req.usuario.id, e.servidor_id);
+    db.apagarEmoji(e.id);
+    fs.rm(path.join(db.PASTA_IMAGENS, `e${e.id}-emoji`), { force: true }, () => {});
+    emitir(`s:${e.servidor_id}`, 'emojis:atualizado', {});
+    res.json({ ok: true });
   });
 
   // ------------------------------------------------------------ eventos do servidor
