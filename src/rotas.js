@@ -8,7 +8,7 @@ import {
   conferirSenha, conferirSenhaOuFingir, definirCookieSessao, exigirLogin, gerarHash, limparCookieSessao,
   limparFalhasLogin, loginBloqueado, registrarFalhaLogin, tokenDaRequisicao,
 } from './auth.js';
-import { publicarMensagem, caminhoAnexo, pareceGolpe, respostaValida,
+import { publicarMensagem, caminhoAnexo, pareceGolpe, respostaValida, quantosOnline,
   BONUS_MISSAO, MISSOES, anunciarMensagem, aoApagarCanal, aoApagarServidor, aoAtualizarPerfil, aoSairDoServidor,
   apagarArquivosAudio, caminhoAudio, checarLimiteMensagens, desconectarSessao, emitir, entrarSala,
   membroPublico, nivelDe, origemPermitida, salaDoCanal, semanaAtual, usuarioPublico, xpParaNivel,
@@ -720,6 +720,29 @@ export function criarRotas() {
   r.delete('/loja/itens/:id', exigirLogin, (req, res) => {
     exigirDonoDoApp(req);
     if (!db.desativarItem(idDe(req.params.id))) throw erro(404, 'Item não encontrado.');
+    res.json({ ok: true });
+  });
+  // Painel do dono (página /painel): resumo, usuários e itens de cada um.
+  r.get('/admin/resumo', exigirLogin, (req, res) => {
+    exigirDonoDoApp(req);
+    res.json({ ...db.contagens(), online: quantosOnline() });
+  });
+  r.get('/admin/usuarios', exigirLogin, (req, res) => {
+    exigirDonoDoApp(req);
+    const t = typeof req.query.busca === 'string' ? req.query.busca.trim().toLowerCase().slice(0, 30) : '';
+    res.json(db.buscarUsuarios(t).map((u) => ({ id: u.id, usuario: u.usuario, nome: u.nome, criadoEm: u.criado_em, itens: u.itens })));
+  });
+  r.get('/admin/usuarios/:id/itens', exigirLogin, (req, res) => {
+    exigirDonoDoApp(req);
+    res.json(db.itensDoUsuario(idDe(req.params.id)));
+  });
+  r.delete('/admin/usuarios/:id/itens/:item', exigirLogin, (req, res) => {
+    exigirDonoDoApp(req);
+    const uid = idDe(req.params.id), item = idDe(req.params.item);
+    if (!db.tirarItem(uid, item)) throw erro(404, 'Essa pessoa não tem esse item.');
+    const u = db.usuarioPorId(uid);
+    for (const t of ['banner', 'moldura', 'cor']) if (u[`equip_${t}`] === item) db.equipar(uid, t, null);
+    aoAtualizarPerfil(uid);
     res.json({ ok: true });
   });
   r.post('/loja/presentear', exigirLogin, (req, res) => {

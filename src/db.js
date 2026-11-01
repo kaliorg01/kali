@@ -292,6 +292,20 @@ export function equipar(uid, tipo, itemId) {
   q(`UPDATE usuarios SET ${coluna} = ? WHERE id = ?`).run(itemId, uid);
 }
 
+// ---------------------------------------------------------------- painel do dono
+export const contagens = () => ({
+  usuarios: q('SELECT COUNT(*) AS n FROM usuarios').get().n,
+  servidores: q('SELECT COUNT(*) AS n FROM servidores').get().n,
+  mensagens: q('SELECT COUNT(*) AS n FROM mensagens').get().n,
+  itensEntregues: q('SELECT COUNT(*) AS n FROM inventario').get().n,
+});
+export const buscarUsuarios = (t) =>
+  q(`SELECT u.id, u.usuario, u.nome, u.criado_em, (SELECT COUNT(*) FROM inventario i WHERE i.usuario_id = u.id) AS itens
+     FROM usuarios u WHERE u.usuario LIKE ? OR u.nome LIKE ? ORDER BY u.id DESC LIMIT 50`).all(`%${t}%`, `%${t}%`);
+export const itensDoUsuario = (uid) =>
+  q('SELECT l.id, l.nome, l.tipo FROM inventario i JOIN loja_itens l ON l.id = i.item_id WHERE i.usuario_id = ? ORDER BY i.ganho_em DESC').all(uid);
+export const tirarItem = (uid, itemId) => q('DELETE FROM inventario WHERE usuario_id = ? AND item_id = ?').run(uid, itemId).changes > 0;
+
 // ---------------------------------------------------------------- castigo (timeout)
 export const castigar = (sid, uid, ate) => q('UPDATE membros SET castigo_ate = ? WHERE servidor_id = ? AND usuario_id = ?').run(ate, sid, uid);
 export function exigirSemCastigo(canal, uid) {

@@ -58,6 +58,7 @@ export function sairSala(usuarioId, sala) {
   io?.in(`u:${usuarioId}`).socketsLeave(sala);
 }
 export const estaOnline = (uid) => (presenca.get(uid)?.size || 0) > 0;
+export const quantosOnline = () => [...presenca.values()].filter((s) => s.size > 0).length;
 
 // ------------------------------------------------------------------ usuários e presença
 function verificarFoco(row) {

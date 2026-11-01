@@ -1372,51 +1372,15 @@
           try { await api('POST', '/loja/equipar', { tipo: i.tipo, itemId: usando ? null : i.id }); await recarregar(); } catch (err) { toast(err.message, 'erro'); }
         } }, usando ? 'Em uso (tirar)' : 'Usar')
         : h('small', { class: 'sub' }, reais(i.preco) + ' · fale com o dono pra comprar');
-      return h('div', { class: 'item-loja' + (usando ? ' usando' : '') }, previa, h('b', {}, i.nome), acao,
-        E.eu.admin ? h('button', { type: 'button', class: 'remover-item', title: 'Tirar da loja', onclick: async () => {
-          if (!confirm(`Tirar "${i.nome}" da loja?`)) return;
-          try { await api('DELETE', `/loja/itens/${i.id}`); modalLoja(); } catch (err) { toast(err.message, 'erro'); }
-        } }, '✕') : null);
+      return h('div', { class: 'item-loja' + (usando ? ' usando' : '') }, previa, h('b', {}, i.nome), acao);
     };
     const secoes = Object.entries(TIPOS_LOJA).map(([t, rot]) => {
       const itens = L.itens.filter((i) => i.tipo === t);
       return [h('div', { class: 'sec-menu' }, rot), itens.length ? h('div', { class: 'loja-grade' }, itens.map(cartao)) : h('p', { class: 'sub' }, 'Nada aqui ainda.')];
     });
     const corpo = [secoes];
-    if (E.eu.admin) corpo.push(painelLoja(L));
-    abrirModal({ titulo: 'Loja', sub: 'Itens exclusivos pro seu perfil.', corpo, larga: true });
-  }
-  // Painel do dono do KALI: criar item e entregar pra alguém.
-  function painelLoja(L) {
-    const tipo = h('select', {}, Object.entries(TIPOS_LOJA).map(([v, r]) => h('option', { value: v }, r)));
-    const nome = h('input', { maxlength: 40, placeholder: 'Nome do item' });
-    const preco = h('input', { type: 'number', min: 0, step: '0.01', placeholder: 'Preço em R$ (ex: 4,90)' });
-    const arq = h('input', { type: 'file', accept: 'image/png,image/jpeg,image/gif,image/webp' });
-    const c1 = h('input', { type: 'color', value: '#2fd0ff', class: 'cor-cargo' }), c2 = h('input', { type: 'color', value: '#1f5fd6', class: 'cor-cargo' });
-    const degrade = h('input', { type: 'checkbox' });
-    const quem = h('input', { maxlength: 20, placeholder: '@usuario' });
-    const qual = h('select', {}, L.itens.map((i) => h('option', { value: i.id }, `${i.nome} (${TIPOS_LOJA[i.tipo]})`)));
-    const criar = async () => {
-      const qs = new URLSearchParams({ tipo: tipo.value, nome: nome.value.trim(), preco: String(Math.round(Number(String(preco.value || 0).replace(',', '.')) * 100)) });
-      let body;
-      if (tipo.value === 'cor') qs.set('cor', degrade.checked ? `${c1.value},${c2.value}` : c1.value);
-      else { body = arq.files[0]; if (!body) return toast('Escolha a imagem do item.', 'erro'); }
-      const r = await fetch('/api/loja/itens?' + qs, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body });
-      const d = await r.json().catch(() => ({}));
-      if (!r.ok) return toast(d.erro || 'Não deu pra criar o item.', 'erro');
-      toast('Item criado na loja ✓', 'ok'); modalLoja();
-    };
-    const dar = async () => {
-      try { await api('POST', '/loja/presentear', { usuario: quem.value.trim(), itemId: Number(qual.value) }); toast('Item entregue ✓', 'ok'); quem.value = ''; }
-      catch (err) { toast(err.message, 'erro'); }
-    };
-    return h('div', { class: 'painel-loja' }, h('div', { class: 'sec-menu' }, 'Painel do dono'),
-      h('div', { class: 'linha-form' }, tipo, nome, preco),
-      h('div', { class: 'linha-form' }, h('small', { class: 'sub' }, 'Imagem (banner 3:1, moldura PNG transparente):'), arq),
-      h('div', { class: 'linha-form' }, h('small', { class: 'sub' }, 'Cor:'), c1, h('label', { class: 'check-amigo' }, degrade, ' degradê com'), c2),
-      h('button', { type: 'button', class: 'bt prim', onclick: criar }, 'Criar item'),
-      h('div', { class: 'sec-menu' }, 'Entregar item pra alguém (depois do pagamento)'),
-      h('div', { class: 'linha-form' }, quem, qual, h('button', { type: 'button', class: 'bt', onclick: dar }, 'Entregar')));
+    if (E.eu.admin) corpo.push(h('a', { class: 'bt', href: '/painel', target: '_blank', rel: 'noopener', style: 'display:block;text-align:center;margin-top:6px' }, 'Abrir painel do dono'));
+    abrirModal({ titulo: 'Loja', sub: 'Itens exclusivos pro seu perfil.', corpo });
   }
   // ---------- cargos personalizados ----------
   async function carregarCargos(sid) { E.cargos.set(sid, await api('GET', `/servidores/${sid}/cargos`)); }
