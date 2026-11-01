@@ -149,6 +149,9 @@ for (const [tabela, coluna, def] of [
   ['usuarios', 'avatar_v', 'INTEGER'],
   ['membros', 'castigo_ate', 'INTEGER'],
   ['usuarios', 'equip_banner', 'INTEGER'],
+  ['canais', 'categoria', 'TEXT'],
+  ['canais', 'modo_lento', 'INTEGER NOT NULL DEFAULT 0'],
+  ['membros', 'apelido', 'TEXT'],
   ['usuarios', 'equip_moldura', 'INTEGER'],
   ['usuarios', 'equip_cor', 'INTEGER'],
   ['usuarios', 'banner_v', 'INTEGER'],
@@ -502,7 +505,7 @@ export function adicionarMembro(sid, uid) {
 export const removerMembro = (sid, uid) =>
   q('DELETE FROM membros WHERE servidor_id = ? AND usuario_id = ?').run(sid, uid);
 export const membrosDoServidor = (sid) =>
-  q(`SELECT u.*, m.cargo AS cargo, COALESCE(x.nivel, 1) AS nivel, COALESCE(x.xp, 0) AS xp_total
+  q(`SELECT u.*, m.cargo AS cargo, m.apelido AS apelido, COALESCE(x.nivel, 1) AS nivel, COALESCE(x.xp, 0) AS xp_total
      FROM membros m JOIN usuarios u ON u.id = m.usuario_id
      LEFT JOIN xp x ON x.usuario_id = u.id AND x.servidor_id = m.servidor_id
      WHERE m.servidor_id = ? ORDER BY u.nome COLLATE NOCASE`).all(sid);
@@ -591,8 +594,10 @@ export function marcarImagem(dono, id, tipo, v) {
   q(`UPDATE ${tabela} SET ${coluna} = ? WHERE id = ?`).run(v, id);
 }
 const SELECT_MSG = `SELECT m.*, u.usuario AS a_usuario, u.nome AS a_nome, u.cor AS a_cor, u.avatar_v AS a_avatar,
-                    u.equip_moldura AS a_moldura, u.equip_cor AS a_cor_item
-                    FROM mensagens m LEFT JOIN usuarios u ON u.id = m.autor_id`;
+                    u.equip_moldura AS a_moldura, u.equip_cor AS a_cor_item, mb.apelido AS a_apelido
+                    FROM mensagens m LEFT JOIN usuarios u ON u.id = m.autor_id
+                    LEFT JOIN canais cx ON cx.id = m.canal_id
+                    LEFT JOIN membros mb ON mb.servidor_id = cx.servidor_id AND mb.usuario_id = m.autor_id`;
 
 export function inserirMensagem({ canalId, autorId, texto, sistema = false, refCanalId = null,
   audioDuracao = null, transcricao = null, expiraEm = null, respostaA = null, anexo = null }) {
@@ -666,7 +671,7 @@ export function serMensagem(row, reacoes = []) {
     id: row.id,
     canalId: row.canal_id,
     autor: row.autor_id != null && row.a_usuario != null
-      ? { id: row.autor_id, usuario: row.a_usuario, nome: row.a_nome, cor: row.a_cor, avatar: urlImagem('u', row.autor_id, 'avatar', row.a_avatar),
+      ? { id: row.autor_id, usuario: row.a_usuario, nome: row.a_apelido || row.a_nome, cor: row.a_cor, avatar: urlImagem('u', row.autor_id, 'avatar', row.a_avatar),
         moldura: urlItem(row.a_moldura), corNome: corDoItem(row.a_cor_item) }
       : null,
     texto: row.texto,
@@ -775,8 +780,15 @@ export function serCanal(row) {
     privado: !!row.privado,
     comSenha: !!row.senha_hash,
     ticket: row.ticket_de ?? null,
+    categoria: row.categoria || null,
+    modoLento: row.modo_lento || 0,
   };
 }
+export const configurarCanal = (id, categoria, modoLento) =>
+  q('UPDATE canais SET categoria = ?, modo_lento = ? WHERE id = ?').run(categoria, modoLento, id);
+export const definirApelido = (sid, uid, apelido) => q('UPDATE membros SET apelido = ? WHERE servidor_id = ? AND usuario_id = ?').run(apelido, sid, uid);
+export const ultimaMsgDe = (canalId, uid) =>
+  q('SELECT MAX(criado_em) AS t FROM mensagens WHERE canal_id = ? AND autor_id = ?').get(canalId, uid)?.t ?? 0;
 export function serServidor(row) {
   return {
     id: row.id,

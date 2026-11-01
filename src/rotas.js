@@ -8,7 +8,7 @@ import {
   conferirSenha, conferirSenhaOuFingir, definirCookieSessao, exigirLogin, gerarHash, limparCookieSessao,
   limparFalhasLogin, loginBloqueado, registrarFalhaLogin, tokenDaRequisicao,
 } from './auth.js';
-import { publicarMensagem, caminhoAnexo, pareceGolpe, respostaValida, quantosOnline,
+import { publicarMensagem, caminhoAnexo, pareceGolpe, respostaValida, quantosOnline, exigirModoLento,
   BONUS_MISSAO, MISSOES, anunciarMensagem, aoApagarCanal, aoApagarServidor, aoAtualizarPerfil, aoSairDoServidor,
   apagarArquivosAudio, caminhoAudio, checarLimiteMensagens, desconectarSessao, emitir, entrarSala,
   membroPublico, nivelDe, origemPermitida, salaDoCanal, semanaAtual, usuarioPublico, xpParaNivel,
@@ -336,6 +336,7 @@ export function criarRotas() {
     }
     if (db.contarCanais(s.id) >= 100) throw erro(400, 'Esse servidor já tem canais demais.');
     const id = db.criarCanal(s.id, nome, c.tipo, c.tipo === 'voz' && c.espacial === true);
+    if (typeof c.categoria === 'string' && c.categoria.trim()) db.configurarCanal(id, c.categoria.trim().slice(0, 30), 0);
     if (c.senha !== undefined) {
       const { hash, salt } = await gerarHash(c.senha);
       db.tornarPrivado(id, hash, salt, null);
@@ -536,6 +537,7 @@ export function criarRotas() {
     const canal = db.acessarCanal(req.usuario.id, idDe(req.params.id));
     if (!podeTerMensagens(canal)) throw erro(400, 'Esse canal não aceita mensagens.');
     db.exigirSemCastigo(canal, req.usuario.id);
+    exigirModoLento(canal, req.usuario.id);
     const buf = req.body;
     if (!Buffer.isBuffer(buf) || !buf.length) throw erro(400, 'Arquivo vazio.');
     const nome = typeof req.query.nome === 'string' ? req.query.nome.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').trim().slice(0, 120) : '';
@@ -755,6 +757,36 @@ export function criarRotas() {
     if (!db.darItem(alvo.id, item.id)) throw erro(400, `${alvo.nome} já tem esse item.`);
     emitir(`u:${alvo.id}`, 'loja:ganhou', { nome: item.nome });
     res.json({ ok: true });
+  });
+
+  // ------------------------------------------------------------ canal: categoria e modo lento (staff)
+  const MODO_LENTO = [0, 5, 10, 30, 60, 300, 900];
+  r.patch('/canais/:id/config', exigirLogin, (req, res) => {
+    const uid = req.usuario.id;
+    const canal = db.canalPorId(idDe(req.params.id));
+    if (!canal || canal.servidor_id == null) throw erro(404, 'Canal não encontrado.');
+    servidorComoStaff(uid, canal.servidor_id);
+    const c = corpoDe(req);
+    const categoria = c.categoria === undefined ? canal.categoria : (typeof c.categoria === 'string' && c.categoria.trim() ? c.categoria.trim().slice(0, 30) : null);
+    const modoLento = c.modoLento === undefined ? canal.modo_lento : c.modoLento;
+    if (!MODO_LENTO.includes(modoLento)) throw erro(400, 'Tempo de modo lento inválido.');
+    db.configurarCanal(canal.id, categoria, modoLento);
+    emitir(`s:${canal.servidor_id}`, 'cargos:atualizado', { servidorId: canal.servidor_id });
+    res.json(db.serCanal(db.canalPorId(canal.id)));
+  });
+
+  // ------------------------------------------------------------ apelido por servidor (o próprio, ou staff em quem tem cargo menor)
+  r.put('/servidores/:id/apelido', exigirLogin, (req, res) => {
+    const uid = req.usuario.id;
+    const s = servidorComoMembro(uid, idDe(req.params.id));
+    const c = corpoDe(req);
+    const alvo = c.usuarioId == null ? uid : Number(c.usuarioId);
+    if (alvo !== uid) { servidorComoStaff(uid, s.id); alvoModeravel(uid, s.id, alvo); }
+    if (!db.ehMembro(s.id, alvo)) throw erro(404, 'Membro não encontrado.');
+    const apelido = typeof c.apelido === 'string' ? c.apelido.trim().slice(0, 32) : '';
+    db.definirApelido(s.id, alvo, apelido || null);
+    emitir(`s:${s.id}`, 'cargos:atualizado', { servidorId: s.id });
+    res.json({ ok: true, apelido: apelido || null });
   });
 
   // ------------------------------------------------------------ castigo (timeout): 0 tira

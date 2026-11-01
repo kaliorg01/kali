@@ -92,7 +92,9 @@ export function usuarioPublico(row, { proprio = false } = {}) {
   return u;
 }
 export function membroPublico(row, donoId) {
-  return { ...usuarioPublico(row), dono: row.id === donoId, nivel: row.nivel ?? 1, cargo: row.id === donoId ? 'dono' : row.cargo || 'membro' };
+  const u = usuarioPublico(row);
+  return { ...u, nome: row.apelido || u.nome, apelido: row.apelido || null, nomeConta: u.nome,
+    dono: row.id === donoId, nivel: row.nivel ?? 1, cargo: row.id === donoId ? 'dono' : row.cargo || 'membro' };
 }
 
 function salasDeInteresse(uid) {
@@ -159,6 +161,12 @@ export function checarLimiteMensagens(uid) {
 
 export const caminhoAudio = (id) => path.join(db.PASTA_AUDIOS, `${id}.webm`);
 export const caminhoAnexo = (id) => path.join(db.PASTA_ANEXOS, String(id));
+/** Modo lento: quem não é staff só manda uma mensagem a cada X segundos no canal. */
+export function exigirModoLento(canal, uid) {
+  if (!canal.modo_lento || canal.servidor_id == null || db.ehStaff(canal.servidor_id, uid)) return;
+  const falta = db.ultimaMsgDe(canal.id, uid) + canal.modo_lento * 1000 - Date.now();
+  if (falta > 0) throw erro(429, `🐢 Modo lento: espere ${Math.ceil(falta / 1000)}s pra mandar de novo.`);
+}
 /** Id de mensagem respondida: precisa existir e ser do mesmo canal. */
 export function respostaValida(v, canalId) {
   if (v === undefined || v === null) return null;
@@ -591,6 +599,7 @@ function aoConectar(socket) {
     const canal = db.acessarCanal(uid, canalId);
     if (!podeTerMensagens(canal)) throw erro(400, 'Esse canal não aceita mensagens de texto.');
     db.exigirSemCastigo(canal, uid);
+    exigirModoLento(canal, uid);
     const respostaA = respostaValida(d.respostaA, canal.id);
     checarLimiteMensagens(uid);
     const msg = publicarMensagem(canal, { autorId: uid, texto, expiraEm, respostaA });

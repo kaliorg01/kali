@@ -107,6 +107,15 @@ button.side-topo:hover{background:var(--hover)}
 .msg.bloqueada{opacity:.7}
 .sec-menu{padding:10px 10px 4px;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--fraco)}
 .menu{max-height:min(80vh,640px);overflow-y:auto}
+/* categorias de canais e editar canal */
+.rot.categoria{padding-top:14px}
+.rot.categoria .nome-cat{display:flex;align-items:center;gap:4px;font-size:11px;letter-spacing:.1em;color:var(--fraco);text-transform:uppercase;padding:0}
+.rot.categoria .nome-cat:hover{color:var(--texto)}
+.seta-cat{display:inline-block;transition:transform .15s;font-size:12px}
+.rot.categoria.fechada .seta-cat{transform:rotate(-90deg)}
+.canal-linha .editar-canal{position:absolute;right:32px;opacity:0;width:24px;height:24px;border-radius:8px;color:var(--fraco);display:grid;place-items:center;font-size:12px}
+.canal-linha:hover .editar-canal,.canal-linha .editar-canal:focus-visible{opacity:1}
+.editar-canal:hover{background:var(--hover);color:var(--texto)}
 /* DMs estilo Discord: Amigos/Loja no topo e tela de Amigos */
 .nav-dm{display:flex;align-items:center;gap:12px;width:100%;padding:10px 12px;border-radius:10px;color:var(--suave);font-weight:600;margin-bottom:2px}
 .nav-dm .ic{width:24px;text-align:center;font-size:17px}
