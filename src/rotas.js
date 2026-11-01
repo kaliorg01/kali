@@ -49,6 +49,9 @@ const servidorCompleto = (row, uid) => {
   const s = db.serServidor(row);
   // tickets só aparecem pra staff e pra quem abriu
   s.canais = s.canais.filter((c) => (!c.ticket && !db.cargosDoCanal(c.id).length) || db.ehStaff(row.id, uid) || db.temAcessoCanal(c.id, uid));
+  // tópico só aparece se a pessoa enxerga o canal-pai (inclui canal com senha que ela ainda não destravou)
+  const visiveis = new Set(s.canais.filter((c) => !c.comSenha || db.ehStaff(row.id, uid) || db.temAcessoCanal(c.id, uid)).map((c) => c.id));
+  s.canais = s.canais.filter((c) => !c.paiCanal || visiveis.has(c.paiCanal));
   return { ...s, naoLidos: db.naoLidosDoServidor(uid, row.id),
     icone: db.urlImagem('s', row.id, 'icone', row.icone_v), bannerImg: db.urlImagem('s', row.id, 'banner', row.banner_v) };
 };
@@ -784,6 +787,26 @@ export function criarRotas() {
     if (!tipo) throw erro(415, 'Não é imagem.');
     res.set('Cache-Control', 'private, max-age=86400');
     res.type(tipo).send(r2.corpo);
+  });
+
+  // ------------------------------------------------------------ tópicos (thread a partir de uma mensagem)
+  r.post('/mensagens/:id/topico', exigirLogin, (req, res) => {
+    const uid = req.usuario.id;
+    const msg = db.mensagemPorId(idDe(req.params.id));
+    if (!msg || msg.sistema) throw erro(404, 'Mensagem não encontrada.');
+    const pai = db.acessarCanal(uid, msg.canal_id);
+    if (pai.servidor_id == null || pai.tipo !== 'texto' || pai.pai_canal) throw erro(400, 'Tópico só em canal de texto de servidor.');
+    db.exigirSemCastigo(pai, uid);
+    if (db.topicoDaMensagem(msg.id)) throw erro(400, 'Essa mensagem já tem um tópico.');
+    const nome = typeof corpoDe(req).nome === 'string' ? corpoDe(req).nome.trim().slice(0, 40) : '';
+    if (!nome) throw erro(400, 'Dê um nome pro tópico.');
+    if (db.contarCanais(pai.servidor_id) >= 100) throw erro(400, 'Esse servidor já tem canais demais.');
+    const id = db.criarTopico(pai.servidor_id, pai.id, msg.id, nome);
+    const row = db.canalPorId(id);
+    const canal = db.serCanal(row);
+    emitir(salaDoCanal(row), 'canal:novo', canal);
+    emitir(salaDoCanal(pai), 'msg:editada', db.mensagemCompleta(msg.id)); // mensagem ganha o selo do tópico
+    res.status(201).json(canal);
   });
 
   // ------------------------------------------------------------ emojis próprios (usáveis em qualquer lugar por quem é membro)

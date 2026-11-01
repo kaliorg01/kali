@@ -304,6 +304,12 @@
     if (souStaffEm(s.id) && c.servidorId) linha.append(h('button', { class: 'editar-canal', title: 'Editar canal (categoria, modo lento)', onclick: () => modalEditarCanal(c, s) }, '⚙'));
     if (souDono(s)) linha.append(h('button', { class: 'apagar-canal', title: 'Apagar canal', onclick: () => apagarCanal(c) }, '✕'));
     const frag = [linha];
+    // tópicos desse canal aparecem logo embaixo dele
+    for (const t of s.canais.filter((x) => x.paiCanal === c.id)) {
+      const nt = E.naoLidos[t.id] || 0;
+      frag.push(h('button', { class: 'canal topico-linha' + (t.id === E.canalId ? ' ativo' : '') + (nt ? ' nao-lido' : ''), onclick: () => abrirCanal(t.id) },
+        h('span', { class: 'ic' }, '└'), h('span', { class: 'nm' }, '🧵 ' + t.nome), nt ? h('span', { class: 'n' }, nt) : null));
+    }
     if (c.tipo !== 'texto') {
       const membros = E.voz.get(c.id) || [];
       if (membros.length) frag.push(h('div', { class: 'voz-users' }, membros.map((m) => h('span', { class: 'voz-user' },
@@ -365,7 +371,7 @@
           h('button', { class: 'btn-novo', onclick: modalConvite }, h('span', { style: 'font-size:18px' }, '＋'), 'Convidar amigos'));
         const dono = souDono(s);
         // Canais sem categoria em cima (Texto/Voz); depois cada categoria, que dá pra recolher (igual ao Discord).
-        const semCat = s.canais.filter((c) => !c.categoria);
+        const semCat = s.canais.filter((c) => !c.categoria && !c.paiCanal);
         const texto = semCat.filter((c) => c.tipo === 'texto');
         const voz = semCat.filter((c) => c.tipo !== 'texto');
         if (texto.length || !s.canais.some((c) => c.categoria)) {
@@ -399,6 +405,8 @@
         h('div', { class: 'info' }, h('b', {}, '● Conectado à voz'), h('small', {}, (c ? c.nome : '') + (srv ? ' / ' + srv.nome : ''))),
         h('button', { class: 'icbtn' + (ev.compartilhando ? ' ativo-tela' : ''), title: ev.compartilhando ? 'Parar de compartilhar' : 'Compartilhar tela (1080p/60fps)',
           onclick: () => Voz.alternarTela().catch((err) => toast(err.message, 'erro')) }, '🖥️'),
+        h('button', { class: 'icbtn' + (ev.camera ? ' ativo-tela' : ''), title: ev.camera ? 'Desligar câmera' : 'Ligar câmera',
+          onclick: () => Voz.alternarCamera().catch((err) => toast(err.message, 'erro')) }, '📷'),
         h('button', { class: 'icbtn', title: 'Soundboard: tocar som pra call', onclick: (e) => abrirMenu(e.currentTarget, [h('div', { class: 'sec-menu' }, 'Soundboard (todo mundo da call ouve)'),
           h('div', { class: 'soundboard' }, Object.entries(SONS_BOARD).map(([k, [ic, rot]]) => h('button', { type: 'button', onclick: async () => { const r = await pedir('voz:som', { som: k }); if (r.erro) toast(r.erro, 'erro'); } }, h('span', {}, ic), rot)))]) }, '🎵'),
         h('button', { class: 'icbtn sair-voz', title: 'Sair da voz', onclick: () => { Voz.sair(); } }, '📞')));
@@ -430,7 +438,7 @@
           h('button', { class: 'bt', onclick: () => $('#app').classList.remove('chat') }, 'Ver canais'))));
       return;
     }
-    const titulo = c.dm ? (c.dm.grupo ? '👥 ' : '@ ') + c.dm.outro.nome : (c.tipo === 'assistir' ? '🍿 ' : '# ') + c.nome;
+    const titulo = c.dm ? (c.dm.grupo ? '👥 ' : '@ ') + c.dm.outro.nome : c.paiCanal ? '🧵 ' + c.nome : (c.tipo === 'assistir' ? '🍿 ' : '# ') + c.nome;
     const desc = c.dm ? '@' + c.dm.outro.usuario + (c.dm.outro.statusTexto ? ' · ' + c.dm.outro.statusTexto : '') : (servidorAtual() || {}).nome || '';
     const busca = h('input', { placeholder: 'Buscar', 'aria-label': 'Buscar mensagens' });
     busca.oninput = () => { E.busca = busca.value.trim().toLowerCase(); renderLista({ fim: true }); };
@@ -621,6 +629,7 @@
       const link = m.texto.replace(/\|\|[^|]*\|\|/g, '').match(/https?:\/\/[^\s<>"]+/)?.[0];
       if (link) corpo.append(cartaoPrevia(link));
     }
+    if (m.topico) corpo.append(h('button', { class: 'selo-topico', onclick: () => abrirCanal(m.topico.id) }, '🧵 ', h('b', {}, m.topico.nome), ' · abrir tópico'));
     if (m.anexo) {
       const a = m.anexo;
       if (a.tipo && a.tipo.startsWith('image/')) {
@@ -663,6 +672,11 @@
       bMais.onclick = () => abrirMenu(bMais, [
         minha && m.texto ? item('Editar mensagem', () => { E.editando = m.id; renderLista(); }) : null,
         item('Responder', () => bResp.click()),
+        s && c && c.tipo === 'texto' && !c.paiCanal && !m.topico ? item('Criar tópico', () => {
+          const nome = h('input', { maxlength: 40, placeholder: 'Nome do tópico', value: corta(m.texto || 'Tópico', 40) });
+          abrirModal({ titulo: 'Criar tópico', sub: 'Uma conversa separada a partir desta mensagem.', corpo: [campo('Nome', nome)], botao: 'Criar',
+            acao: async () => { const t = await api('POST', `/mensagens/${m.id}/topico`, { nome: nome.value.trim() }); aoCanalNovo(t); abrirCanal(t.id); } });
+        }) : null,
         !s || souStaffEm(s.id) ? item(m.fixada ? 'Desafixar mensagem' : 'Fixar mensagem', async () => {
           const r = await pedir('msg:fixar', { id: m.id, fixar: !m.fixada });
           toast(r.erro || (m.fixada ? 'Mensagem desafixada' : 'Mensagem fixada 📌'), r.erro ? 'erro' : 'ok');

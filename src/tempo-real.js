@@ -45,6 +45,7 @@ export function exigirId(v, rotulo = 'Identificador') {
 
 export const salaDoCanal = (canal) => {
   if (canal.servidor_id == null) return `c:${canal.id}`;
+  if (canal.pai_canal) { const pai = db.canalPorId(canal.pai_canal); if (pai) return salaDoCanal(pai); } // tópico: mesma audiência do canal-pai
   if (!canal.privado) return `s:${canal.servidor_id}`;
   // Canal privado/ticket: só quem tem acesso recebe os eventos (lista nunca vazia: io.to([]) mandaria pra todos).
   const salas = db.idsComAcesso(canal).map((u) => `u:${u}`);

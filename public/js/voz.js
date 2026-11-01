@@ -57,6 +57,7 @@
 
   // ---- compartilhar tela: 1080p/60fps grátis, vai como track de vídeo extra em cada conexão ----
   let tela = null;
+  let tipoVideo = null; // 'tela' ou 'camera'
   const telas = new Map(); // usuarioId → MediaStream da tela dele
   function renegociar(uid) {
     const p = pares.get(uid);
@@ -151,7 +152,7 @@
   }
 
   window.Voz = {
-    get estado() { return { canalId, mudo, surdo, falando, espacial, compartilhando: !!tela }; },
+    get estado() { return { canalId, mudo, surdo, falando, espacial, compartilhando: !!tela && tipoVideo === 'tela', camera: !!tela && tipoVideo === 'camera' }; },
     get telas() { return telas; },
     get minhaTela() { return tela; },
     async alternarTela() {
@@ -164,6 +165,23 @@
       const v = tela.getVideoTracks()[0];
       v.contentHint = 'motion';
       v.onended = pararTela; // botão "parar" do próprio navegador
+      tipoVideo = 'tela';
+      pares.forEach((p, uid) => { p.telaSender = p.pc.addTrack(v, tela); renegociar(uid); });
+      aoMudar();
+    },
+    // Câmera: usa o mesmo canal de vídeo da tela (um vídeo por pessoa: câmera OU tela).
+    async alternarCamera() {
+      if (tela && tipoVideo === 'camera') return pararTela();
+      if (!canalId) throw new Error('Entra numa call pra ligar a câmera.');
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('Seu navegador não libera câmera.');
+      if (tela) pararTela();
+      try {
+        tela = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } }, audio: false });
+      } catch (e) { tela = null; throw new Error('Não deu pra abrir a câmera (permissão negada ou sem câmera).'); }
+      const v = tela.getVideoTracks()[0];
+      v.contentHint = 'motion';
+      v.onended = pararTela;
+      tipoVideo = 'camera';
       pares.forEach((p, uid) => { p.telaSender = p.pc.addTrack(v, tela); renegociar(uid); });
       aoMudar();
     },

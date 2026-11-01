@@ -150,6 +150,8 @@ for (const [tabela, coluna, def] of [
   ['membros', 'castigo_ate', 'INTEGER'],
   ['usuarios', 'equip_banner', 'INTEGER'],
   ['canais', 'categoria', 'TEXT'],
+  ['canais', 'pai_canal', 'INTEGER'],
+  ['canais', 'pai_msg', 'INTEGER'],
   ['canais', 'modo_lento', 'INTEGER NOT NULL DEFAULT 0'],
   ['membros', 'apelido', 'TEXT'],
   ['usuarios', 'equip_moldura', 'INTEGER'],
@@ -574,7 +576,13 @@ export function criarCanal(sid, nome, tipo, espacial) {
     .run(sid, nome, tipo, pos, espacial ? 1 : 0, Date.now());
   return Number(r.lastInsertRowid);
 }
-export const apagarCanal = (id) => q('DELETE FROM canais WHERE id = ?').run(id);
+export const apagarCanal = (id) => q('DELETE FROM canais WHERE id = ? OR pai_canal = ?').run(id, id); // leva os tópicos junto
+export const topicoDaMensagem = (msgId) => q('SELECT id, nome FROM canais WHERE pai_msg = ?').get(msgId) ?? null;
+export function criarTopico(sid, paiCanal, paiMsg, nome) {
+  const id = criarCanal(sid, nome, 'texto', false); // tópico = canal de texto com canal-pai
+  q('UPDATE canais SET pai_canal = ?, pai_msg = ? WHERE id = ?').run(paiCanal, paiMsg, id);
+  return id;
+}
 export const canalDeAvisos = (sid) =>
   q(`SELECT * FROM canais WHERE servidor_id = ? AND tipo = 'texto'
      ORDER BY (nome = 'geral') DESC, posicao, id LIMIT 1`).get(sid) || null;
@@ -589,6 +597,7 @@ export function acessarCanal(uid, canalId) {
   if (!canal) throw erro(404, 'Canal não encontrado.');
   const ok = canal.servidor_id != null ? ehMembro(canal.servidor_id, uid) : ehParticipanteDm(canal.id, uid);
   if (!ok) throw erro(403, 'Você não tem acesso a este canal.');
+  if (canal.pai_canal) acessarCanal(uid, canal.pai_canal); // tópico herda o acesso do canal-pai
   if (canal.privado && canal.servidor_id != null && !ehStaff(canal.servidor_id, uid) && !temAcessoCanal(canal.id, uid)) {
     throw erro(403, canal.senha_hash ? '🔒 Canal com senha. Digite a senha pra entrar.' : '🔒 Canal privado.');
   }
@@ -738,6 +747,8 @@ export function serMensagem(row, reacoes = []) {
   }
   if (row.expira_em != null) m.expiraEm = row.expira_em;
   if (row.fixada) m.fixada = true;
+  const tp = topicoDaMensagem(row.id);
+  if (tp) m.topico = tp;
   if (row.anexo_nome != null) {
     m.anexo = { url: `/api/anexos/${row.id}`, nome: row.anexo_nome, tipo: row.anexo_tipo, tamanho: row.anexo_tamanho };
   }
@@ -831,6 +842,8 @@ export function serCanal(row) {
     ticket: row.ticket_de ?? null,
     categoria: row.categoria || null,
     modoLento: row.modo_lento || 0,
+    paiCanal: row.pai_canal ?? null,
+    paiMsg: row.pai_msg ?? null,
   };
 }
 export const configurarCanal = (id, categoria, modoLento) =>
