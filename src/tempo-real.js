@@ -81,7 +81,9 @@ export function usuarioPublico(row, { proprio = false } = {}) {
     status: !online ? 'offline' : foco ? 'foco' : row.status,
     statusTexto: row.status_texto,
     avatar: db.urlImagem('u', row.id, 'avatar', row.avatar_v),
-    bannerImg: db.urlImagem('u', row.id, 'banner', row.banner_v),
+    bannerImg: db.urlItem(row.equip_banner),
+    moldura: db.urlItem(row.equip_moldura),
+    corNome: db.corDoItem(row.equip_cor),
   };
   if (foco) u.focoAte = row.foco_ate;
   const lista = (j) => { try { const v = JSON.parse(j || '[]'); return Array.isArray(v) ? v : []; } catch { return []; } };

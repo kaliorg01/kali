@@ -51,6 +51,12 @@ const servidorCompleto = (row, uid) => {
   return { ...s, naoLidos: db.naoLidosDoServidor(uid, row.id),
     icone: db.urlImagem('s', row.id, 'icone', row.icone_v), bannerImg: db.urlImagem('s', row.id, 'banner', row.banner_v) };
 };
+// Dono do app (gerencia a loja): KALI_ADMINS (vírgula) e/ou dados/admins.txt (um usuário por linha), lidos ao subir.
+const ADMINS = new Set([
+  ...(process.env.KALI_ADMINS || '').split(','),
+  ...(() => { try { return fs.readFileSync(path.join(path.dirname(db.CAMINHO_DB), 'admins.txt'), 'utf8').split(/[\s,]+/); } catch { return []; } })(),
+].map((s) => s.trim().toLowerCase().replace(/^@/, '')).filter(Boolean));
+const ehDonoDoApp = (u) => ADMINS.has(u.usuario);
 // Formato real da imagem pelos primeiros bytes (não confia no que o navegador diz).
 function tipoDaImagem(b) {
   if (b.length > 12 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return 'image/png';
@@ -210,7 +216,7 @@ export function criarRotas() {
         if (avisos) publicarMensagem(avisos, { autorId: null, texto: `🎂 Hoje é aniversário de ${u.nome}! Manda os parabéns 🎉`, sistema: true });
       }
     }
-    res.json(usuarioPublico(req.usuario, { proprio: true }));
+    res.json({ ...usuarioPublico(req.usuario, { proprio: true }), admin: ehDonoDoApp(req.usuario) });
   });
 
   r.patch('/eu', exigirLogin, (req, res) => {
@@ -638,7 +644,7 @@ export function criarRotas() {
   }
   r.put('/eu/imagem/:tipo', exigirLogin, corpoImagem, (req, res) => {
     const tipo = req.params.tipo;
-    if (tipo !== 'avatar' && tipo !== 'banner') throw erro(404, 'Não encontrado.');
+    if (tipo !== 'avatar') throw erro(404, 'Banner agora só pela loja.');
     salvarImagem(req, 'u', req.usuario.id, tipo);
     aoAtualizarPerfil(req.usuario.id);
     res.json(usuarioPublico(db.usuarioPorId(req.usuario.id), { proprio: true }));
@@ -660,13 +666,72 @@ export function criarRotas() {
     res.json(atualizado);
   });
   r.get('/imagens/:arquivo', exigirLogin, (req, res) => {
-    if (!/^[us][1-9]\d{0,14}-(avatar|banner|icone)$/.test(req.params.arquivo)) throw erro(404, 'Não encontrado.');
+    if (!/^([us][1-9]\d{0,14}-(avatar|banner|icone)|i[1-9]\d{0,14}-item)$/.test(req.params.arquivo)) throw erro(404, 'Não encontrado.');
     const arquivo = path.join(db.PASTA_IMAGENS, req.params.arquivo);
     if (!fs.existsSync(arquivo)) throw erro(404, 'Não encontrado.');
     const fd = fs.openSync(arquivo, 'r'); const cab = Buffer.alloc(16); fs.readSync(fd, cab, 0, 16, 0); fs.closeSync(fd);
     res.set('Cache-Control', 'private, max-age=31536000, immutable');
     res.type(tipoDaImagem(cab) || 'application/octet-stream');
     res.sendFile(arquivo);
+  });
+
+  // ------------------------------------------------------------ loja de cosméticos
+  const itemPublico = (i) => ({ id: i.id, tipo: i.tipo, nome: i.nome, preco: i.preco,
+    imagem: i.tipo === 'cor' ? null : `/api/imagens/i${i.id}-item?v=${i.valor}`, cor: i.tipo === 'cor' ? i.valor : null });
+  const exigirDonoDoApp = (req) => { if (!ehDonoDoApp(req.usuario)) throw erro(403, 'Só o dono do KALI mexe na loja.'); };
+  r.get('/loja', exigirLogin, (req, res) => {
+    const u = db.usuarioPorId(req.usuario.id);
+    res.json({ itens: db.itensDaLoja().map(itemPublico), meus: db.meusItens(u.id),
+      equipados: { banner: u.equip_banner ?? null, moldura: u.equip_moldura ?? null, cor: u.equip_cor ?? null } });
+  });
+  r.post('/loja/equipar', exigirLogin, (req, res) => {
+    const c = corpoDe(req);
+    if (!['banner', 'moldura', 'cor'].includes(c.tipo)) throw erro(400, 'Tipo inválido.');
+    if (c.itemId != null) {
+      const item = db.itemPorId(Number(c.itemId));
+      if (!item || item.tipo !== c.tipo || !db.temItem(req.usuario.id, item.id)) throw erro(403, 'Você não tem esse item.');
+    }
+    db.equipar(req.usuario.id, c.tipo, c.itemId ?? null);
+    aoAtualizarPerfil(req.usuario.id);
+    res.json({ ok: true });
+  });
+  // Criar item: corpo cru = imagem (banner/moldura); ?tipo=&nome=&preco=(centavos)&cor=#hex ou #hex,#hex
+  r.post('/loja/itens', exigirLogin, corpoImagem, (req, res) => {
+    exigirDonoDoApp(req);
+    const tipo = String(req.query.tipo || '');
+    const nome = typeof req.query.nome === 'string' ? req.query.nome.trim().slice(0, 40) : '';
+    const preco = Number(req.query.preco);
+    if (!['banner', 'moldura', 'cor'].includes(tipo)) throw erro(400, 'Tipo inválido.');
+    if (!nome) throw erro(400, 'Dê um nome pro item.');
+    if (!Number.isInteger(preco) || preco < 0 || preco > 100000000) throw erro(400, 'Preço inválido.');
+    let id;
+    if (tipo === 'cor') {
+      const cor = String(req.query.cor || '').toLowerCase();
+      if (!/^#[0-9a-f]{6}(,#[0-9a-f]{6})?$/.test(cor)) throw erro(400, 'Cor inválida.');
+      id = db.criarItem(tipo, nome, preco, cor);
+    } else {
+      if (!Buffer.isBuffer(req.body) || !tipoDaImagem(req.body)) throw erro(415, 'Envie uma imagem PNG, JPG, GIF ou WEBP.');
+      const v = String(Date.now());
+      id = db.criarItem(tipo, nome, preco, v);
+      fs.writeFileSync(path.join(db.PASTA_IMAGENS, `i${id}-item`), req.body);
+    }
+    res.status(201).json(itemPublico(db.itemPorId(id)));
+  });
+  r.delete('/loja/itens/:id', exigirLogin, (req, res) => {
+    exigirDonoDoApp(req);
+    if (!db.desativarItem(idDe(req.params.id))) throw erro(404, 'Item não encontrado.');
+    res.json({ ok: true });
+  });
+  r.post('/loja/presentear', exigirLogin, (req, res) => {
+    exigirDonoDoApp(req);
+    const c = corpoDe(req);
+    const alvo = typeof c.usuario === 'string' ? db.usuarioPorNome(c.usuario.trim().toLowerCase().replace(/^@/, '')) : null;
+    if (!alvo) throw erro(404, 'Usuário não encontrado.');
+    const item = db.itemPorId(Number(c.itemId));
+    if (!item || !item.ativo) throw erro(404, 'Item não encontrado.');
+    if (!db.darItem(alvo.id, item.id)) throw erro(400, `${alvo.nome} já tem esse item.`);
+    emitir(`u:${alvo.id}`, 'loja:ganhou', { nome: item.nome });
+    res.json({ ok: true });
   });
 
   // ------------------------------------------------------------ castigo (timeout): 0 tira

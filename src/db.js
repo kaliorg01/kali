@@ -148,6 +148,9 @@ for (const [tabela, coluna, def] of [
   ['mensagens', 'resposta_a', 'INTEGER'],
   ['usuarios', 'avatar_v', 'INTEGER'],
   ['membros', 'castigo_ate', 'INTEGER'],
+  ['usuarios', 'equip_banner', 'INTEGER'],
+  ['usuarios', 'equip_moldura', 'INTEGER'],
+  ['usuarios', 'equip_cor', 'INTEGER'],
   ['usuarios', 'banner_v', 'INTEGER'],
   ['servidores', 'icone_v', 'INTEGER'],
   ['servidores', 'banner_v', 'INTEGER'],
@@ -254,6 +257,40 @@ export function fecharBanco() {
 db.exec(`UPDATE usuarios SET cor = CASE cor WHEN '#7c5cff' THEN '#367bf0' WHEN '#c056f5' THEN '#1fa2ff' ELSE '#2fd0ff' END WHERE cor IN ('#7c5cff', '#c056f5', '#ff9a3c')`);
 export const PALETA = ['#367bf0', '#1fa2ff', '#2fd0ff', '#3ee6a8', '#1d4ed8', '#c2410c', '#0e7490', '#db2777'];
 export const corAleatoria = () => PALETA[crypto.randomInt(PALETA.length)];
+
+// ---------------------------------------------------------------- loja de cosméticos
+// tipo banner/moldura: `valor` = versão da imagem (dados/imagens/i<id>-item); tipo cor: `valor` = '#hex' ou '#hex,#hex'.
+db.exec(`
+CREATE TABLE IF NOT EXISTS loja_itens (
+  id        INTEGER PRIMARY KEY AUTOINCREMENT,
+  tipo      TEXT NOT NULL CHECK (tipo IN ('banner','moldura','cor')),
+  nome      TEXT NOT NULL,
+  preco     INTEGER NOT NULL DEFAULT 0,
+  valor     TEXT NOT NULL,
+  ativo     INTEGER NOT NULL DEFAULT 1,
+  criado_em INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS inventario (
+  usuario_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+  item_id    INTEGER NOT NULL REFERENCES loja_itens(id) ON DELETE CASCADE,
+  ganho_em   INTEGER NOT NULL,
+  PRIMARY KEY (usuario_id, item_id)
+);
+`);
+export function itemPorId(id) { return id ? q('SELECT * FROM loja_itens WHERE id = ?').get(id) ?? null : null; }
+export function urlItem(id) { const i = itemPorId(id); return i && i.tipo !== 'cor' ? `/api/imagens/i${i.id}-item?v=${i.valor}` : null; }
+export function corDoItem(id) { const i = itemPorId(id); return i && i.tipo === 'cor' ? i.valor : null; }
+export const itensDaLoja = () => q('SELECT * FROM loja_itens WHERE ativo = 1 ORDER BY tipo, id DESC').all();
+export const criarItem = (tipo, nome, preco, valor) =>
+  Number(q('INSERT INTO loja_itens (tipo, nome, preco, valor, criado_em) VALUES (?, ?, ?, ?, ?)').run(tipo, nome, preco, valor, Date.now()).lastInsertRowid);
+export const desativarItem = (id) => q('UPDATE loja_itens SET ativo = 0 WHERE id = ?').run(id).changes > 0;
+export const meusItens = (uid) => q('SELECT item_id FROM inventario WHERE usuario_id = ?').all(uid).map((r) => r.item_id);
+export const temItem = (uid, id) => !!q('SELECT 1 FROM inventario WHERE usuario_id = ? AND item_id = ?').get(uid, id);
+export const darItem = (uid, id) => q('INSERT OR IGNORE INTO inventario (usuario_id, item_id, ganho_em) VALUES (?, ?, ?)').run(uid, id, Date.now()).changes > 0;
+export function equipar(uid, tipo, itemId) {
+  const coluna = { banner: 'equip_banner', moldura: 'equip_moldura', cor: 'equip_cor' }[tipo];
+  q(`UPDATE usuarios SET ${coluna} = ? WHERE id = ?`).run(itemId, uid);
+}
 
 // ---------------------------------------------------------------- castigo (timeout)
 export const castigar = (sid, uid, ate) => q('UPDATE membros SET castigo_ate = ? WHERE servidor_id = ? AND usuario_id = ?').run(ate, sid, uid);
@@ -539,7 +576,8 @@ export function marcarImagem(dono, id, tipo, v) {
   const [tabela, coluna] = { 'u-avatar': ['usuarios', 'avatar_v'], 'u-banner': ['usuarios', 'banner_v'], 's-icone': ['servidores', 'icone_v'], 's-banner': ['servidores', 'banner_v'] }[`${dono}-${tipo}`];
   q(`UPDATE ${tabela} SET ${coluna} = ? WHERE id = ?`).run(v, id);
 }
-const SELECT_MSG = `SELECT m.*, u.usuario AS a_usuario, u.nome AS a_nome, u.cor AS a_cor, u.avatar_v AS a_avatar
+const SELECT_MSG = `SELECT m.*, u.usuario AS a_usuario, u.nome AS a_nome, u.cor AS a_cor, u.avatar_v AS a_avatar,
+                    u.equip_moldura AS a_moldura, u.equip_cor AS a_cor_item
                     FROM mensagens m LEFT JOIN usuarios u ON u.id = m.autor_id`;
 
 export function inserirMensagem({ canalId, autorId, texto, sistema = false, refCanalId = null,
@@ -614,7 +652,8 @@ export function serMensagem(row, reacoes = []) {
     id: row.id,
     canalId: row.canal_id,
     autor: row.autor_id != null && row.a_usuario != null
-      ? { id: row.autor_id, usuario: row.a_usuario, nome: row.a_nome, cor: row.a_cor, avatar: urlImagem('u', row.autor_id, 'avatar', row.a_avatar) }
+      ? { id: row.autor_id, usuario: row.a_usuario, nome: row.a_nome, cor: row.a_cor, avatar: urlImagem('u', row.autor_id, 'avatar', row.a_avatar),
+        moldura: urlItem(row.a_moldura), corNome: corDoItem(row.a_cor_item) }
       : null,
     texto: row.texto,
     criadoEm: row.criado_em,

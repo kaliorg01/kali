@@ -66,6 +66,9 @@
     amigos: { amigos: [], recebidos: [], enviados: [] },
     cargos: new Map(),
   };
+  // Cor de nome comprada na loja: '#hex' ou '#hex,#hex' (degradê).
+  const estiloNome = (c) => !c ? null : c.includes(',')
+    ? `background:linear-gradient(90deg,${c});-webkit-background-clip:text;background-clip:text;color:transparent` : `color:${c}`;
   // Cor do primeiro cargo personalizado da pessoa no servidor (ou null).
   const corCargo = (sid, uid) => (E.cargos.get(sid) || []).find((c) => c.membros.includes(uid))?.cor || null;
   const TEMPOS = [[0, 'Desligado', '⏱'], [60, '1 minuto', '1m'], [600, '10 minutos', '10m'], [3600, '1 hora', '1h'], [86400, '24 horas', '24h']];
@@ -162,6 +165,7 @@
     const a = h('div', { class: 'av ' + (cls || '') }, inicial(u && (u.nome || u.usuario)));
     a.style.background = (u && u.cor) || '#6b7280';
     if (u && u.avatar) { a.textContent = ''; a.style.background = `center/cover no-repeat url("${u.avatar}")`; }
+    if (u && u.moldura) a.append(h('img', { class: 'moldura', src: u.moldura, alt: '' }));
     if (comStatus && u) a.append(h('i', { class: 'st ' + st(u.id)[0] }));
     return a;
   }
@@ -505,7 +509,7 @@
       if (m.sistema || !m.autor) corpo.append(h('b', { class: 'nome-ia' }, 'KALI'), h('span', { class: 'tag' }, 'IA'));
       else {
         const dono = s && s.donoId === m.autor.id, cor = s && !dono ? corCargo(s.id, m.autor.id) : null;
-        corpo.append(h('b', { class: 'autor' + (dono ? ' nome-dono' : ''), style: cor ? `color:${cor}` : null }, m.autor.nome));
+        corpo.append(h('b', { class: 'autor' + (dono && !m.autor.corNome ? ' nome-dono' : ''), style: estiloNome(m.autor.corNome) || (cor ? `color:${cor}` : null) }, m.autor.nome));
       }
       corpo.append(h('time', { title: new Date(m.criadoEm).toLocaleString('pt-BR') }, hora(m.criadoEm)));
     }
@@ -804,7 +808,7 @@
       partes.push(h('div', { class: 'rot' }, `${nome} — ${membros.length}`));
       for (const m of membros) {
         const b = h('button', { class: 'membro' + (nome === 'Offline' ? ' offline' : ''), onclick: (e) => cartaoMembro(e.currentTarget, m) },
-          avatar(m, '', true), h('span', { class: 'txt' }, h('b', { style: corCargo(s.id, m.id) ? `color:${corCargo(s.id, m.id)}` : null }, m.nome, fazAniver(m) ? ' 🎂' : '', SELO_CARGO[m.cargo] ? h('span', { class: 'coroa', title: m.cargo }, SELO_CARGO[m.cargo]) : null),
+          avatar(m, '', true), h('span', { class: 'txt' }, h('b', { style: estiloNome(m.corNome) || (corCargo(s.id, m.id) ? `color:${corCargo(s.id, m.id)}` : null) }, m.nome, fazAniver(m) ? ' 🎂' : '', SELO_CARGO[m.cargo] ? h('span', { class: 'coroa', title: m.cargo }, SELO_CARGO[m.cargo]) : null),
             h('small', {}, rotStatus(m))));
         partes.push(b);
       }
@@ -1351,6 +1355,69 @@
     };
     inp.click();
   }
+  // ---------- loja ----------
+  const TIPOS_LOJA = { banner: 'Banners', moldura: 'Molduras de foto', cor: 'Cor do nome' };
+  const reais = (c) => c ? (c / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : 'Grátis';
+  async function modalLoja() {
+    let L;
+    try { L = await api('GET', '/loja'); } catch (err) { return toast(err.message, 'erro'); }
+    const recarregar = async () => { await recarregarEu(); modalLoja(); };
+    const cartao = (i) => {
+      const meu = L.meus.includes(i.id), usando = L.equipados[i.tipo] === i.id;
+      const previa = i.tipo === 'banner' ? h('img', { class: 'previa-banner', src: i.imagem, alt: '' })
+        : i.tipo === 'moldura' ? avatar({ ...E.eu, moldura: i.imagem }, 'previa-av')
+          : h('b', { class: 'previa-cor', style: estiloNome(i.cor) }, E.eu.nome);
+      const acao = meu
+        ? h('button', { type: 'button', class: 'bt' + (usando ? '' : ' prim'), onclick: async () => {
+          try { await api('POST', '/loja/equipar', { tipo: i.tipo, itemId: usando ? null : i.id }); await recarregar(); } catch (err) { toast(err.message, 'erro'); }
+        } }, usando ? 'Em uso (tirar)' : 'Usar')
+        : h('small', { class: 'sub' }, reais(i.preco) + ' · fale com o dono pra comprar');
+      return h('div', { class: 'item-loja' + (usando ? ' usando' : '') }, previa, h('b', {}, i.nome), acao,
+        E.eu.admin ? h('button', { type: 'button', class: 'remover-item', title: 'Tirar da loja', onclick: async () => {
+          if (!confirm(`Tirar "${i.nome}" da loja?`)) return;
+          try { await api('DELETE', `/loja/itens/${i.id}`); modalLoja(); } catch (err) { toast(err.message, 'erro'); }
+        } }, '✕') : null);
+    };
+    const secoes = Object.entries(TIPOS_LOJA).map(([t, rot]) => {
+      const itens = L.itens.filter((i) => i.tipo === t);
+      return [h('div', { class: 'sec-menu' }, rot), itens.length ? h('div', { class: 'loja-grade' }, itens.map(cartao)) : h('p', { class: 'sub' }, 'Nada aqui ainda.')];
+    });
+    const corpo = [secoes];
+    if (E.eu.admin) corpo.push(painelLoja(L));
+    abrirModal({ titulo: 'Loja', sub: 'Itens exclusivos pro seu perfil.', corpo, larga: true });
+  }
+  // Painel do dono do KALI: criar item e entregar pra alguém.
+  function painelLoja(L) {
+    const tipo = h('select', {}, Object.entries(TIPOS_LOJA).map(([v, r]) => h('option', { value: v }, r)));
+    const nome = h('input', { maxlength: 40, placeholder: 'Nome do item' });
+    const preco = h('input', { type: 'number', min: 0, step: '0.01', placeholder: 'Preço em R$ (ex: 4,90)' });
+    const arq = h('input', { type: 'file', accept: 'image/png,image/jpeg,image/gif,image/webp' });
+    const c1 = h('input', { type: 'color', value: '#2fd0ff', class: 'cor-cargo' }), c2 = h('input', { type: 'color', value: '#1f5fd6', class: 'cor-cargo' });
+    const degrade = h('input', { type: 'checkbox' });
+    const quem = h('input', { maxlength: 20, placeholder: '@usuario' });
+    const qual = h('select', {}, L.itens.map((i) => h('option', { value: i.id }, `${i.nome} (${TIPOS_LOJA[i.tipo]})`)));
+    const criar = async () => {
+      const qs = new URLSearchParams({ tipo: tipo.value, nome: nome.value.trim(), preco: String(Math.round(Number(String(preco.value || 0).replace(',', '.')) * 100)) });
+      let body;
+      if (tipo.value === 'cor') qs.set('cor', degrade.checked ? `${c1.value},${c2.value}` : c1.value);
+      else { body = arq.files[0]; if (!body) return toast('Escolha a imagem do item.', 'erro'); }
+      const r = await fetch('/api/loja/itens?' + qs, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) return toast(d.erro || 'Não deu pra criar o item.', 'erro');
+      toast('Item criado na loja ✓', 'ok'); modalLoja();
+    };
+    const dar = async () => {
+      try { await api('POST', '/loja/presentear', { usuario: quem.value.trim(), itemId: Number(qual.value) }); toast('Item entregue ✓', 'ok'); quem.value = ''; }
+      catch (err) { toast(err.message, 'erro'); }
+    };
+    return h('div', { class: 'painel-loja' }, h('div', { class: 'sec-menu' }, 'Painel do dono'),
+      h('div', { class: 'linha-form' }, tipo, nome, preco),
+      h('div', { class: 'linha-form' }, h('small', { class: 'sub' }, 'Imagem (banner 3:1, moldura PNG transparente):'), arq),
+      h('div', { class: 'linha-form' }, h('small', { class: 'sub' }, 'Cor:'), c1, h('label', { class: 'check-amigo' }, degrade, ' degradê com'), c2),
+      h('button', { type: 'button', class: 'bt prim', onclick: criar }, 'Criar item'),
+      h('div', { class: 'sec-menu' }, 'Entregar item pra alguém (depois do pagamento)'),
+      h('div', { class: 'linha-form' }, quem, qual, h('button', { type: 'button', class: 'bt', onclick: dar }, 'Entregar')));
+  }
   // ---------- cargos personalizados ----------
   async function carregarCargos(sid) { E.cargos.set(sid, await api('GET', `/servidores/${sid}/cargos`)); }
   function modalCargos(s) {
@@ -1426,7 +1493,7 @@
     abrirMenu(ancora, [
       sec('Perfil'),
       item('Trocar foto de perfil', () => escolherImagem('/eu/imagem/avatar')),
-      item('Trocar banner do perfil', () => escolherImagem('/eu/imagem/banner')),
+      item('Loja (banners, molduras, cor do nome)', modalLoja),
       ...(E.eu.avatar ? [item('Remover foto', async () => { await api('DELETE', '/eu/imagem/avatar').catch(() => {}); await recarregarEu(); })] : []),
       sec('Notificações'),
       item('Modo foco' + ligado(E.eu.status === 'foco'), () => abrirMenu(ancora, [sec('Sem avisos por'),
@@ -1464,6 +1531,7 @@
       ['online', 'ausente', 'ocupado'].map((x) => item([h('span', { class: 'bolinha ' + STATUS[x][0] }), STATUS[x][1]], () => definir(x))),
       h('hr'),
       item('Editar perfil', modalPerfil),
+      item('Loja', modalLoja),
       item('Configurações', () => menuConfig(ancora)),
       h('hr'),
       item('Sair da conta', async () => { await api('POST', '/sair').catch(() => {}); location.href = '/entrar.html'; }, 'perigo'),
@@ -1898,6 +1966,7 @@
     sock.on('canal:apagado', aoCanalApagado);
     sock.on('servidor:atualizado', aoServidorAtualizado);
     sock.on('servidor:apagado', aoServidorApagado);
+    sock.on('loja:ganhou', ({ nome }) => toast(`Você ganhou "${nome}"! Abra a Loja pra usar.`, 'ok'));
     sock.on('castigo', ({ servidor, ate }) => toast(ate ? `⏳ Você levou castigo em ${servidor} até ${hora(ate)}.` : `✅ Seu castigo em ${servidor} acabou.`, ate ? 'erro' : 'ok'));
     sock.on('cargos:atualizado', async ({ servidorId }) => {
       try {

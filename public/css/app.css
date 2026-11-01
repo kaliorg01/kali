@@ -107,6 +107,22 @@ button.side-topo:hover{background:var(--hover)}
 .msg.bloqueada{opacity:.7}
 .sec-menu{padding:10px 10px 4px;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--fraco)}
 .menu{max-height:min(80vh,640px);overflow-y:auto}
+/* loja */
+.av:has(.moldura){overflow:visible}
+.av .moldura{position:absolute;left:-18%;top:-18%;width:136%;height:136%;object-fit:contain;pointer-events:none;z-index:1}
+.loja-grade{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin:4px 0 10px}
+.item-loja{position:relative;display:flex;flex-direction:column;align-items:center;gap:6px;padding:12px 10px;border:1px solid var(--borda);border-radius:14px;background:var(--chip);text-align:center}
+.item-loja.usando{border-color:var(--roxo);box-shadow:0 0 0 1px var(--roxo) inset}
+.item-loja .bt{width:100%;padding:7px}
+.previa-banner{width:100%;height:50px;object-fit:cover;border-radius:10px}
+.previa-av{width:48px!important;height:48px!important;margin:8px}
+.previa-cor{font-size:16px;padding:12px 0}
+.remover-item{position:absolute;top:4px;right:6px;color:var(--fraco);font-size:12px}
+.remover-item:hover{color:var(--ocup)}
+.painel-loja{border-top:1px solid var(--borda);margin-top:8px;padding-top:4px;display:flex;flex-direction:column;gap:8px}
+.linha-form{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.linha-form input:not([type=color]):not([type=checkbox]),.linha-form select{flex:1;min-width:120px;padding:9px 12px;border:1px solid var(--borda);border-radius:10px;background:var(--chip);color:var(--texto)}
+.linha-form .cor-cargo{margin:0}
 .cargos li{align-items:center}
 .bolinha-cargo{width:14px;height:14px;border-radius:50%;flex:none;margin-top:0!important}
 .cargos li>div:nth-child(2){flex:1;min-width:0}
