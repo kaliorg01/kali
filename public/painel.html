@@ -80,7 +80,9 @@
   .linha-form input:focus,.linha-form select:focus{border-color:#2fd0ff;box-shadow:0 0 0 3px rgba(47,208,255,.18);outline:0;transition:box-shadow .2s}
   .toast{animation:toastIn .35s cubic-bezier(.3,1.4,.5,1)}
   @keyframes toastIn{from{opacity:0;transform:translateY(20px) scale(.9)}}
-  @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition:none!important}}
+  /* Reduzir movimento: tira grade 3D, partículas e flutuação; mantém brilhos e esmaecer */
+  @media (prefers-reduced-motion:reduce){.fundo .grade,.fundo .bolha,.fundo .pt,.painel-topo img{animation:none!important}.bloco,.painel-topo,.numero,.item-loja,.usuario-linha{animation-name:soEsmaece!important}.bloco:hover,.numero:hover,.item-loja:hover,.bt:hover{transform:none!important}}
+  @keyframes soEsmaece{from{opacity:0}to{opacity:1}}
 </style>
 </head>
 <body class="painel">

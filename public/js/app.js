@@ -64,7 +64,7 @@
     novaDesde: new Map(), busca: '', editando: null,
     missoes: new Map(), temp: 0, assistindo: null,
     amigos: { amigos: [], recebidos: [], enviados: [] },
-    cargos: new Map(), eventos: new Map(), emojis: new Map(),
+    cargos: new Map(), eventos: new Map(), emojis: new Map(), animado: new Map(), novaAte: new Map(),
   };
   // Cor de nome comprada na loja: '#hex' ou '#hex,#hex' (degradê).
   const estiloNome = (c) => !c ? null : c.includes(',')
@@ -735,6 +735,14 @@
       if (r) itens.push(cartaoResumo(c.id, r));
     }
     lista.replaceChildren(...itens);
+    // Só a mensagem que acabou de chegar entra animada (o histórico aparece parado).
+    const msgsCanal = E.msgs.get(c.id) || [], ultimaVista = E.animado.get(c.id), agora = Date.now();
+    lista.querySelectorAll('.msg[data-id]').forEach((el) => {
+      const id = Number(el.dataset.id);
+      if (ultimaVista != null && id > ultimaVista && !E.novaAte.has(id)) E.novaAte.set(id, agora + 700);
+      if ((E.novaAte.get(id) || 0) > agora) el.classList.add('nova'); // continua animando se a tela redesenhar logo em seguida
+    });
+    if (msgsCanal.length) E.animado.set(c.id, msgsCanal[msgsCanal.length - 1].id);
     if (opc.preservar) box.scrollTop = box.scrollHeight - alturaAntes + topoAntes;
     else if (opc.fim || perto) box.scrollTop = box.scrollHeight;
   }
