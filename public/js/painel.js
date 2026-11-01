@@ -38,9 +38,26 @@
   async function atualizarResumo() {
     try {
       const r = await api('GET', '/admin/resumo');
-      numeros.replaceChildren(...[['online', 'online agora'], ['usuarios', 'contas'], ['servidores', 'servidores'], ['mensagens', 'mensagens'], ['itensEntregues', 'itens entregues']]
-        .map(([k, rot]) => h('div', { class: 'numero' }, h('b', {}, r[k].toLocaleString('pt-BR')), h('small', {}, rot))));
+      const campos = [['online', 'online agora'], ['usuarios', 'contas'], ['servidores', 'servidores'], ['mensagens', 'mensagens'], ['itensEntregues', 'itens entregues']];
+      if (!numeros.children.length) numeros.replaceChildren(...campos.map(([k, rot], i) => h('div', { class: 'numero' + (k === 'online' ? ' online' : ''), style: '--i:' + i, 'data-k': k }, h('b', {}, '0'), h('small', {}, rot))));
+      for (const [k] of campos) contar(numeros.querySelector('[data-k="' + k + '"] b'), r[k]);
     } catch (e) { /* tenta de novo no próximo ciclo */ }
+  }
+
+  // Número sobe contando até o valor novo (e pisca quando muda).
+  function contar(el, alvo) {
+    const de = Number(el.dataset.v || 0);
+    if (de === alvo) return;
+    el.dataset.v = alvo;
+    const ini = performance.now(), dur = 900;
+    const passo = (t) => { const p = Math.min(1, (t - ini) / dur), e = 1 - (1 - p) ** 3; el.textContent = Math.round(de + (alvo - de) * e).toLocaleString('pt-BR'); if (p < 1) requestAnimationFrame(passo); };
+    requestAnimationFrame(passo);
+    if (de) { el.classList.remove('subiu'); void el.offsetWidth; el.classList.add('subiu'); }
+  }
+  // Partículas subindo no fundo.
+  function particulas() {
+    const fundo = $('#fundo');
+    for (let i = 0; i < 28; i++) fundo.append(h('i', { class: 'pt', style: `left:${Math.random() * 100}%;animation-duration:${8 + Math.random() * 12}s;animation-delay:-${Math.random() * 20}s;opacity:${0.3 + Math.random() * 0.7}` }));
   }
 
   // ---------- loja ----------
@@ -48,7 +65,7 @@
   const qual = h('select', {});
   async function carregarItens() {
     itens = (await api('GET', '/loja')).itens;
-    grade.replaceChildren(...(itens.length ? itens.map((i) => h('div', { class: 'item-loja' },
+    grade.replaceChildren(...(itens.length ? itens.map((i, n) => h('div', { class: 'item-loja', style: '--i:' + n },
       i.tipo === 'banner' ? h('img', { class: 'previa-banner', src: i.imagem, alt: '' })
         : i.tipo === 'moldura' ? h('img', { src: i.imagem, alt: '', style: 'width:64px;height:64px;object-fit:contain' })
           : h('b', { class: 'previa-cor', style: estiloNome(i.cor) }, eu.nome),
@@ -109,8 +126,8 @@
     const caixa = h('div', {});
     const carregar = async () => {
       const r = await api('GET', '/admin/usuarios?busca=' + encodeURIComponent(busca.value.replace(/^@/, ''))).catch(() => []);
-      caixa.replaceChildren(...(r.length ? r.map((u) => {
-        const linha = h('div', { class: 'usuario-linha' }, h('div', { class: 'nome' }, h('b', {}, u.nome), ' ', h('small', {}, '@' + u.usuario)),
+      caixa.replaceChildren(...(r.length ? r.map((u, n) => {
+        const linha = h('div', { class: 'usuario-linha', style: '--i:' + n }, h('div', { class: 'nome' }, h('b', {}, u.nome), ' ', h('small', {}, '@' + u.usuario)),
           h('small', {}, 'desde ' + data(u.criadoEm)), h('small', {}, u.itens + ' item(s)'));
         const ver = h('button', { type: 'button', class: 'bt', onclick: async () => {
           const its = await api('GET', `/admin/usuarios/${u.id}/itens`).catch(() => []);
@@ -140,14 +157,15 @@
       raiz.replaceChildren(h('div', { class: 'aviso-painel' }, h('h2', {}, 'Acesso só pro dono do KALI'), h('p', {}, h('a', { href: '/' }, 'Voltar pro KALI'))));
       return;
     }
+    particulas();
     raiz.replaceChildren(
-      h('header', { class: 'painel-topo' }, h('img', { src: '/img/icone.png', alt: '' }), h('h1', {}, 'KALI · PAINEL DO DONO'),
+      h('header', { class: 'painel-topo', style: '--i:0' }, h('img', { src: '/img/icone.png', alt: '' }), h('h1', {}, 'KALI · PAINEL DO DONO'),
         h('span', { class: 'sub' }, '@' + eu.usuario), h('a', { href: '/' }, 'Abrir o KALI →')),
-      h('section', { class: 'bloco' }, h('h2', {}, 'Agora'), numeros),
-      h('section', { class: 'bloco' }, h('h2', {}, 'Criar item da loja'), formCriar()),
-      h('section', { class: 'bloco' }, h('h2', {}, 'Itens à venda'), grade),
-      h('section', { class: 'bloco' }, h('h2', {}, 'Entregar item (depois do pagamento)'), formEntregar()),
-      h('section', { class: 'bloco' }, h('h2', {}, 'Usuários'), blocoUsuarios()));
+      h('section', { class: 'bloco', style: '--i:1' }, h('h2', {}, 'Agora'), numeros),
+      h('section', { class: 'bloco', style: '--i:2' }, h('h2', {}, 'Criar item da loja'), formCriar()),
+      h('section', { class: 'bloco', style: '--i:3' }, h('h2', {}, 'Itens à venda'), grade),
+      h('section', { class: 'bloco', style: '--i:4' }, h('h2', {}, 'Entregar item (depois do pagamento)'), formEntregar()),
+      h('section', { class: 'bloco', style: '--i:5' }, h('h2', {}, 'Usuários'), blocoUsuarios()));
     await Promise.all([atualizarResumo(), carregarItens()]);
     setInterval(atualizarResumo, 15000);
   })();
