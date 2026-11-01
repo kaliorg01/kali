@@ -412,6 +412,10 @@
       h('button', { class: 'pill ia', onclick: verResumo }, '✦', h('span', { class: 'rotulo' }, ' O que eu perdi?')),
       h('label', { class: 'pill busca' }, '⌕ ', busca),
       h('button', { class: 'pill', title: 'Mensagens fixadas', onclick: () => modalFixadas(c.id) }, '📌'),
+      h('button', { class: 'pill', title: silenciado(c.id) ? 'Reativar avisos deste canal' : 'Silenciar este canal', onclick: (e) => {
+        const on = alternarLocal('kali-silenciados', c.id); e.currentTarget.textContent = on ? '🔕' : '🔔';
+        toast(on ? '🔕 Canal silenciado: sem som nem aviso' : '🔔 Avisos do canal reativados', 'ok');
+      } }, silenciado(c.id) ? '🔕' : '🔔'),
       c.dm && c.dm.grupo ? h('button', { class: 'pill', title: 'Sair do grupo', onclick: () => sairDoGrupo(c) }, '🚪') : null,
       h('button', { class: 'pill', title: 'Membros', onclick: alternarMembros }, '👥'));
     const lista = h('div', { class: 'col', id: 'lista' });
@@ -455,21 +459,31 @@
   }
 
   // ---------- mensagens ----------
+  // Formatação estilo Discord: `código`, ||spoiler||, **negrito**, *itálico*, links e @menções (sempre via textContent).
   function formatarTexto(texto) {
     const frag = document.createDocumentFragment();
-    const re = /(https?:\/\/[^\s<>"]+|@[a-z0-9_.]{3,20})/gi;
+    const re = /(`[^`\n]{1,500}`|\|\|[^|\n]{1,500}\|\||\*\*[^*\n]{1,500}\*\*|\*[^*\s][^*\n]{0,500}\*|https?:\/\/[^\s<>"]+|@[a-z0-9_.]{3,20})/gi;
     let i = 0, m;
     const eu = '@' + E.eu.usuario;
     while ((m = re.exec(texto))) {
       if (m.index > i) frag.append(texto.slice(i, m.index));
       const t = m[0];
-      if (t[0] === '@') frag.append(h('span', { class: 'men' + (t.toLowerCase() === eu ? ' eu' : '') }, t));
+      if (t[0] === '`') frag.append(h('code', { class: 'cod' }, t.slice(1, -1)));
+      else if (t.startsWith('||')) { const sp = h('span', { class: 'spoiler', title: 'Spoiler: clica pra ver' }, formatarTexto(t.slice(2, -2))); sp.onclick = () => sp.classList.add('visto'); frag.append(sp); }
+      else if (t.startsWith('**')) frag.append(h('b', {}, formatarTexto(t.slice(2, -2))));
+      else if (t[0] === '*') frag.append(h('i', {}, formatarTexto(t.slice(1, -1))));
+      else if (t[0] === '@') frag.append(h('span', { class: 'men' + (t.toLowerCase() === eu ? ' eu' : '') }, t));
       else frag.append(h('a', { href: t, target: '_blank', rel: 'noopener noreferrer' }, t));
       i = m.index + t.length;
     }
     if (i < texto.length) frag.append(texto.slice(i));
     return frag;
   }
+  // Bloqueados e canais silenciados ficam só neste navegador.
+  const listaLocal = (k) => { try { return JSON.parse(ler(k) || '[]'); } catch (e) { return []; } };
+  const bloqueado = (uid) => listaLocal('kali-bloqueados').includes(uid);
+  const silenciado = (canalId) => listaLocal('kali-silenciados').includes(canalId);
+  const alternarLocal = (k, id) => { const l = listaLocal(k); salvar(k, JSON.stringify(l.includes(id) ? l.filter((x) => x !== id) : [...l, id])); return !l.includes(id); };
 
   function nodoMensagem(m, anterior) {
     const c = acharCanal(m.canalId);
@@ -477,6 +491,11 @@
     const minha = m.autor && m.autor.id === E.eu.id;
     const agrupada = anterior && !m.sistema && !anterior.sistema && anterior.autor && m.autor &&
       anterior.autor.id === m.autor.id && m.criadoEm - anterior.criadoEm < 5 * 60e3 && dia(m.criadoEm) === dia(anterior.criadoEm);
+    if (m.autor && bloqueado(m.autor.id)) {
+      const aviso = h('div', { class: 'msg bloqueada', 'data-id': m.id }, h('span', { class: 'lado' }), h('button', { class: 'resposta-a' }, '🚫 Mensagem de usuário bloqueado — clica pra ver'));
+      aviso.lastChild.onclick = () => aviso.replaceWith(nodoMensagem({ ...m, autor: { ...m.autor, _ver: true } }, null));
+      if (!m.autor._ver) return aviso;
+    }
     const div = h('div', { class: 'msg' + (agrupada ? ' agrupada' : '') + (mencionaEu(m) ? ' mencao' : ''), 'data-id': m.id });
     if (agrupada) div.append(h('span', { class: 'lado' }, hora(m.criadoEm)));
     else if (m.sistema || !m.autor) div.append(h('div', { class: 'av ia' }, logo()));
@@ -824,6 +843,8 @@
       h('small', {}, '@' + m.usuario + ' · ' + st(m.id)[1] + (m.nivel ? ` · ⭐ nível ${m.nivel}` : '')), m.statusTexto ? h('p', {}, m.statusTexto) : null, ...extras];
     if (m.id !== E.eu.id) {
       const vigia = vigiados().includes(m.id);
+      conteudo.push(h('button', { class: 'bt', onclick: () => { fecharMenu(); toast(alternarLocal('kali-bloqueados', m.id) ? `🚫 ${m.nome} bloqueado: as mensagens dele ficam escondidas` : `${m.nome} desbloqueado`, 'ok'); renderLista(); } },
+        bloqueado(m.id) ? 'Desbloquear' : '🚫 Bloquear'));
       const ehAmigo = E.amigos.amigos.some((x) => x.id === m.id), pediu = E.amigos.enviados.some((x) => x.id === m.id);
       conteudo.push(h('button', { class: 'bt prim', onclick: () => { fecharMenu(); abrirDmCom(m.usuario); } }, 'Mandar mensagem'),
         ehAmigo ? null : h('button', { class: 'bt', disabled: pediu, onclick: () => { fecharMenu(); adicionarAmigo(m.usuario).catch((err) => toast(err.message, 'erro')); } },
@@ -1737,7 +1758,7 @@
       tocarSom('zap');
       try { if (window.Notification && Notification.permission === 'granted') new Notification('🚨 Alerta da staff', { body: corta(alertaDe(m), 140) }); } catch (e) {}
     }
-    if (nova && m.autor && m.autor.id !== E.eu.id && E.eu.status !== 'foco' && (mencionaEu(m) || E.dms.some((x) => x.canalId === m.canalId))) tocarSom(ler('kali-som') || 'plim');
+    if (nova && m.autor && m.autor.id !== E.eu.id && E.eu.status !== 'foco' && !silenciado(m.canalId) && !bloqueado(m.autor.id) && (mencionaEu(m) || E.dms.some((x) => x.canalId === m.canalId))) tocarSom(ler('kali-som') || 'plim');
     if (arr && !arr.some((x) => x.id === m.id)) { arr.push(m); arr.sort((a, b) => a.id - b.id); }
     const d = E.dms.find((x) => x.canalId === m.canalId);
     if (d) { d.ultima = m; E.dms = [d, ...E.dms.filter((x) => x !== d)]; }
@@ -1747,7 +1768,7 @@
     if (m.autor && m.autor.id !== E.eu.id) {
       E.naoLidos[m.canalId] = (E.naoLidos[m.canalId] || 0) + 1;
       if (mencionaEu(m) || d) E.mencoes[m.canalId] = (E.mencoes[m.canalId] || 0) + 1;
-      if (mencionaEu(m) && E.eu.status !== 'ocupado') toast(`${m.autor.nome} mencionou você: ${corta(m.texto, 60)}`);
+      if (mencionaEu(m) && E.eu.status !== 'ocupado' && !silenciado(m.canalId) && !bloqueado(m.autor.id)) toast(`${m.autor.nome} mencionou você: ${corta(m.texto, 60)}`);
       renderRail(); renderSide();
     }
   }
