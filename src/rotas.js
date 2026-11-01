@@ -1,5 +1,6 @@
 // Rotas REST /api da KALI.
 import fs from 'node:fs';
+import path from 'node:path';
 import express from 'express';
 import * as db from './db.js';
 import { erro } from './db.js';
@@ -47,8 +48,17 @@ const servidorCompleto = (row, uid) => {
   const s = db.serServidor(row);
   // tickets só aparecem pra staff e pra quem abriu
   s.canais = s.canais.filter((c) => (!c.ticket && !db.cargosDoCanal(c.id).length) || db.ehStaff(row.id, uid) || db.temAcessoCanal(c.id, uid));
-  return { ...s, naoLidos: db.naoLidosDoServidor(uid, row.id) };
+  return { ...s, naoLidos: db.naoLidosDoServidor(uid, row.id),
+    icone: db.urlImagem('s', row.id, 'icone', row.icone_v), bannerImg: db.urlImagem('s', row.id, 'banner', row.banner_v) };
 };
+// Formato real da imagem pelos primeiros bytes (não confia no que o navegador diz).
+function tipoDaImagem(b) {
+  if (b.length > 12 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return 'image/png';
+  if (b.length > 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'image/jpeg';
+  if (b.length > 6 && b.toString('ascii', 0, 4) === 'GIF8') return 'image/gif';
+  if (b.length > 12 && b.toString('ascii', 0, 4) === 'RIFF' && b.toString('ascii', 8, 12) === 'WEBP') return 'image/webp';
+  return null;
+}
 const BANNERS = ['nebulosa', 'oceano', 'floresta', 'por-do-sol', 'neon', 'aurora'];
 function validarVitrine(c) {
   const v = {};
@@ -615,6 +625,47 @@ export function criarRotas() {
     if (canal.tipo !== 'dm' || canal.nome === 'dm') throw erro(400, 'Só dá pra sair de grupos.');
     db.sairDoGrupoDm(canal.id, uid);
     res.json({ ok: true });
+  });
+
+  // ------------------------------------------------------------ foto, banner, ícone (até 4 MB)
+  const corpoImagem = express.raw({ type: () => true, limit: '4mb' });
+  function salvarImagem(req, dono, id, tipo) {
+    const buf = req.body;
+    if (!Buffer.isBuffer(buf) || !tipoDaImagem(buf)) throw erro(415, 'Envie uma imagem PNG, JPG, GIF ou WEBP.');
+    fs.writeFileSync(path.join(db.PASTA_IMAGENS, `${dono}${id}-${tipo}`), buf);
+    db.marcarImagem(dono, id, tipo, Date.now());
+  }
+  r.put('/eu/imagem/:tipo', exigirLogin, corpoImagem, (req, res) => {
+    const tipo = req.params.tipo;
+    if (tipo !== 'avatar' && tipo !== 'banner') throw erro(404, 'Não encontrado.');
+    salvarImagem(req, 'u', req.usuario.id, tipo);
+    aoAtualizarPerfil(req.usuario.id);
+    res.json(usuarioPublico(db.usuarioPorId(req.usuario.id), { proprio: true }));
+  });
+  r.delete('/eu/imagem/:tipo', exigirLogin, (req, res) => {
+    const tipo = req.params.tipo;
+    if (tipo !== 'avatar' && tipo !== 'banner') throw erro(404, 'Não encontrado.');
+    db.marcarImagem('u', req.usuario.id, tipo, null);
+    aoAtualizarPerfil(req.usuario.id);
+    res.json({ ok: true });
+  });
+  r.put('/servidores/:id/imagem/:tipo', exigirLogin, corpoImagem, (req, res) => {
+    const tipo = req.params.tipo;
+    if (tipo !== 'icone' && tipo !== 'banner') throw erro(404, 'Não encontrado.');
+    const s = servidorComoDono(req.usuario.id, idDe(req.params.id));
+    salvarImagem(req, 's', s.id, tipo);
+    const atualizado = servidorCompleto(db.servidorPorId(s.id), req.usuario.id);
+    emitir(`s:${s.id}`, 'cargos:atualizado', { servidorId: s.id });
+    res.json(atualizado);
+  });
+  r.get('/imagens/:arquivo', exigirLogin, (req, res) => {
+    if (!/^[us][1-9]\d{0,14}-(avatar|banner|icone)$/.test(req.params.arquivo)) throw erro(404, 'Não encontrado.');
+    const arquivo = path.join(db.PASTA_IMAGENS, req.params.arquivo);
+    if (!fs.existsSync(arquivo)) throw erro(404, 'Não encontrado.');
+    const fd = fs.openSync(arquivo, 'r'); const cab = Buffer.alloc(16); fs.readSync(fd, cab, 0, 16, 0); fs.closeSync(fd);
+    res.set('Cache-Control', 'private, max-age=31536000, immutable');
+    res.type(tipoDaImagem(cab) || 'application/octet-stream');
+    res.sendFile(arquivo);
   });
 
   // ------------------------------------------------------------ cargos personalizados

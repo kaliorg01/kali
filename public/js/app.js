@@ -161,6 +161,7 @@
   function avatar(u, cls, comStatus) {
     const a = h('div', { class: 'av ' + (cls || '') }, inicial(u && (u.nome || u.usuario)));
     a.style.background = (u && u.cor) || '#6b7280';
+    if (u && u.avatar) { a.textContent = ''; a.style.background = `center/cover no-repeat url("${u.avatar}")`; }
     if (comStatus && u) a.append(h('i', { class: 'st ' + st(u.id)[0] }));
     return a;
   }
@@ -276,7 +277,7 @@
     if (nAvisos) bDm.append(h('span', { class: 'bad' }, nAvisos > 99 ? '99+' : nAvisos));
     const itens = [bDm, h('div', { class: 'sep' })];
     for (const s of E.servidores) {
-      const b = h('button', { class: 'srv' + (E.modo === 'servidor' && s.id === E.servidorId ? ' ativo' : ''), title: s.nome, onclick: () => selecionarServidor(s.id) }, s.sigla || inicial(s.nome));
+      const b = h('button', { class: 'srv' + (E.modo === 'servidor' && s.id === E.servidorId ? ' ativo' : ''), title: s.nome, onclick: () => selecionarServidor(s.id) }, s.icone ? h('img', { class: 'icone-srv', src: s.icone, alt: '' }) : s.sigla || inicial(s.nome));
       const n = naoLidosServidor(s);
       if (n) b.append(h('span', { class: 'bad' }, n > 99 ? '99+' : n));
       itens.push(b);
@@ -345,6 +346,7 @@
     } else {
       const s = servidorAtual();
       if (s) {
+        if (s.bannerImg) partes.push(h('img', { class: 'banner-srv', src: s.bannerImg, alt: '' }));
         partes.push(h('button', { class: 'side-topo', onclick: (e) => menuServidor(e.currentTarget) }, h('span', {}, s.nome), h('span', { class: 'seta' }, '▾')));
         const corpo = h('div', { class: 'side-corpo' }, h('button', { class: 'btn-novo', onclick: modalConvite }, h('span', { style: 'font-size:18px' }, '＋'), 'Convidar amigos'));
         const dono = souDono(s);
@@ -801,7 +803,7 @@
   function vitrine(u) {
     const v = (u && u.vitrine) || {};
     const banner = h('div', { class: 'banner-perfil' });
-    banner.style.background = BANNERS[v.banner] || BANNERS.nebulosa;
+    banner.style.background = u && u.bannerImg ? `center/cover no-repeat url("${u.bannerImg}")` : BANNERS[v.banner] || BANNERS.nebulosa;
     const partes = [banner];
     if (v.bio) partes.push(h('p', { class: 'bio' }, v.bio));
     if (v.jogos && v.jogos.length) partes.push(h('div', { class: 'jogos' }, v.jogos.map((j) => h('span', { class: 'chip' }, '🎮 ' + j))));
@@ -1258,6 +1260,8 @@
     const atual = canalAtual();
     if (atual && atual.ticket && (atual.ticket === E.eu.id || souStaffEm(s.id))) itens.push(item('🔒 Fechar este ticket', () => apagarCanal(atual)));
     if (souDono(s)) {
+      itens.push(item('🖼️ Ícone do servidor', () => escolherImagem(`/servidores/${s.id}/imagem/icone`)),
+        item('🌄 Banner do servidor', () => escolherImagem(`/servidores/${s.id}/imagem/banner`)));
       itens.push(item('＃ Criar canal', () => modalCanal('texto')), item('✏️ Renomear servidor', () => {
         const nome = h('input', { maxlength: 40 }); nome.value = s.nome;
         abrirModal({ titulo: 'Renomear servidor', corpo: [campo('Nome', nome)], botao: 'Salvar',
@@ -1302,6 +1306,25 @@
     u.oninput = () => { u.value = u.value.toLowerCase().replace(/^@/, ''); };
     abrirModal({ titulo: 'Adicionar amigo', sub: 'Digita o nome de usuário do seu amigo (o @ dele).', corpo: [campo('Usuário', u)], botao: 'Enviar pedido',
       acao: () => adicionarAmigo(u.value.trim()) });
+  }
+  // ---------- foto, banner e ícone ----------
+  async function recarregarEu() { E.eu = await api('GET', '/eu'); render(); }
+  function escolherImagem(rota) {
+    const inp = h('input', { type: 'file', accept: 'image/png,image/jpeg,image/gif,image/webp' });
+    inp.onchange = async () => {
+      const f = inp.files[0];
+      if (!f) return;
+      if (f.size > 4 * 1048576) return toast('Imagem grande demais (máximo 4 MB).', 'erro');
+      toast('Enviando imagem…');
+      try {
+        const r = await fetch('/api' + rota, { method: 'PUT', headers: { 'Content-Type': 'application/octet-stream' }, body: f });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(d.erro || 'Não deu pra enviar a imagem.');
+        if (rota.startsWith('/eu/')) await recarregarEu(); else { adicionarServidor(d); render(); }
+        toast('Imagem atualizada ✓', 'ok');
+      } catch (err) { toast(err.message, 'erro'); }
+    };
+    inp.click();
   }
   // ---------- cargos personalizados ----------
   async function carregarCargos(sid) { E.cargos.set(sid, await api('GET', `/servidores/${sid}/cargos`)); }
@@ -1403,6 +1426,9 @@
       item('⌨️ Atalhos', modalAtalhos),
       item('✨ Novidades do app', modalNovidades),
       item('✏️ Editar perfil', modalPerfil),
+      item('🖼️ Trocar foto de perfil', () => escolherImagem('/eu/imagem/avatar')),
+      item('🌄 Trocar banner do perfil', () => escolherImagem('/eu/imagem/banner')),
+      ...(E.eu.avatar ? [item('Remover foto', async () => { await api('DELETE', '/eu/imagem/avatar').catch(() => {}); await recarregarEu(); })] : []),
       item('🚪 Sair da conta', async () => { await api('POST', '/sair').catch(() => {}); location.href = '/entrar.html'; }, 'perigo'),
     ]);
   }

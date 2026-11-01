@@ -146,6 +146,10 @@ for (const [tabela, coluna, def] of [
   ['membros', 'cargo', "TEXT NOT NULL DEFAULT 'membro'"],
   ['canais', 'privado', 'INTEGER NOT NULL DEFAULT 0'],
   ['mensagens', 'resposta_a', 'INTEGER'],
+  ['usuarios', 'avatar_v', 'INTEGER'],
+  ['usuarios', 'banner_v', 'INTEGER'],
+  ['servidores', 'icone_v', 'INTEGER'],
+  ['servidores', 'banner_v', 'INTEGER'],
   ['mensagens', 'fixada', 'INTEGER NOT NULL DEFAULT 0'],
   ['mensagens', 'anexo_nome', 'TEXT'],
   ['mensagens', 'anexo_tipo', 'TEXT'],
@@ -515,7 +519,15 @@ export const outroDaDm = (canalId, uid) =>
   q('SELECT usuario_id FROM dm_participantes WHERE canal_id = ? AND usuario_id != ?').get(canalId, uid)?.usuario_id ?? null;
 
 // ---------------------------------------------------------------- mensagens
-const SELECT_MSG = `SELECT m.*, u.usuario AS a_usuario, u.nome AS a_nome, u.cor AS a_cor
+// Imagens enviadas (foto/banner de perfil, ícone/banner de servidor): dados/imagens/<u|s><id>-<tipo>
+export const PASTA_IMAGENS = path.join(path.dirname(CAMINHO_DB), 'imagens');
+fs.mkdirSync(PASTA_IMAGENS, { recursive: true });
+export const urlImagem = (dono, id, tipo, v) => (v ? `/api/imagens/${dono}${id}-${tipo}?v=${v}` : null);
+export function marcarImagem(dono, id, tipo, v) {
+  const [tabela, coluna] = { 'u-avatar': ['usuarios', 'avatar_v'], 'u-banner': ['usuarios', 'banner_v'], 's-icone': ['servidores', 'icone_v'], 's-banner': ['servidores', 'banner_v'] }[`${dono}-${tipo}`];
+  q(`UPDATE ${tabela} SET ${coluna} = ? WHERE id = ?`).run(v, id);
+}
+const SELECT_MSG = `SELECT m.*, u.usuario AS a_usuario, u.nome AS a_nome, u.cor AS a_cor, u.avatar_v AS a_avatar
                     FROM mensagens m LEFT JOIN usuarios u ON u.id = m.autor_id`;
 
 export function inserirMensagem({ canalId, autorId, texto, sistema = false, refCanalId = null,
@@ -590,7 +602,7 @@ export function serMensagem(row, reacoes = []) {
     id: row.id,
     canalId: row.canal_id,
     autor: row.autor_id != null && row.a_usuario != null
-      ? { id: row.autor_id, usuario: row.a_usuario, nome: row.a_nome, cor: row.a_cor }
+      ? { id: row.autor_id, usuario: row.a_usuario, nome: row.a_nome, cor: row.a_cor, avatar: urlImagem('u', row.autor_id, 'avatar', row.a_avatar) }
       : null,
     texto: row.texto,
     criadoEm: row.criado_em,

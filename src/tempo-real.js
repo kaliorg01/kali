@@ -80,6 +80,8 @@ export function usuarioPublico(row, { proprio = false } = {}) {
     cor: row.cor,
     status: !online ? 'offline' : foco ? 'foco' : row.status,
     statusTexto: row.status_texto,
+    avatar: db.urlImagem('u', row.id, 'avatar', row.avatar_v),
+    bannerImg: db.urlImagem('u', row.id, 'banner', row.banner_v),
   };
   if (foco) u.focoAte = row.foco_ate;
   const lista = (j) => { try { const v = JSON.parse(j || '[]'); return Array.isArray(v) ? v : []; } catch { return []; } };
