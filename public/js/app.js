@@ -1417,6 +1417,41 @@
     abrirModal({ titulo: 'Nova conversa', sub: 'Digita o nome de usuário da pessoa.', corpo: [campo('Usuário', u)], botao: 'Conversar',
       acao: () => abrirDmCom(u.value.trim()) });
   }
+  // Configurações em seções, só texto (estilo Discord).
+  function menuConfig(ancora) {
+    const sec = (t) => h('div', { class: 'sec-menu' }, t);
+    const ligado = (on) => (on ? ' — ligado' : '');
+    const streamer = document.documentElement.classList.contains('streamer');
+    const cls = (c) => document.documentElement.classList.contains(c);
+    abrirMenu(ancora, [
+      sec('Perfil'),
+      item('Trocar foto de perfil', () => escolherImagem('/eu/imagem/avatar')),
+      item('Trocar banner do perfil', () => escolherImagem('/eu/imagem/banner')),
+      ...(E.eu.avatar ? [item('Remover foto', async () => { await api('DELETE', '/eu/imagem/avatar').catch(() => {}); await recarregarEu(); })] : []),
+      sec('Notificações'),
+      item('Modo foco' + ligado(E.eu.status === 'foco'), () => abrirMenu(ancora, [sec('Sem avisos por'),
+        [[15, '15 minutos'], [30, '30 minutos'], [60, '1 hora'], [120, '2 horas'], [0, 'Desligar']].map(([m, r]) => item(r, async () => {
+          try {
+            E.eu = Object.assign(E.eu, await api('PATCH', '/eu', { focoMinutos: m }));
+            renderSide(); renderMembros();
+            toast(m ? `Modo foco por ${r}` : 'Modo foco desligado', 'ok');
+          } catch (err) { toast(err.message, 'erro'); }
+        }))])),
+      item('Som de aviso: ' + SONS[ler('kali-som') || 'plim'], () => abrirMenu(ancora, [sec('Toca quando te mencionam ou chega DM'),
+        Object.entries(SONS).map(([k, r]) => item(((ler('kali-som') || 'plim') === k ? '✓ ' : '') + r, () => { salvar('kali-som', k); tocarSom(k); }))])),
+      item('Modo streamer' + ligado(streamer), () => {
+        aplicarStreamer(!streamer);
+        toast(!streamer ? 'Modo streamer ligado: convites e DMs escondidos' : 'Modo streamer desligado', 'ok');
+      }),
+      sec('Aparência'),
+      item('Alto contraste' + ligado(cls('contraste')), () => alternarAcess('contraste', 'Alto contraste')),
+      item('Fonte grande' + ligado(cls('fonte-grande')), () => alternarAcess('fonte-grande', 'Fonte grande')),
+      item('Modo compacto' + ligado(cls('compacto')), () => alternarAcess('compacto', 'Modo compacto')),
+      sec('Ajuda'),
+      item('Atalhos do teclado', modalAtalhos),
+      item('Novidades do app', modalNovidades),
+    ]);
+  }
   function menuPerfil(ancora) {
     const definir = async (status) => {
       const r = await pedir('presenca', { status });
@@ -1428,33 +1463,10 @@
       h('hr'),
       ['online', 'ausente', 'ocupado'].map((x) => item([h('span', { class: 'bolinha ' + STATUS[x][0] }), STATUS[x][1]], () => definir(x))),
       h('hr'),
-      item(E.eu.status === 'foco' ? '⛔ Modo foco (ligado)' : '⛔ Modo foco', () => abrirMenu(ancora, [
-        h('div', { style: 'padding:6px 10px;color:var(--fraco);font-size:12px' }, 'Sem avisos por…'),
-        [[15, '15 minutos'], [30, '30 minutos'], [60, '1 hora'], [120, '2 horas'], [0, 'Desligar foco']].map(([m, r]) => item(r, async () => {
-          try {
-            E.eu = Object.assign(E.eu, await api('PATCH', '/eu', { focoMinutos: m }));
-            renderSide(); renderMembros();
-            toast(m ? `⛔ Modo foco por ${r}` : 'Modo foco desligado', 'ok');
-          } catch (err) { toast(err.message, 'erro'); }
-        }))])),
-      item('🔔 Som de aviso: ' + SONS[ler('kali-som') || 'plim'], () => abrirMenu(ancora, [
-        h('div', { style: 'padding:6px 10px;color:var(--fraco);font-size:12px' }, 'Toca quando te mencionam ou chega DM'),
-        Object.entries(SONS).map(([k, r]) => item(((ler('kali-som') || 'plim') === k ? '✓ ' : '') + r, () => { salvar('kali-som', k); tocarSom(k); }))])),
-      item(document.documentElement.classList.contains('streamer') ? '🎥 Modo streamer (ligado)' : '🎥 Modo streamer', () => {
-        const ligar = !document.documentElement.classList.contains('streamer');
-        aplicarStreamer(ligar);
-        toast(ligar ? '🎥 Modo streamer ligado: convites e DMs escondidos' : 'Modo streamer desligado', 'ok');
-      }),
-      item('♿ Alto contraste', () => alternarAcess('contraste', '♿ Alto contraste')),
-      item('🔠 Fonte grande', () => alternarAcess('fonte-grande', '🔠 Fonte grande')),
-      item('📐 Modo compacto', () => alternarAcess('compacto', '📐 Modo compacto')),
-      item('⌨️ Atalhos', modalAtalhos),
-      item('✨ Novidades do app', modalNovidades),
-      item('✏️ Editar perfil', modalPerfil),
-      item('🖼️ Trocar foto de perfil', () => escolherImagem('/eu/imagem/avatar')),
-      item('🌄 Trocar banner do perfil', () => escolherImagem('/eu/imagem/banner')),
-      ...(E.eu.avatar ? [item('Remover foto', async () => { await api('DELETE', '/eu/imagem/avatar').catch(() => {}); await recarregarEu(); })] : []),
-      item('🚪 Sair da conta', async () => { await api('POST', '/sair').catch(() => {}); location.href = '/entrar.html'; }, 'perigo'),
+      item('Editar perfil', modalPerfil),
+      item('Configurações', () => menuConfig(ancora)),
+      h('hr'),
+      item('Sair da conta', async () => { await api('POST', '/sair').catch(() => {}); location.href = '/entrar.html'; }, 'perigo'),
     ]);
   }
   function modalPerfil() {
