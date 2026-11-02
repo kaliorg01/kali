@@ -693,7 +693,7 @@ body.pagina-entrar{animation:fundoCorre 40s linear infinite}
 .st.on{animation:none}
 .canal.nao-lido .nm{animation:none}
 .canal{position:relative}
-.canal.nao-lido::before{content:"";position:absolute;left:-10px;width:4px;height:8px;border-radius:0 4px 4px 0;background:var(--texto);animation:badPop .3s var(--ease-mola)}
+.canal.nao-lido::before{content:"";position:absolute;left:-10px;width:4px;height:8px;border-radius:0 4px 4px 0;background:var(--texto)}
 .srv.logo-btn{animation:none}
 .srv.logo-btn:hover{box-shadow:0 0 22px rgba(47,208,255,.45)}
 .selos span{animation:none}
@@ -831,7 +831,7 @@ body.pagina-entrar{animation:none}
 .painel-pe .side-pe .icbtn{border:0;width:34px;height:34px}
 .icbtn.desligado::after{display:none}
 .icbtn.desligado{background:rgba(255,107,136,.12)}
-.painel-voz{padding:10px 10px 10px;border-bottom:1px solid var(--borda-fina);animation:soEsmaece .3s var(--ease)}
+.painel-voz{padding:10px 10px 10px;border-bottom:1px solid var(--borda-fina)}
 .pv-topo{display:flex;align-items:center;gap:10px}
 .pv-sinal{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;color:var(--ok);background:rgba(62,230,168,.1);flex:none}
 .pv-topo .info{flex:1;min-width:0}
@@ -860,7 +860,7 @@ body.pagina-entrar{animation:none}
 .palco-call.grade{grid-template-columns:repeat(auto-fit,minmax(min(280px,100%),1fr))}
 .palco-call.grade.um{grid-template-columns:minmax(0,min(900px,100%));justify-content:center}
 .palco-call.grade.dois{grid-template-columns:repeat(auto-fit,minmax(min(320px,100%),1fr))}
-.tile{position:relative;border-radius:18px;overflow:hidden;background:var(--chip);border:1px solid var(--chip-borda);aspect-ratio:16/9;display:grid;place-items:center;transition:box-shadow .2s var(--ease),transform .2s var(--ease);animation:tileEntra .35s var(--ease) both;outline-offset:3px}
+.tile{position:relative;border-radius:18px;overflow:hidden;background:var(--chip);border:1px solid var(--chip-borda);aspect-ratio:16/9;display:grid;place-items:center;transition:box-shadow .2s var(--ease),transform .2s var(--ease);outline-offset:3px}
 @keyframes tileEntra{from{opacity:0;transform:scale(.96)}}
 .tile.com-video{cursor:zoom-in;background:#000}
 .tile.falando{box-shadow:0 0 0 2px var(--ok),0 0 28px rgba(62,230,168,.25)}
@@ -1010,3 +1010,14 @@ blockquote.cit{border-left:4px solid var(--fraco);padding:2px 0 2px 12px;margin:
 .tile:hover .vol-tile,.tile:focus-within .vol-tile{opacity:1}
 @media (hover:none){.vol-tile{opacity:1}}
 .faixa .vol-tile{display:none}
+/* busca, histórico, registro, ir pro presente */
+.lista-busca{display:flex;flex-direction:column;gap:6px;max-height:60vh;overflow:auto;margin:4px 0 8px}
+.res-busca{display:flex;flex-direction:column;gap:3px;padding:10px 12px;border-radius:12px;background:var(--chip);border:1px solid var(--chip-borda);text-align:left;transition:border-color .2s,background .2s}
+button.res-busca:hover{border-color:var(--roxo);background:var(--hover)}
+.res-busca.atual{border-color:var(--roxo)}
+.rb-topo{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.rb-topo small{color:var(--fraco);font-size:11px;white-space:nowrap}
+.rb-txt{color:var(--suave);font-size:13px;white-space:pre-wrap;overflow-wrap:anywhere}
+button.editado{font:inherit;font-size:11px;color:var(--fraco);margin-left:6px;text-decoration:underline dotted}
+button.editado:hover{color:var(--texto)}
+.ir-presente{position:sticky;bottom:8px;display:block;margin:12px auto 0;padding:8px 16px;border-radius:999px;background:var(--grad);color:#fff;font-size:13px;font-weight:600;box-shadow:0 8px 24px rgba(31,95,214,.4);animation:sobe .3s var(--ease)}

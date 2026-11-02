@@ -53,7 +53,8 @@ const servidorCompleto = (row, uid) => {
   // tópico só aparece se a pessoa enxerga o canal-pai (inclui canal com senha que ela ainda não destravou)
   const visiveis = new Set(s.canais.filter((c) => !c.comSenha || db.ehStaff(row.id, uid) || db.temAcessoCanal(c.id, uid)).map((c) => c.id));
   s.canais = s.canais.filter((c) => !c.paiCanal || visiveis.has(c.paiCanal));
-  return { ...s, naoLidos: db.naoLidosDoServidor(uid, row.id),
+  const eu = db.usuarioPorId(uid);
+  return { ...s, naoLidos: db.naoLidosDoServidor(uid, row.id), mencoes: eu ? db.mencoesDoServidor(uid, eu.usuario, row.id) : {},
     icone: db.urlImagem('s', row.id, 'icone', row.icone_v), bannerImg: db.urlImagem('s', row.id, 'banner', row.banner_v) };
 };
 // Dono do app (gerencia a loja): KALI_ADMINS (vírgula) e/ou dados/admins.txt (um usuário por linha), lidos ao subir.
@@ -381,6 +382,7 @@ export function criarRotas() {
     const s = servidorComoStaff(uid, idDe(req.params.id));
     const alvo = idDe(req.params.uid);
     if (alvoModeravel(uid, s.id, alvo) === 0) throw erro(404, 'Essa pessoa não está no servidor.');
+    db.registrarAuditoria(s.id, uid, 'expulsar', db.usuarioPorId(alvo)?.nome);
     expulsar(s, alvo);
     res.json({ ok: true });
   });
@@ -393,6 +395,7 @@ export function criarRotas() {
     const nivel = alvoModeravel(uid, s.id, alvo);
     if (!db.usuarioPorId(alvo)) throw erro(404, 'Usuário não encontrado.');
     db.banir(s.id, alvo, uid, motivo || null);
+    db.registrarAuditoria(s.id, uid, 'banir', db.usuarioPorId(alvo)?.nome, motivo || null);
     if (nivel > 0) expulsar(s, alvo);
     res.json({ ok: true });
   });
@@ -486,6 +489,7 @@ export function criarRotas() {
     const topicos = db.topicosDoCanal(canal.id);
     const audios = db.idsAudiosDoCanal(canal.id);
     const anexos = db.idsAnexosDoCanal(canal.id);
+    if (canal.servidor_id) db.registrarAuditoria(canal.servidor_id, uid, "apagar-canal", "#" + canal.nome);
     db.apagarCanal(canal.id);
     apagarArquivosAudio(audios);
     apagarArquivosAnexo(anexos);
@@ -508,7 +512,77 @@ export function criarRotas() {
       if (typeof req.query.limite !== 'string' || !/^\d{1,4}$/.test(req.query.limite)) throw erro(400, 'Parâmetro "limite" inválido.');
       limite = Math.min(100, Math.max(1, Number(req.query.limite)));
     }
+    if (typeof req.query.ao_redor === 'string' && /^\d{1,15}$/.test(req.query.ao_redor)) {
+      return res.json(db.serMensagens(db.mensagensAoRedor(canal.id, Number(req.query.ao_redor))));
+    }
     res.json(db.serMensagens(db.listarMensagens(canal.id, antes, limite)));
+  });
+
+  // Busca no servidor: só nos canais que a pessoa enxerga (privados/senha/cargo respeitados).
+  r.get('/servidores/:id/busca', exigirLogin, (req, res) => {
+    const uid = req.usuario.id;
+    const s = servidorComoMembro(uid, idDe(req.params.id));
+    const termo = typeof req.query.q === 'string' ? req.query.q.trim().slice(0, 100) : '';
+    if (termo.length < 2) throw erro(400, 'Digita pelo menos 2 letras pra buscar.');
+    const de = typeof req.query.de === 'string' && /^[a-z0-9_.]{3,20}$/.test(req.query.de) ? req.query.de : null;
+    const pagina = typeof req.query.pagina === 'string' && /^\d{1,3}$/.test(req.query.pagina) ? Number(req.query.pagina) : 0;
+    const visiveis = servidorCompleto(s, uid).canais.filter((c) => c.tipo !== 'voz').map((c) => c.id)
+      .filter((cid) => { try { db.acessarCanal(uid, cid); return true; } catch { return false; } });
+    const nomes = new Map(servidorCompleto(s, uid).canais.map((c) => [c.id, c.nome]));
+    const linhas = db.buscarMensagens(visiveis, { termo, de, limite: 26, offset: pagina * 25 });
+    res.json({ mais: linhas.length > 25, resultados: db.serMensagens(linhas.slice(0, 25)).map((m) => ({ ...m, canalNome: nomes.get(m.canalId) || '' })) });
+  });
+
+  // Histórico de edições: autor ou staff do servidor.
+  r.get('/mensagens/:id/edicoes', exigirLogin, (req, res) => {
+    const uid = req.usuario.id;
+    const m = db.mensagemPorId(idDe(req.params.id));
+    if (!m) throw erro(404, 'Mensagem não encontrada.');
+    const canal = db.acessarCanal(uid, m.canal_id);
+    if (m.autor_id !== uid && !(canal.servidor_id && db.ehStaff(canal.servidor_id, uid))) throw erro(403, 'Só o autor ou a staff vê o histórico.');
+    res.json(db.edicoesDe(m.id));
+  });
+
+  // Banidos (ver e desfazer), registro da staff e trocar o link de convite.
+  r.get('/servidores/:id/banidos', exigirLogin, (req, res) => {
+    const s = servidorComoStaff(req.usuario.id, idDe(req.params.id));
+    res.json(db.listarBanidos(s.id).map((b) => ({ usuario: { id: b.usuario_id, usuario: b.usuario, nome: b.nome, cor: b.cor }, motivo: b.motivo, por: b.por_nome, criadoEm: b.criado_em })));
+  });
+  r.delete('/servidores/:id/banidos/:uid', exigirLogin, (req, res) => {
+    const uid = req.usuario.id;
+    const s = servidorComoStaff(uid, idDe(req.params.id));
+    const alvo = idDe(req.params.uid);
+    if (!db.desbanir(s.id, alvo)) throw erro(404, 'Essa pessoa não está banida.');
+    db.registrarAuditoria(s.id, uid, 'desbanir', db.usuarioPorId(alvo)?.nome);
+    res.json({ ok: true });
+  });
+  r.get('/servidores/:id/auditoria', exigirLogin, (req, res) => {
+    const s = servidorComoStaff(req.usuario.id, idDe(req.params.id));
+    const antes = typeof req.query.antes === 'string' && /^\d{1,15}$/.test(req.query.antes) ? Number(req.query.antes) : null;
+    res.json(db.listarAuditoria(s.id, antes).map((a) => ({ id: a.id, acao: a.acao, alvo: a.alvo, detalhe: a.detalhe, criadoEm: a.criado_em, ator: a.ator_nome })));
+  });
+  r.post('/servidores/:id/convite/novo', exigirLogin, (req, res) => {
+    const uid = req.usuario.id;
+    const s = servidorComoStaff(uid, idDe(req.params.id));
+    const convite = db.trocarConvite(s.id);
+    db.registrarAuditoria(s.id, uid, 'convite', null, 'gerou um link de convite novo (o antigo parou de funcionar)');
+    res.json({ convite });
+  });
+
+  // Trocar senha: confere a atual e derruba as outras sessões.
+  const limiteSenha = criarLimitador({ janela: 15 * 60 * 1000, max: 5 });
+  r.post('/eu/senha', exigirLogin, async (req, res) => {
+    const c = corpoDe(req), uid = req.usuario.id;
+    if (typeof c.atual !== 'string' || typeof c.nova !== 'string') throw erro(400, 'Preenche a senha atual e a nova.');
+    if (c.nova.length < 6 || c.nova.length > 200) throw erro(400, 'A senha nova precisa ter pelo menos 6 caracteres.');
+    if (!limiteSenha.tentar(String(uid))) throw erro(429, 'Muitas tentativas. Espera uns minutos.');
+    const u = db.usuarioPorId(uid);
+    if (!(await conferirSenha(c.atual, u.senha_hash, u.senha_salt))) throw erro(400, 'A senha atual está errada.');
+    const { hash, salt } = await gerarHash(c.nova);
+    db.trocarSenha(uid, hash, salt);
+    const n = db.apagarOutrasSessoes(uid, tokenDaRequisicao(req));
+    limiteSenha.limpar(String(uid));
+    res.json({ ok: true, sessoesEncerradas: n });
   });
 
   r.post('/canais/:id/lido', exigirLogin, (req, res) => {
@@ -950,6 +1024,7 @@ export function criarRotas() {
     if (![0, 1, 5, 10, 60, 1440, 10080].includes(min)) throw erro(400, 'Tempo de castigo inválido.');
     const ate = min ? Date.now() + min * 60e3 : null;
     db.castigar(s.id, alvo, ate);
+    db.registrarAuditoria(s.id, uid, 'castigo', db.usuarioPorId(alvo)?.nome, ate ? 'até ' + new Date(ate).toLocaleString('pt-BR') : 'tirou o castigo');
     emitir(`u:${alvo}`, 'castigo', { servidor: s.nome, ate });
     res.json({ ok: true, ate });
   });

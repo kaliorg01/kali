@@ -289,7 +289,7 @@
     E.servidores = servidores;
     E.dms = dms;
     E.naoLidos = {};
-    for (const s of servidores) Object.assign(E.naoLidos, s.naoLidos || {});
+    for (const s of servidores) { Object.assign(E.naoLidos, s.naoLidos || {}); Object.assign(E.mencoes, s.mencoes || {}); }
     for (const d of dms) { E.naoLidos[d.canalId] = d.naoLidos || 0; E.presenca.set(d.outro.id, d.outro.status); }
     await carregarAmigos();
     carregarEmojis();
@@ -563,7 +563,9 @@
     const titulo = c.dm ? (c.dm.grupo ? '👥 ' : '@ ') + c.dm.outro.nome : c.paiCanal ? '🧵 ' + c.nome : (c.tipo === 'assistir' ? '🍿 ' : '# ') + c.nome;
     const desc = c.dm ? '@' + c.dm.outro.usuario + (c.dm.outro.statusTexto ? ' · ' + c.dm.outro.statusTexto : '') : (servidorAtual() || {}).nome || '';
     const busca = h('input', { placeholder: 'Buscar ' + (c.dm ? c.dm.outro.nome : (servidorAtual() || {}).nome || ''), 'aria-label': 'Buscar mensagens' });
-    busca.oninput = () => { E.busca = busca.value.trim().toLowerCase(); renderLista({ fim: true }); };
+    busca.oninput = () => { if (c.dm) { E.busca = busca.value.trim().toLowerCase(); renderLista({ fim: true }); } };
+    busca.onkeydown = (e) => { if (e.key === 'Enter' && !c.dm) { e.preventDefault(); buscarNoServidor(busca.value); } };
+    if (!c.dm) busca.title = 'Enter pra buscar no servidor todo · use de:usuario pra filtrar quem mandou';
     const topo = h('header', { class: 'topo' },
       h('button', { class: 'icbtn voltar', title: 'Voltar', onclick: () => $('#app').classList.remove('chat') }, ic('voltar')),
       h('h1', {}, titulo), h('span', { class: 'desc' }, desc),
@@ -702,7 +704,11 @@
   // Bloqueados e canais silenciados ficam só neste navegador.
   const listaLocal = (k) => { try { return JSON.parse(ler(k) || '[]'); } catch (e) { return []; } };
   const bloqueado = (uid) => listaLocal('kali-bloqueados').includes(uid);
-  const silenciado = (canalId) => listaLocal('kali-silenciados').includes(canalId);
+  const silenciado = (canalId) => {
+    if (listaLocal('kali-silenciados').includes(canalId)) return true;
+    const c = acharCanal(canalId);
+    return !!(c && c.servidorId && listaLocal('kali-srv-silenciados').includes(c.servidorId));
+  };
   const alternarLocal = (k, id) => { const l = listaLocal(k); salvar(k, JSON.stringify(l.includes(id) ? l.filter((x) => x !== id) : [...l, id])); return !l.includes(id); };
 
   function nodoMensagem(m, anterior) {
@@ -783,7 +789,16 @@
     } else if (m.texto) {
       const ef = efeitoDe(m.texto);
       const tx = h('div', { class: 'texto' }, ef ? h('span', { class: 'tag-efeito' }, EFEITOS[ef][0] + ' ') : null, formatarRico(ef ? m.texto.replace(RE_EFEITO, '') : m.texto));
-      if (m.editadoEm) tx.append(h('span', { class: 'editado', title: new Date(m.editadoEm).toLocaleString('pt-BR') }, '(editado)'));
+      if (m.editadoEm) {
+        const podeVer = minha || (s && souStaffEm(s.id));
+        tx.append(h(podeVer ? 'button' : 'span', { class: 'editado', type: podeVer ? 'button' : null, title: new Date(m.editadoEm).toLocaleString('pt-BR') + (podeVer ? ' · clica pra ver as versões' : ''),
+          onclick: podeVer ? async () => {
+            let v; try { v = await api('GET', `/mensagens/${m.id}/edicoes`); } catch (err) { return toast(err.message, 'erro'); }
+            abrirModal({ titulo: 'Histórico de edições', sub: v.length ? 'Da mais nova pra mais antiga.' : 'Sem versões antigas guardadas.',
+              corpo: [h('div', { class: 'lista-busca' }, h('div', { class: 'res-busca atual' }, h('div', { class: 'rb-topo' }, h('b', {}, 'Agora')), h('div', { class: 'rb-txt' }, m.texto)),
+                v.map((x) => h('div', { class: 'res-busca' }, h('div', { class: 'rb-topo' }, h('small', {}, new Date(x.em).toLocaleString('pt-BR'))), h('div', { class: 'rb-txt' }, x.texto))))] });
+          } : null }, '(editado)'));
+      }
       if (m.expiraEm) tx.append(h('span', { class: 'expira', 'data-ate': m.expiraEm, title: 'Mensagem temporária' }, '⏱ ' + restante(m.expiraEm)));
       corpo.append(tx);
     }
@@ -906,6 +921,7 @@
       const r = E.resumo.get(c.id);
       if (r) itens.push(cartaoResumo(c.id, r));
     }
+    if (E.foraDoFim === c.id) itens.push(h('button', { class: 'ir-presente', onclick: () => { E.foraDoFim = null; E.msgs.delete(c.id); abrirCanal(c.id); } }, 'Vendo mensagens antigas · Ir para o presente ↓'));
     lista.replaceChildren(...itens);
     // Só a mensagem que acabou de chegar entra animada (o histórico aparece parado).
     const msgsCanal = E.msgs.get(c.id) || [], ultimaVista = E.animado.get(c.id), agora = Date.now();
@@ -1006,9 +1022,37 @@
             : h('p', { class: 'sub' }, 'Nada novo por aqui. Você está em dia! ✨'),
           h('div', { class: 'acoes' }, h('button', { class: 'bt', onclick: () => { E.resumo.delete(canalId); renderLista(); } }, 'Fechar')))));
   }
-  function irPara(id) {
-    const el = document.querySelector(`.msg[data-id="${Number(id)}"]`);
-    if (!el) return toast('Essa mensagem não está carregada.');
+  async function buscarNoServidor(texto, pagina = 0) {
+    const s = servidorAtual();
+    let q = (texto || '').trim(), de = '';
+    const md = /(?:^|\s)de:@?([a-z0-9_.]{3,20})/i.exec(q);
+    if (md) { de = md[1].toLowerCase(); q = q.replace(md[0], '').trim(); }
+    if (!s || q.length < 2) return toast('Digita pelo menos 2 letras pra buscar.', 'erro');
+    let d;
+    try { d = await api('GET', `/servidores/${s.id}/busca?q=${encodeURIComponent(q)}${de ? '&de=' + de : ''}&pagina=${pagina}`); } catch (err) { return toast(err.message, 'erro'); }
+    const res = d.resultados.map((m) => h('button', { type: 'button', class: 'res-busca', onclick: () => { fecharModal(); irPara(m.id, m.canalId); } },
+      h('div', { class: 'rb-topo' }, h('b', {}, m.autor ? m.autor.nome : 'KALI'), h('small', {}, '#' + m.canalNome + ' · ' + new Date(m.criadoEm).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }))),
+      h('div', { class: 'rb-txt' }, corta(m.texto || '', 220))));
+    abrirModal({ titulo: `Busca: “${q}”${de ? ' de @' + de : ''}`, sub: d.resultados.length ? `${d.resultados.length}${d.mais ? '+' : ''} resultado(s) em ${s.nome}. Clica pra ir até a mensagem.` : 'Nada encontrado.',
+      corpo: [h('div', { class: 'lista-busca' }, res), d.mais || pagina ? h('div', { class: 'acoes', style: 'justify-content:space-between' },
+        pagina ? h('button', { class: 'bt', type: 'button', onclick: () => buscarNoServidor(texto, pagina - 1) }, '← Anteriores') : h('span'),
+        d.mais ? h('button', { class: 'bt', type: 'button', onclick: () => buscarNoServidor(texto, pagina + 1) }, 'Mais →') : null) : null] });
+  }
+  async function irPara(id, canalId) {
+    canalId = canalId || E.canalId;
+    if (canalId !== E.canalId) {
+      const c = acharCanal(canalId);
+      if (c && c.servidorId && c.servidorId !== E.servidorId) await selecionarServidor(c.servidorId);
+      await abrirCanal(canalId);
+    }
+    let el = document.querySelector(`.msg[data-id="${Number(id)}"]`);
+    if (!el) {
+      try { E.msgs.set(canalId, await api('GET', `/canais/${canalId}/mensagens?ao_redor=${Number(id)}`)); } catch (err) { return toast(err.message, 'erro'); }
+      E.foraDoFim = canalId; E.fim.delete(canalId);
+      renderLista();
+      el = document.querySelector(`.msg[data-id="${Number(id)}"]`);
+      if (!el) return toast('Essa mensagem foi apagada.');
+    }
     el.scrollIntoView({ block: 'center', behavior: 'smooth' });
     el.classList.remove('destaque'); void el.offsetWidth; el.classList.add('destaque');
   }
@@ -1408,7 +1452,7 @@
   function adicionarServidor(s) {
     const i = E.servidores.findIndex((x) => x.id === s.id);
     if (i >= 0) E.servidores[i] = Object.assign(E.servidores[i], s); else E.servidores.push(s);
-    Object.assign(E.naoLidos, s.naoLidos || {});
+    Object.assign(E.naoLidos, s.naoLidos || {}); Object.assign(E.mencoes, s.mencoes || {});
   }
   const MODELOS = {
     amigos: { nome: '👋 Amigos (básico)', canais: [['memes', 'texto'], ['Cinema', 'assistir']] },
@@ -1575,7 +1619,9 @@
     const s = servidorAtual();
     if (!s) return;
     // Mesma ordem do menu do servidor no Discord.
-    const itens = [item('Convidar pessoas', modalConvite)];
+    const srvMudo = listaLocal('kali-srv-silenciados').includes(s.id);
+    const itens = [item('Convidar pessoas', modalConvite),
+      item(srvMudo ? '🔔 Reativar avisos do servidor' : '🔕 Silenciar servidor', () => { const on = alternarLocal('kali-srv-silenciados', s.id); toast(on ? 'Servidor silenciado: sem som nem aviso (menções também)' : 'Avisos do servidor reativados', 'ok'); })];
     if (souStaffEm(s.id)) itens.push(item('Configurações do servidor', () => configServidor(s)));
     if (souDono(s)) itens.push(item('Criar canal', () => modalCanal('texto')));
     if (souStaffEm(s.id)) itens.push(item('Criar evento', () => modalCriarEvento(s)));
@@ -1916,6 +1962,11 @@
       ['Minha conta', () => [
         h('div', { class: 'cartao-conta' }, avatar(E.eu, 'av-conta'), h('div', {}, h('b', {}, E.eu.nome), h('small', {}, '@' + E.eu.usuario))),
         linhaCfg('Nome de exibição e bio', 'Como a galera te vê.', h('button', { type: 'button', class: 'bt', onclick: modalPerfil }, 'Editar perfil')),
+        linhaCfg('Senha', 'Trocar a senha desconecta os outros aparelhos.', h('button', { type: 'button', class: 'bt', onclick: () => {
+          const atual = h('input', { type: 'password', autocomplete: 'current-password', maxlength: 200 }), nova = h('input', { type: 'password', autocomplete: 'new-password', maxlength: 200, placeholder: 'Mínimo 6 caracteres' });
+          abrirModal({ titulo: 'Trocar senha', corpo: [campo('Senha atual', atual), campo('Senha nova', nova)], botao: 'Trocar senha',
+            acao: async () => { const d = await api('POST', '/eu/senha', { atual: atual.value, nova: nova.value }); toast('Senha trocada ✓' + (d.sessoesEncerradas ? ` · ${d.sessoesEncerradas} outro(s) aparelho(s) desconectado(s)` : ''), 'ok'); } });
+        } }, 'Trocar senha')),
       ]],
       ['Perfil', (re) => [
         linhaCfg('Foto de perfil', 'PNG, JPG, GIF ou WEBP até 4 MB.', h('button', { type: 'button', class: 'bt prim', onclick: () => escolherImagem('/eu/imagem/avatar') }, 'Trocar foto'),
@@ -1979,7 +2030,28 @@
       ['Cargos', () => [linhaCfg('Cargos', 'Cor no nome e canais só pra quem tem o cargo.', h('button', { type: 'button', class: 'bt prim', onclick: () => modalCargos(s) }, 'Gerenciar cargos'))]],
       ['Emojis', abaEmojis(s)],
       ['Moderação', () => [linhaCfg('Painel da staff', 'Denúncias, banidos e cargos de adm/mod.', h('button', { type: 'button', class: 'bt prim', onclick: () => { fecharTela(); painelStaff(); } }, 'Abrir painel'))]],
-      ['Convites', () => [linhaCfg('Convidar pessoas', null, h('button', { type: 'button', class: 'bt prim', onclick: modalConvite }, 'Pegar convite'))]],
+      ['Convites', () => [linhaCfg('Convidar pessoas', null, h('button', { type: 'button', class: 'bt prim', onclick: modalConvite }, 'Pegar link')),
+        linhaCfg('Gerar link novo', 'O link e o código antigos param de funcionar na hora (use se vazou).', h('button', { type: 'button', class: 'bt perigo', onclick: async () => {
+          if (!confirm('Gerar um link novo? O antigo para de funcionar.')) return;
+          try { const d = await api('POST', `/servidores/${s.id}/convite/novo`); s.convite = d.convite; toast('Link novo gerado ✓', 'ok'); modalConvite(); } catch (err) { toast(err.message, 'erro'); }
+        } }, 'Gerar link novo'))]],
+      ['Banidos', () => {
+        const box = h('div', { class: 'lista-busca' }, h('p', { class: 'sub' }, 'Carregando…'));
+        api('GET', `/servidores/${s.id}/banidos`).then((l) => box.replaceChildren(...(l.length ? l.map((b) => h('div', { class: 'linha-amigo' }, avatar(b.usuario),
+          h('div', { class: 'txt' }, h('b', {}, b.usuario.nome, ' ', h('small', {}, '@' + b.usuario.usuario)), h('small', {}, (b.motivo ? 'Motivo: ' + b.motivo + ' · ' : '') + (b.por ? 'por ' + b.por + ' · ' : '') + new Date(b.criadoEm).toLocaleDateString('pt-BR'))),
+          h('div', { class: 'acoes' }, h('button', { type: 'button', class: 'bt', onclick: async (e) => {
+            try { await api('DELETE', `/servidores/${s.id}/banidos/${b.usuario.id}`); e.currentTarget.closest('.linha-amigo').remove(); toast(b.usuario.nome + ' foi desbanido ✓', 'ok'); } catch (err) { toast(err.message, 'erro'); }
+          } }, 'Desbanir')))) : [h('p', { class: 'sub' }, 'Ninguém banido. 🕊')]))).catch((err) => box.replaceChildren(h('p', { class: 'sub' }, err.message)));
+        return [h('h3', {}, 'Banidos'), box];
+      }],
+      ['Registro', () => {
+        const ACOES = { banir: '🔨 baniu', desbanir: '🕊 desbaniu', expulsar: '👢 expulsou', convite: '🔗', castigo: '⏳ castigou', 'apagar-canal': '🗑 apagou o canal', 'apagar-msg': '🗑 apagou mensagem de' };
+        const box = h('div', { class: 'lista-busca' }, h('p', { class: 'sub' }, 'Carregando…'));
+        api('GET', `/servidores/${s.id}/auditoria`).then((l) => box.replaceChildren(...(l.length ? l.map((a) => h('div', { class: 'res-busca' },
+          h('div', { class: 'rb-topo' }, h('b', {}, (a.ator || 'Alguém') + ' ' + (ACOES[a.acao] || a.acao) + (a.alvo ? ' ' + a.alvo : '')), h('small', {}, new Date(a.criadoEm).toLocaleString('pt-BR'))),
+          a.detalhe ? h('div', { class: 'rb-txt' }, a.detalhe) : null)) : [h('p', { class: 'sub' }, 'Nenhuma ação da staff registrada ainda.')]))).catch((err) => box.replaceChildren(h('p', { class: 'sub' }, err.message)));
+        return [h('h3', {}, 'Registro da staff'), h('p', { class: 'sub' }, 'Quem baniu, expulsou, castigou ou mexeu no servidor.'), box];
+      }],
     ];
     if (dono) abas.push(['Apagar servidor', () => [linhaCfg('Apagar ' + s.nome, 'Apaga todos os canais e mensagens pra sempre.', h('button', { type: 'button', class: 'bt perigo', onclick: () => {
       abrirModal({ titulo: 'Apagar ' + s.nome + '?', sub: 'Isso apaga todos os canais e mensagens pra sempre.', botao: 'Apagar', perigo: true,
@@ -2103,7 +2175,7 @@
   function tileCall(m) {
     const uid = m.usuarioId, eu = uid === E.eu.id, stm = streamDe(uid), foco = E.focoTela === uid;
     const u = [...E.membros.values()].flat().find((x) => x.id === uid) || (eu ? E.eu : { id: uid, nome: m.nome, cor: m.cor });
-    const t = h('div', { class: 'tile' + (m.falando ? ' falando' : '') + (stm ? ' com-video' : ''), tabindex: stm ? 0 : null });
+    const t = h('div', { class: 'tile' + (m.falando ? ' falando' : '') + (stm ? ' com-video' : ''), tabindex: stm ? 0 : null, 'data-uid': uid });
     if (stm) {
       let v = videosTela.get(uid);
       if (!v) { v = h('video', { autoplay: true, playsinline: true }); v.muted = true; videosTela.set(uid, v); }
@@ -2136,6 +2208,12 @@
     // quem está ao vivo vai pra frente
     membros.sort((a, b) => !!streamDe(b.usuarioId) - !!streamDe(a.usuarioId));
     if (E.focoTela && !streamDe(E.focoTela)) E.focoTela = null;
+    const chave = [E.focoTela, ev.mudo, ev.surdo, ev.camera, ev.compartilhando, Voz.ptt, ...membros.map((m) => [m.usuarioId, m.nome, !!m.mudo, !!m.surdo, streamDe(m.usuarioId) ? streamDe(m.usuarioId).id : ''].join(':'))].join('|');
+    if (palco.dataset.chave === chave) {
+      for (const m of membros) palco.querySelector(`.tile[data-uid="${m.usuarioId}"]`)?.classList.toggle('falando', !!m.falando);
+      return;
+    }
+    palco.dataset.chave = chave;
     const vivos = new Set(membros.filter((m) => streamDe(m.usuarioId)).map((m) => m.usuarioId));
     for (const k of [...videosTela.keys()]) if (!vivos.has(k)) videosTela.delete(k);
     if (E.focoTela) {

@@ -740,8 +740,12 @@ export function mensagensNaoLidas(canalId, desdeId, uid, limite) {
 export const ultimaMensagem = (canalId) =>
   q(`${SELECT_MSG} WHERE m.canal_id = ? AND (m.expira_em IS NULL OR m.expira_em > ?) ORDER BY m.id DESC LIMIT 1`)
     .get(canalId, Date.now()) || null;
-export const editarMensagem = (id, texto) =>
-  q('UPDATE mensagens SET texto = ?, editado_em = ? WHERE id = ?').run(texto, Date.now(), id);
+export function editarMensagem(id, texto) {
+  // guarda a versão antiga (histórico de edições)
+  const antes = q('SELECT texto FROM mensagens WHERE id = ?').get(id);
+  if (antes && antes.texto != null && antes.texto !== texto) q('INSERT INTO mensagem_edicoes (mensagem_id, texto_antigo, editado_em) VALUES (?, ?, ?)').run(id, antes.texto, Date.now());
+  return q('UPDATE mensagens SET texto = ?, editado_em = ? WHERE id = ?').run(texto, Date.now(), id);
+}
 export const apagarMensagem = (id) => q('DELETE FROM mensagens WHERE id = ?').run(id).changes > 0;
 export const mensagensExpiradas = (agora) =>
   q(`${SELECT_MSG} WHERE m.expira_em IS NOT NULL AND m.expira_em <= ?`).all(agora);
@@ -1011,3 +1015,73 @@ export const cancelarLfg = (id) => q("UPDATE lfg SET status = 'cancelado' WHERE 
 export const lfgExpiradas = (agora) =>
   q("SELECT id FROM lfg WHERE status = 'aberto' AND expira_em IS NOT NULL AND expira_em <= ?").all(agora).map((r) => r.id);
 export const apagarLfg = (id) => q('DELETE FROM lfg WHERE id = ?').run(id).changes > 0;
+
+// ---------------------------------------------------------------- busca, menções, edições, auditoria, banidos, senha, convite novo
+db.exec(`
+CREATE TABLE IF NOT EXISTS mensagem_edicoes (
+  mensagem_id  INTEGER NOT NULL REFERENCES mensagens(id) ON DELETE CASCADE,
+  texto_antigo TEXT NOT NULL,
+  editado_em   INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_edicoes_msg ON mensagem_edicoes(mensagem_id);
+CREATE TABLE IF NOT EXISTS auditoria (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  servidor_id INTEGER NOT NULL REFERENCES servidores(id) ON DELETE CASCADE,
+  ator_id     INTEGER REFERENCES usuarios(id) ON DELETE SET NULL,
+  acao        TEXT NOT NULL,
+  alvo        TEXT,
+  detalhe     TEXT,
+  criado_em   INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_auditoria_srv ON auditoria(servidor_id, id);
+`);
+const escLike = (t) => String(t).replace(/[\\%_]/g, (c) => '\\' + c);
+export const edicoesDe = (id) =>
+  q('SELECT texto_antigo AS texto, editado_em AS em FROM mensagem_edicoes WHERE mensagem_id = ? ORDER BY editado_em DESC LIMIT 50').all(id);
+export const registrarAuditoria = (sid, ator, acao, alvo, detalhe) =>
+  q('INSERT INTO auditoria (servidor_id, ator_id, acao, alvo, detalhe, criado_em) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(sid, ator ?? null, acao, alvo == null ? null : String(alvo).slice(0, 120), detalhe == null ? null : String(detalhe).slice(0, 300), Date.now());
+export const listarAuditoria = (sid, antes) =>
+  q(`SELECT a.id, a.acao, a.alvo, a.detalhe, a.criado_em, u.nome AS ator_nome, u.usuario AS ator_usuario
+     FROM auditoria a LEFT JOIN usuarios u ON u.id = a.ator_id
+     WHERE a.servidor_id = ? AND a.id < ? ORDER BY a.id DESC LIMIT 60`).all(sid, antes || Number.MAX_SAFE_INTEGER);
+export const listarBanidos = (sid) =>
+  q(`SELECT b.usuario_id, b.motivo, b.criado_em, u.usuario, u.nome, u.cor, p.nome AS por_nome
+     FROM banidos b JOIN usuarios u ON u.id = b.usuario_id LEFT JOIN usuarios p ON p.id = b.por_id
+     WHERE b.servidor_id = ? ORDER BY b.criado_em DESC`).all(sid);
+export const desbanir = (sid, uid) => q('DELETE FROM banidos WHERE servidor_id = ? AND usuario_id = ?').run(sid, uid).changes > 0;
+export const trocarSenha = (uid, hash, salt) => q('UPDATE usuarios SET senha_hash = ?, senha_salt = ? WHERE id = ?').run(hash, salt, uid);
+export const apagarOutrasSessoes = (uid, token) => q('DELETE FROM sessoes WHERE usuario_id = ? AND token != ?').run(uid, String(token || '')).changes;
+export function trocarConvite(sid) { const c = novoConvite(); q('UPDATE servidores SET convite = ? WHERE id = ?').run(c, sid); return c; }
+/** Busca em texto nos canais informados (o chamador já filtrou os que a pessoa enxerga). */
+export function buscarMensagens(canalIds, { termo, de, limite = 25, offset = 0 }) {
+  if (!canalIds.length) return [];
+  const marcas = canalIds.map(() => '?').join(',');
+  const args = [...canalIds, '%' + escLike(termo) + '%', Date.now()];
+  let extra = '';
+  if (de) { extra = ' AND u.usuario = ?'; args.push(de); }
+  args.push(limite, offset);
+  return q(`${SELECT_MSG} WHERE m.canal_id IN (${marcas}) AND m.texto LIKE ? ESCAPE '\\' AND (m.expira_em IS NULL OR m.expira_em > ?)${extra}
+            ORDER BY m.id DESC LIMIT ? OFFSET ?`).all(...args);
+}
+/** 25 antes (incluindo a própria) e 25 depois de uma mensagem: pra pular até ela. */
+export function mensagensAoRedor(canalId, id) {
+  const agora = Date.now();
+  const antes = q(`${SELECT_MSG} WHERE m.canal_id = ? AND m.id <= ? AND (m.expira_em IS NULL OR m.expira_em > ?) ORDER BY m.id DESC LIMIT 25`).all(canalId, id, agora).reverse();
+  const depois = q(`${SELECT_MSG} WHERE m.canal_id = ? AND m.id > ? AND (m.expira_em IS NULL OR m.expira_em > ?) ORDER BY m.id ASC LIMIT 25`).all(canalId, id, agora);
+  return [...antes, ...depois];
+}
+/** Menções a @usuario não lidas, por canal do servidor (sobrevive ao F5). */
+export function mencoesDoServidor(uid, usuario, sid) {
+  const rows = q(`SELECT c.id AS canal_id, COUNT(m.id) AS n
+                  FROM canais c
+                  LEFT JOIN lidos l ON l.canal_id = c.id AND l.usuario_id = ?
+                  JOIN mensagens m ON m.canal_id = c.id AND m.id > COALESCE(l.ultima_msg_id, 0)
+                       AND (m.autor_id IS NULL OR m.autor_id != ?) AND (m.expira_em IS NULL OR m.expira_em > ?)
+                       AND m.texto LIKE ? ESCAPE '\\'
+                  WHERE c.servidor_id = ? AND c.tipo IN ('texto', 'assistir')
+                  GROUP BY c.id`).all(uid, uid, Date.now(), '%@' + escLike(usuario) + '%', sid);
+  const r = {};
+  for (const x of rows) if (x.n) r[x.canal_id] = x.n;
+  return r;
+}
