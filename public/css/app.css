@@ -957,3 +957,56 @@ body.pagina-entrar{animation:none}
 /* no início não tem lista de membros: o "Ativo agora" ocupa o lugar */
 @media (min-width:1101px){.app:has(.home){grid-template-columns:72px 260px 1fr 0}.app:has(.home) .membros{display:none}}
 .convite-link code{font-size:13px;letter-spacing:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;overflow-wrap:normal;min-width:0}
+
+/* ==================== markdown completo, Ctrl+K, visor, arrastar, volume ==================== */
+.texto s{opacity:.75}
+.bloco-cod{margin:6px 0;border:1px solid var(--borda);border-radius:12px;background:rgba(0,0,0,.35);overflow:hidden;max-width:min(720px,100%);white-space:normal}
+:root:not([data-theme="dark"]) .bloco-cod{background:#f6f8fa}
+.bc-topo{display:flex;justify-content:space-between;align-items:center;padding:4px 6px 4px 12px;border-bottom:1px solid var(--borda-fina);font-family:var(--mono);font-size:11px;color:var(--fraco)}
+.copiar-cod{font-size:11px;padding:3px 8px;border-radius:6px;color:var(--suave)}
+.copiar-cod:hover{background:var(--hover);color:var(--texto)}
+.bloco-cod pre{margin:0;padding:10px 12px;overflow-x:auto;font-family:var(--mono);font-size:13px;line-height:1.5;white-space:pre}
+blockquote.cit{border-left:4px solid var(--fraco);padding:2px 0 2px 12px;margin:4px 0;color:var(--suave);white-space:pre-wrap}
+.md-h{font-weight:700;line-height:1.3;margin:6px 0 2px;white-space:normal}
+.md-h1{font-size:1.25em}.md-h2{font-size:1.15em}.md-h3{font-size:1.05em}
+.md-lista{margin:4px 0 4px 22px;white-space:normal}
+.md-lista li{margin:2px 0}
+/* troca rápida */
+.troca-rapida{width:min(560px,100%)}
+.troca-rapida input{width:100%;padding:14px 16px;border:1px solid var(--borda);border-radius:14px;background:var(--chip);font-size:16px;outline:0;margin:8px 0 10px}
+.troca-rapida input:focus{border-color:var(--roxo);box-shadow:0 0 0 3px var(--roxo-suave)}
+.tr-lista{display:flex;flex-direction:column;gap:2px;max-height:50vh;overflow:auto}
+.tr-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;text-align:left}
+.tr-item.sel{background:var(--roxo-suave)}
+.tr-item b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tr-item small{margin-left:auto;color:var(--fraco);font-size:12px;white-space:nowrap}
+.tr-ic{width:22px;text-align:center;color:var(--fraco);font-weight:700}
+.tr-vazio{color:var(--fraco);padding:12px}
+.tr-dica{display:block;color:var(--fraco);font-size:11px;margin-top:8px}
+.fundo-modal:has(.troca-rapida){place-items:start center;padding-top:12vh}
+@media (max-width:760px){.fundo-modal:has(.troca-rapida){padding-top:0;place-items:end center}}
+/* visor de imagens */
+.visor{position:fixed;inset:0;z-index:var(--z-modal);background:rgba(0,0,0,.88);display:grid;place-items:center;animation:surge .2s ease;backdrop-filter:blur(6px)}
+.visor img{max-width:min(92vw,1600px);max-height:80vh;border-radius:10px;box-shadow:0 30px 80px rgba(0,0,0,.6);cursor:zoom-in;transition:transform .25s var(--ease);animation:modalPop .3s var(--ease)}
+.visor img.zoom{transform:scale(1.8);cursor:zoom-out}
+.visor.saindo{animation:someFundo .2s forwards}
+.visor-nav{position:fixed;top:50%;transform:translateY(-50%);width:48px;height:48px;border-radius:50%;background:rgba(255,255,255,.12);color:#fff;font-size:30px;line-height:1;display:grid;place-items:center}
+.visor-nav:hover{background:rgba(255,255,255,.22)}
+.visor-nav.esq{left:16px}.visor-nav.dir{right:16px}
+.visor-pe{position:fixed;bottom:max(18px,env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);display:flex;gap:8px;align-items:center;color:#cfd6e4}
+.visor-pe small{margin-right:6px}
+/* arrastar e soltar */
+.main{position:relative}
+.soltar-aqui{position:absolute;inset:10px;z-index:20;border:2px dashed var(--roxo);border-radius:22px;background:rgba(10,20,40,.78);display:grid;place-items:center;pointer-events:none;animation:surge .15s ease}
+:root:not([data-theme="dark"]) .soltar-aqui{background:rgba(234,242,255,.9)}
+.soltar-aqui div{display:flex;flex-direction:column;align-items:center;gap:6px;color:var(--texto);animation:modalPop .3s var(--ease)}
+.soltar-aqui .ico{color:var(--roxo)}
+.soltar-aqui b{font-size:20px}
+.soltar-aqui small{color:var(--suave)}
+/* volume no quadro da call */
+.vol-tile{position:absolute;right:10px;bottom:10px;display:flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:rgba(0,0,0,.62);color:#fff;opacity:0;transition:opacity .2s;backdrop-filter:blur(8px)}
+.vol-tile input{width:90px;accent-color:#2fd0ff}
+.vol-tile small{font-size:11px;min-width:34px;text-align:right}
+.tile:hover .vol-tile,.tile:focus-within .vol-tile{opacity:1}
+@media (hover:none){.vol-tile{opacity:1}}
+.faixa .vol-tile{display:none}

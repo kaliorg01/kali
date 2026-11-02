@@ -406,6 +406,7 @@
     }
     itens.push(h('button', { class: 'srv add', title: 'Criar ou entrar em servidor', onclick: modalServidor }, '+'));
     rail.replaceChildren(...itens);
+    atualizarTitulo();
   }
 
   function linhaCanal(c, s) {
@@ -601,8 +602,9 @@
     const bTemp = h('button', { class: 'icbtn' + (E.temp ? ' temp-on' : ''), type: 'button', title: 'Mensagem temporária' }, curto());
     bTemp.onclick = () => abrirMenu(bTemp, [h('div', { style: 'padding:6px 10px;color:var(--fraco);font-size:12px' }, 'A mensagem some depois de…'),
       TEMPOS.map(([s, r]) => item((E.temp === s ? '✓ ' : '') + r, () => { E.temp = s; bTemp.textContent = curto(); bTemp.classList.toggle('temp-on', !!s); }))]);
-    const arq = h('input', { type: 'file', hidden: true });
-    arq.onchange = () => { if (arq.files[0]) enviarArquivo(c.id, arq.files[0], ta); arq.value = ''; };
+    const arq = h('input', { type: 'file', hidden: true, multiple: true });
+    const enviarVarios = async (fs) => { for (const f of [...fs].slice(0, 10)) await enviarArquivo(c.id, f, ta); };
+    arq.onchange = () => { enviarVarios(arq.files); arq.value = ''; };
     // Igual ao Discord: um ＋ à esquerda com arquivo e extras.
     const bAnexo = h('button', { class: 'icbtn mais-caixa' + (E.temp ? ' temp-on' : ''), type: 'button', title: 'Enviar arquivo e mais' }, ic('mais', 22));
     bAnexo.onclick = () => abrirMenu(bAnexo, [
@@ -611,13 +613,21 @@
         TEMPOS.map(([s, r]) => item((E.temp === s ? '✓ ' : '') + r, () => { E.temp = s; bAnexo.classList.toggle('temp-on', !!s); }))])),
       item('Enquete', () => { ta.value = '/enquete Pergunta? | Opção 1 | Opção 2'; ta.oninput(); ta.focus(); }),
     ]);
-    ta.addEventListener('paste', (e) => { const f = [...(e.clipboardData?.files || [])][0]; if (f) { e.preventDefault(); enviarArquivo(c.id, f, ta); } });
+    ta.addEventListener('paste', (e) => { const fs = [...(e.clipboardData?.files || [])]; if (fs.length) { e.preventDefault(); enviarVarios(fs); } });
     const compositor = h('div', { class: 'compositor' }, h('div', { class: 'col' },
       h('div', { class: 'digitando', id: 'digitando' }),
       h('div', { class: 'respondendo', id: 'respondendo', hidden: true }),
       h('div', { class: 'caixa' }, bAnexo, arq, ta, info, emoji, bGrav, h('button', { class: 'enviar', title: 'Enviar', onclick: () => enviar(c.id, ta) }, ic('enviar', 17))),
       h('div', { class: 'dica' }, '@usuario menciona · /time 5 Valorant · /pomodoro 25 · /confete /fogo /explosao')));
     main.replaceChildren(topo, c.tipo === 'assistir' ? h('section', { class: 'palco', id: 'palco' }) : '', msgs, compositor);
+    // Arrastar e soltar arquivos em qualquer lugar do chat.
+    const soltar = h('div', { class: 'soltar-aqui' }, h('div', {}, ic('mais', 34), h('b', {}, 'Solta pra enviar'), h('small', {}, (c.dm ? '@' + c.dm.outro.usuario : '#' + c.nome) + ' · até 10 arquivos')));
+    let arrastando = 0;
+    const temArq = (e) => [...(e.dataTransfer?.types || [])].includes('Files');
+    main.ondragenter = (e) => { if (!temArq(e)) return; e.preventDefault(); if (++arrastando === 1) main.append(soltar); };
+    main.ondragover = (e) => { if (temArq(e)) e.preventDefault(); };
+    main.ondragleave = () => { if (--arrastando <= 0) { arrastando = 0; soltar.remove(); } };
+    main.ondrop = (e) => { if (!temArq(e)) return; e.preventDefault(); arrastando = 0; soltar.remove(); enviarVarios(e.dataTransfer.files); };
     requestAnimationFrame(ajustar);
     renderResposta();
     renderLista({ fim: true });
@@ -629,7 +639,7 @@
   // Formatação estilo Discord: `código`, ||spoiler||, **negrito**, *itálico*, links e @menções (sempre via textContent).
   function formatarTexto(texto) {
     const frag = document.createDocumentFragment();
-    const re = /(`[^`\n]{1,500}`|\|\|[^|\n]{1,500}\|\||\*\*[^*\n]{1,500}\*\*|\*[^*\s][^*\n]{0,500}\*|https?:\/\/[^\s<>"]+|:[a-z0-9_]{2,32}:|@[a-z0-9_.]{3,20})/gi;
+    const re = /(`[^`\n]{1,500}`|\|\|[^|\n]{1,500}\|\||\*\*[^*\n]{1,500}\*\*|\*[^*\s][^*\n]{0,500}\*|~~[^~\n]{1,500}~~|__[^_\n]{1,500}__|\[[^\]\n]{1,200}\]\(https?:\/\/[^\s)<>"]+\)|https?:\/\/[^\s<>"]+|:[a-z0-9_]{2,32}:|@[a-z0-9_.]{3,20})/gi;
     let i = 0, m;
     const eu = '@' + E.eu.usuario;
     while ((m = re.exec(texto))) {
@@ -639,6 +649,14 @@
       else if (t.startsWith('||')) { const sp = h('span', { class: 'spoiler', title: 'Spoiler: clica pra ver' }, formatarTexto(t.slice(2, -2))); sp.onclick = () => sp.classList.add('visto'); frag.append(sp); }
       else if (t.startsWith('**')) frag.append(h('b', {}, formatarTexto(t.slice(2, -2))));
       else if (t[0] === '*') frag.append(h('i', {}, formatarTexto(t.slice(1, -1))));
+      else if (t.startsWith('~~')) frag.append(h('s', {}, formatarTexto(t.slice(2, -2))));
+      else if (t.startsWith('__')) frag.append(h('u', {}, formatarTexto(t.slice(2, -2))));
+      else if (t[0] === '[') {
+        const k = t.indexOf(']('), url = t.slice(k + 2, -1);
+        const a = h('a', { href: url, target: '_blank', rel: 'noopener noreferrer', title: url }, t.slice(1, k));
+        a.onclick = (e) => { if (!confirm('Esse link leva pra:\n' + url + '\n\nAbrir?')) e.preventDefault(); };
+        frag.append(a);
+      }
       else if (t[0] === ':' && t.length > 2 && t.endsWith(':')) {
         const url = E.emojis.get(t.slice(1, -1).toLowerCase());
         frag.append(url ? h('img', { class: 'emoji-srv' + (texto.trim() === t ? ' grande' : ''), src: url, alt: t, title: t }) : t);
@@ -648,6 +666,37 @@
       i = m.index + t.length;
     }
     if (i < texto.length) frag.append(texto.slice(i));
+    return frag;
+  }
+  // Markdown em bloco: ```código```, > citação, # títulos, - listas e 1. listas numeradas. Tudo via DOM (sem innerHTML).
+  const RE_BLOCO = /^(```|> ?|#{1,3} |[-*] |\d{1,3}\. )/m;
+  function formatarRico(texto) {
+    if (!RE_BLOCO.test(texto)) return formatarTexto(texto);
+    const frag = document.createDocumentFragment(), L = texto.split('\n');
+    let buf = [];
+    const solta = () => { if (buf.length) { frag.append(formatarTexto(buf.join('\n'))); buf = []; } };
+    const junta = (re) => { const out = []; while (i < L.length && re.test(L[i])) out.push(L[i++]); return out; };
+    let i = 0;
+    while (i < L.length) {
+      const l = L[i];
+      if (l.startsWith('```')) {
+        const fim = L.indexOf('```', i + 1);
+        if (fim < 0) { buf.push(l); i++; continue; }
+        solta();
+        const cod = L.slice(i + 1, fim).join('\n'), lang = l.slice(3).trim().slice(0, 20);
+        const copiar = h('button', { class: 'copiar-cod', type: 'button', title: 'Copiar código' }, 'Copiar');
+        copiar.onclick = () => navigator.clipboard?.writeText(cod).then(() => { copiar.textContent = 'Copiado ✓'; setTimeout(() => { copiar.textContent = 'Copiar'; }, 1400); }).catch(() => {});
+        frag.append(h('div', { class: 'bloco-cod' }, h('div', { class: 'bc-topo' }, h('span', {}, lang || 'código'), copiar), h('pre', {}, h('code', {}, cod))));
+        i = fim + 1; continue;
+      }
+      if (/^> ?/.test(l)) { solta(); frag.append(h('blockquote', { class: 'cit' }, formatarTexto(junta(/^> ?/).map((x) => x.replace(/^> ?/, '')).join('\n')))); continue; }
+      const t = /^(#{1,3}) (.+)/.exec(l);
+      if (t) { solta(); frag.append(h('div', { class: 'md-h md-h' + t[1].length }, formatarTexto(t[2]))); i++; continue; }
+      if (/^[-*] /.test(l)) { solta(); frag.append(h('ul', { class: 'md-lista' }, junta(/^[-*] /).map((x) => h('li', {}, formatarTexto(x.slice(2)))))); continue; }
+      if (/^\d{1,3}\. /.test(l)) { solta(); frag.append(h('ol', { class: 'md-lista' }, junta(/^\d{1,3}\. /).map((x) => h('li', {}, formatarTexto(x.replace(/^\d{1,3}\. /, '')))))); continue; }
+      buf.push(l); i++;
+    }
+    solta();
     return frag;
   }
   // Bloqueados e canais silenciados ficam só neste navegador.
@@ -733,7 +782,7 @@
       corpo.append(cartaoComando(m, comandoDe(m.texto)));
     } else if (m.texto) {
       const ef = efeitoDe(m.texto);
-      const tx = h('div', { class: 'texto' }, ef ? h('span', { class: 'tag-efeito' }, EFEITOS[ef][0] + ' ') : null, formatarTexto(ef ? m.texto.replace(RE_EFEITO, '') : m.texto));
+      const tx = h('div', { class: 'texto' }, ef ? h('span', { class: 'tag-efeito' }, EFEITOS[ef][0] + ' ') : null, formatarRico(ef ? m.texto.replace(RE_EFEITO, '') : m.texto));
       if (m.editadoEm) tx.append(h('span', { class: 'editado', title: new Date(m.editadoEm).toLocaleString('pt-BR') }, '(editado)'));
       if (m.expiraEm) tx.append(h('span', { class: 'expira', 'data-ate': m.expiraEm, title: 'Mensagem temporária' }, '⏱ ' + restante(m.expiraEm)));
       corpo.append(tx);
@@ -1893,6 +1942,19 @@
           linhaCfg('Modo streamer', 'Esconde convites e DMs enquanto você está ao vivo.', chave(cls('streamer'), () => { aplicarStreamer(!cls('streamer')); re(); })),
         ];
       }],
+      ['Voz', (re) => {
+        const tecla = h('button', { type: 'button', class: 'bt' }, teclaPTT().replace(/^Key|^Digit/, '').replace('Backquote', "' (aspas)"));
+        tecla.onclick = () => {
+          tecla.textContent = 'Aperta uma tecla…';
+          const pega = (e) => { e.preventDefault(); e.stopPropagation(); removeEventListener('keydown', pega, true); if (e.key !== 'Escape') salvar('kali-ptt-tecla', e.code); re(); };
+          addEventListener('keydown', pega, true);
+        };
+        return [
+          linhaCfg('Apertar para falar', Voz.ptt ? 'Ligado: o microfone só abre segurando a tecla.' : 'Desligado: detecta a voz sozinho.', chave(Voz.ptt, () => { Voz.definirPTT(!Voz.ptt); re(); })),
+          linhaCfg('Tecla de falar', 'Clica e aperta a tecla que você quer usar.', tecla),
+          linhaCfg('Volume de cada pessoa', 'Na call, passa o mouse (ou toca) no quadro da pessoa e ajusta o volume dela só pra você.'),
+        ];
+      }],
       ['Atalhos e novidades', () => [
         linhaCfg('Atalhos do teclado', null, h('button', { type: 'button', class: 'bt', onclick: modalAtalhos }, 'Ver atalhos')),
         linhaCfg('Novidades do app', null, h('button', { type: 'button', class: 'bt', onclick: modalNovidades }, 'Ver novidades')),
@@ -2053,6 +2115,12 @@
       t.onkeydown = (e) => { if (e.key === 'Enter') t.onclick(); };
     } else {
       t.append(avatar(u, 'av-call'));
+    }
+    if (!eu) {
+      const vol = h('input', { type: 'range', min: 0, max: 200, step: 5, value: Math.round(Voz.volumeDe(uid) * 100), 'aria-label': 'Volume de ' + (m.nome || u.nome) });
+      const rot = h('small', {}, vol.value + '%');
+      vol.oninput = () => { Voz.volume(uid, vol.value / 100); rot.textContent = vol.value + '%'; };
+      t.append(h('div', { class: 'vol-tile', onclick: (e) => e.stopPropagation(), ondblclick: (e) => e.stopPropagation() }, ic('voz', 14), vol, rot));
     }
     t.append(h('span', { class: 'rotulo' }, stm ? h('span', { class: 'ao-vivo' }, 'AO VIVO') : null, eu ? 'Você' : (m.nome || u.nome),
       m.surdo ? ic('foneOff', 14) : m.mudo ? ic('micOff', 14) : null));
@@ -2343,6 +2411,58 @@
 
   // ---------- modo compacto e atalhos de teclado ----------
   document.documentElement.classList.toggle('compacto', ler('kali-compacto') === '1');
+  // Ctrl+K: troca rápida (canais, DMs e amigos). Alt+↑/↓: canal anterior/próximo.
+  function trocaRapida() {
+    if ($('#troca-rapida')) return;
+    const itens = [];
+    for (const s of E.servidores) for (const c of s.canais) if (c.tipo !== 'voz' || true) itens.push({ tipo: c.tipo === 'voz' ? 'voz' : 'canal', nome: c.nome, sub: s.nome, ir: async () => { if (E.modo !== 'servidor' || E.servidorId !== s.id) await selecionarServidor(s.id); abrirCanal(c.id); } });
+    for (const d of E.dms) itens.push({ tipo: 'dm', nome: d.outro.nome, sub: d.grupo ? 'Grupo' : '@' + d.outro.usuario, ir: async () => { if (E.modo !== 'dm') await abrirDms(); E.telaAmigos = false; abrirCanal(d.canalId); } });
+    for (const u of E.amigos.amigos) if (!E.dms.some((d) => !d.grupo && d.outro.id === u.id)) itens.push({ tipo: 'amigo', nome: u.nome, sub: '@' + u.usuario, ir: () => abrirDmCom(u.usuario).catch((err) => toast(err.message, 'erro')) });
+    for (const s of E.servidores) itens.push({ tipo: 'servidor', nome: s.nome, sub: 'Servidor', ir: () => selecionarServidor(s.id) });
+    const ICS = { canal: '#', voz: '🔊', dm: '@', amigo: '@', servidor: '★' };
+    const inp = h('input', { placeholder: 'Pra onde? (# canal, @ pessoa, * servidor)', 'aria-label': 'Troca rápida' });
+    const lista = h('div', { class: 'tr-lista', role: 'listbox' });
+    let sel = 0, achados = [];
+    const pont = (alvo, q) => { alvo = alvo.toLowerCase(); if (alvo.startsWith(q)) return 3; if (alvo.includes(q)) return 2; let j = 0; for (const ch of alvo) if (ch === q[j]) j++; return j === q.length ? 1 : 0; };
+    const desenhar = () => {
+      let q = inp.value.trim().toLowerCase(), filtro = null;
+      if (/^[#@*]/.test(q)) { filtro = q[0]; q = q.slice(1).trim(); }
+      achados = itens.filter((it) => !filtro || (filtro === '#' ? ['canal', 'voz'].includes(it.tipo) : filtro === '@' ? ['dm', 'amigo'].includes(it.tipo) : it.tipo === 'servidor'))
+        .map((it) => [it, q ? pont(it.nome, q) : 1]).filter(([, p]) => p).sort((a, b) => b[1] - a[1]).slice(0, 9).map(([it]) => it);
+      sel = Math.min(sel, Math.max(0, achados.length - 1));
+      lista.replaceChildren(...(achados.length ? achados.map((it, k) => h('button', { class: 'tr-item' + (k === sel ? ' sel' : ''), role: 'option', type: 'button', onmousemove: () => { if (sel !== k) { sel = k; desenhar(); } }, onclick: () => escolher(k) },
+        h('span', { class: 'tr-ic' }, ICS[it.tipo]), h('b', {}, it.nome), h('small', {}, it.sub))) : [h('p', { class: 'tr-vazio' }, 'Nada encontrado.')]));
+    };
+    const fundo = h('div', { class: 'fundo-modal', id: 'troca-rapida' }, h('div', { class: 'modal troca-rapida', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Troca rápida' },
+      h('h2', {}, 'Ir para…'), inp, lista, h('small', { class: 'tr-dica' }, '↑↓ escolher · Enter abrir · Esc fechar')));
+    const fechar = () => sair(fundo);
+    const escolher = (k) => { const it = achados[k]; fechar(); if (it) it.ir(); };
+    inp.oninput = () => { sel = 0; desenhar(); };
+    inp.onkeydown = (e) => {
+      if (e.key === 'ArrowDown') { e.preventDefault(); sel = (sel + 1) % Math.max(1, achados.length); desenhar(); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); sel = (sel - 1 + achados.length) % Math.max(1, achados.length); desenhar(); }
+      else if (e.key === 'Enter') { e.preventDefault(); escolher(sel); }
+      else if (e.key === 'Escape') { e.stopPropagation(); fechar(); }
+    };
+    fundo.addEventListener('mousedown', (e) => { if (e.target === fundo) fechar(); });
+    document.body.append(fundo);
+    desenhar(); inp.focus();
+  }
+  const emCampo = (e) => /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) || e.target.isContentEditable;
+  const teclaPTT = () => ler('kali-ptt-tecla') || 'Backquote';
+  addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'k') { e.preventDefault(); trocaRapida(); return; }
+    if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown') && E.modo === 'servidor') {
+      const s = servidorAtual(); if (!s) return;
+      const cs = s.canais.filter((c) => c.tipo !== 'voz' && !c.paiCanal);
+      const i = cs.findIndex((c) => c.id === E.canalId), prox = cs[(i + (e.key === 'ArrowDown' ? 1 : -1) + cs.length) % cs.length];
+      if (prox) { e.preventDefault(); abrirCanal(prox.id); }
+      return;
+    }
+    if (window.Voz && Voz.ptt && e.code === teclaPTT() && !e.repeat && !(emCampo(e) && e.key.length === 1)) Voz.apertar(true);
+  });
+  addEventListener('keyup', (e) => { if (window.Voz && Voz.ptt && e.code === teclaPTT()) setTimeout(() => Voz.apertar(false), 200); });
+  addEventListener('blur', () => { if (window.Voz && Voz.ptt) Voz.apertar(false); });
   addEventListener('keydown', (e) => {
     if (!e.ctrlKey || !e.shiftKey || !window.Voz) return;
     const k = e.key.toLowerCase();
@@ -2391,6 +2511,7 @@
       try { if (window.Notification && Notification.permission === 'granted') new Notification('🚨 Alerta da staff', { body: corta(alertaDe(m), 140) }); } catch (e) {}
     }
     if (nova && m.autor && m.autor.id !== E.eu.id && E.eu.status !== 'foco' && !silenciado(m.canalId) && !bloqueado(m.autor.id) && (mencionaEu(m) || E.dms.some((x) => x.canalId === m.canalId))) tocarSom(ler('kali-som') || 'plim');
+    if (nova && m.autor && m.autor.id !== E.eu.id) notificarMsg(m, c);
     if (arr && !arr.some((x) => x.id === m.id)) { arr.push(m); arr.sort((a, b) => a.id - b.id); }
     const d = E.dms.find((x) => x.canalId === m.canalId);
     if (d) { d.ultima = m; E.dms = [d, ...E.dms.filter((x) => x !== d)]; }
@@ -2403,6 +2524,55 @@
       if (mencionaEu(m) && E.eu.status !== 'ocupado' && !silenciado(m.canalId) && !bloqueado(m.autor.id)) toast(`${m.autor.nome} mencionou você: ${corta(m.texto, 60)}`);
       renderRail(); renderSide();
     }
+  }
+  // Notificação do sistema pra menção/DM quando a aba não está em foco. Clicar abre o canal.
+  function notificarMsg(m, c) {
+    const dm = E.dms.find((x) => x.canalId === m.canalId);
+    if (!(mencionaEu(m) || dm) || !window.Notification || Notification.permission !== 'granted') return;
+    if (!document.hidden && document.hasFocus() && m.canalId === E.canalId) return;
+    if (['foco', 'ocupado'].includes(E.eu.status) || silenciado(m.canalId) || bloqueado(m.autor.id)) return;
+    try {
+      const s = c && E.servidores.find((x) => x.id === c.servidorId);
+      const n = new Notification(dm ? m.autor.nome : `${m.autor.nome} (#${c ? c.nome : ''}${s ? ', ' + s.nome : ''})`,
+        { body: corta(m.texto || (m.audio ? '🎙 Mensagem de voz' : m.anexo ? '📎 ' + m.anexo.nome : ''), 140), icon: '/img/icone.png', tag: 'c' + m.canalId });
+      n.onclick = async () => {
+        window.focus(); n.close();
+        if (dm) { if (E.modo !== 'dm') await abrirDms(); }
+        else if (c && c.servidorId !== E.servidorId) await selecionarServidor(c.servidorId);
+        E.telaAmigos = false; abrirCanal(m.canalId);
+      };
+    } catch (e) {}
+  }
+  // Visualizador: clicar numa imagem abre em tela cheia, com ←/→ entre as imagens do canal.
+  document.addEventListener('click', (e) => {
+    const a = e.target.closest('a.anexo-img');
+    if (!a || e.ctrlKey || e.metaKey || e.button) return;
+    e.preventDefault();
+    const todas = [...document.querySelectorAll('#lista a.anexo-img')];
+    let k = Math.max(0, todas.indexOf(a));
+    const img = h('img', { alt: '' }), info = h('small', {}), orig = h('a', { class: 'bt', target: '_blank', rel: 'noopener' }, 'Abrir original');
+    const mostrar = () => { const x = todas[k]; img.src = x.href; img.alt = x.querySelector('img')?.alt || ''; orig.href = x.href; info.textContent = todas.length > 1 ? `${k + 1} de ${todas.length}` : ''; img.classList.remove('zoom'); };
+    const ir = (d) => { if (todas.length > 1) { k = (k + d + todas.length) % todas.length; mostrar(); } };
+    const fundo = h('div', { class: 'visor', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Imagem' },
+      todas.length > 1 ? h('button', { class: 'visor-nav esq', title: 'Anterior', onclick: (ev) => { ev.stopPropagation(); ir(-1); } }, '‹') : null,
+      img,
+      todas.length > 1 ? h('button', { class: 'visor-nav dir', title: 'Próxima', onclick: (ev) => { ev.stopPropagation(); ir(1); } }, '›') : null,
+      h('div', { class: 'visor-pe', onclick: (ev) => ev.stopPropagation() }, info, orig, h('button', { class: 'bt', onclick: () => fechar() }, 'Fechar')));
+    img.onclick = (ev) => { ev.stopPropagation(); img.classList.toggle('zoom'); };
+    const tecla = (ev) => { if (ev.key === 'Escape') fechar(); else if (ev.key === 'ArrowLeft') ir(-1); else if (ev.key === 'ArrowRight') ir(1); };
+    const fechar = () => { removeEventListener('keydown', tecla, true); sair(fundo); };
+    fundo.onclick = fechar;
+    let x0 = null;
+    fundo.addEventListener('touchstart', (ev) => { x0 = ev.touches[0].clientX; }, { passive: true });
+    fundo.addEventListener('touchend', (ev) => { if (x0 != null) { const d = ev.changedTouches[0].clientX - x0; if (Math.abs(d) > 50) ir(d < 0 ? 1 : -1); x0 = null; } });
+    addEventListener('keydown', tecla, true);
+    document.body.append(fundo); mostrar();
+  });
+  // Pede permissão de notificação no primeiro clique (navegador exige um gesto).
+  if (window.Notification && Notification.permission === 'default') document.addEventListener('click', () => { Notification.requestPermission().catch(() => {}); }, { once: true });
+  function atualizarTitulo() {
+    const n = Object.values(E.mencoes).reduce((t, x) => t + (x || 0), 0);
+    document.title = n ? `(${n > 99 ? '99+' : n}) KALI` : 'KALI';
   }
   function trocarMsg(canalId, id, fn) {
     const arr = E.msgs.get(canalId);

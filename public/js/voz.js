@@ -5,6 +5,19 @@
   let sock = null, local = null, canalId = null, mudo = false, surdo = false, falando = false;
   let ctx = null, timer = null, aoMudar = () => {};
   const pares = new Map(); // usuarioId → {pc, audio, pend}
+  // Volume por pessoa (0–2, salvo neste navegador) e "apertar para falar".
+  let volumes = {};
+  try { volumes = JSON.parse(localStorage.getItem('kali-volumes') || '{}') || {}; } catch (e) {}
+  const volDe = (uid) => (typeof volumes[uid] === 'number' ? volumes[uid] : 1);
+  function aplicarVolume(uid) {
+    const p = pares.get(uid); if (!p) return;
+    const v = volDe(uid);
+    if (p.ganho) p.ganho.gain.value = surdo ? 0 : v;
+    else { p.audio.volume = Math.min(1, v); p.audio.muted = surdo || v === 0; }
+  }
+  let ptt = false, apertando = false;
+  try { ptt = localStorage.getItem('kali-ptt') === '1'; } catch (e) {}
+  const aplicarTrack = () => { if (local) local.getAudioTracks().forEach((t) => { t.enabled = !mudo && (!ptt || apertando); }); };
   // Áudio HD grátis: Opus estéreo com bitrate alto + correção de perda de pacote.
   const hd = (d) => ({ type: d.type, sdp: d.sdp.replace(/a=fmtp:111 ([^\r\n]*)/, 'a=fmtp:111 $1;stereo=1;sprop-stereo=1;maxaveragebitrate=256000;useinbandfec=1') });
 
@@ -39,8 +52,10 @@
         ganho.gain.value = surdo ? 0 : 1;
         ctx.createMediaStreamSource(e.streams[0]).connect(pan).connect(ganho).connect(ctx.destination);
         Object.assign(par, { pan, ganho });
+        ganho.gain.value = surdo ? 0 : volDe(uid);
         posicionar(uid);
       }
+      if (!par.ganho) aplicarVolume(uid);
       audio.play().catch(() => {});
     };
     pc.onicecandidate = (e) => { if (e.candidate) sock.emit('voz:sinal', { para: uid, dados: { candidato: e.candidate } }); };
@@ -154,6 +169,15 @@
   window.Voz = {
     get estado() { return { canalId, mudo, surdo, falando, espacial, compartilhando: !!tela && tipoVideo === 'tela', camera: !!tela && tipoVideo === 'camera' }; },
     get telas() { return telas; },
+    volumeDe: volDe,
+    volume(uid, v) {
+      volumes[uid] = Math.max(0, Math.min(2, Number(v) || 0));
+      try { localStorage.setItem('kali-volumes', JSON.stringify(volumes)); } catch (e) {}
+      aplicarVolume(uid);
+    },
+    get ptt() { return ptt; },
+    definirPTT(on) { ptt = !!on; apertando = false; try { localStorage.setItem('kali-ptt', ptt ? '1' : ''); } catch (e) {} aplicarTrack(); aoMudar(); },
+    apertar(b) { if (!ptt || apertando === !!b) return; apertando = !!b; aplicarTrack(); aoMudar(); },
     get minhaTela() { return tela; },
     async alternarTela() {
       if (tela) return pararTela();
@@ -216,7 +240,7 @@
       const r = await pedir('voz:entrar', { canalId: id });
       if (r.erro) { local.getTracks().forEach((t) => t.stop()); local = null; throw new Error(r.erro); }
       canalId = id;
-      local.getAudioTracks().forEach((t) => { t.enabled = !mudo; });
+      aplicarTrack();
       detector();
       for (const uid of r.pares || []) criarPar(uid, true);
       emitirEstado();
@@ -229,15 +253,15 @@
     },
     alternarMudo() {
       mudo = !mudo;
-      if (!mudo && surdo) { surdo = false; pares.forEach((p) => { if (p.ganho) p.ganho.gain.value = 1; else p.audio.muted = false; }); }
-      if (local) local.getAudioTracks().forEach((t) => { t.enabled = !mudo; });
+      if (!mudo && surdo) { surdo = false; pares.forEach((p, uid) => aplicarVolume(uid)); }
+      aplicarTrack();
       if (mudo) falando = false;
       emitirEstado(); aoMudar();
     },
     alternarSurdo() {
       surdo = !surdo;
       mudo = surdo ? true : mudo;
-      pares.forEach((p) => { if (p.ganho) p.ganho.gain.value = surdo ? 0 : 1; else p.audio.muted = surdo; });
+      pares.forEach((p, uid) => aplicarVolume(uid));
       if (local) local.getAudioTracks().forEach((t) => { t.enabled = !mudo; });
       if (mudo) falando = false;
       emitirEstado(); aoMudar();
