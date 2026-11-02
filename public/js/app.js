@@ -33,6 +33,7 @@
     som: 'M9 18V5l12-2v13M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0M21 16a3 3 0 1 1-6 0 3 3 0 0 1 6 0',
     desligar: 'M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7 2 2 0 0 1 1.72 2v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.42 19.42 0 0 1-3.33-2.67m-2.67-3.34a19.79 19.79 0 0 1-3.07-8.63A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91M23 1 1 23',
     sinal: 'M2 20h.01M7 20v-4M12 20v-8M17 20V8M22 4v16', convidar: 'M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M8.5 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M20 8v6M23 11h-6',
+    balao: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z', check: 'M20 6 9 17l-5-5', loja: 'M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4zM3 6h18M16 10a4 4 0 0 1-8 0',
     porta: 'M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9', calendario: 'M3 4h18v18H3zM16 2v4M8 2v4M3 10h18',
   };
   function ic(nome, tam = 20) {
@@ -1637,19 +1638,20 @@
     const linha = (u, sub, ...acoes) => h('div', { class: 'linha-amigo' }, avatar(u, '', true),
       h('div', { class: 'txt' }, h('b', {}, u.nome, ' ', h('small', {}, '@' + u.usuario)), h('small', {}, sub)), h('div', { class: 'acoes' }, acoes));
     const bt = (rot, titulo, fn, cls) => h('button', { class: 'icbtn ' + (cls || ''), title: titulo, onclick: fn }, rot);
-    const conversar = (u) => bt('💬', 'Mandar mensagem', () => { E.telaAmigos = false; abrirDmCom(u.usuario).catch((err) => toast(err.message, 'erro')); });
+    const abrirDm = (u) => { E.telaAmigos = false; abrirDmCom(u.usuario).catch((err) => toast(err.message, 'erro')); };
+    const conversar = (u) => bt(ic('balao', 18), 'Mandar mensagem', () => abrirDm(u));
     let itens = [], titulo = '';
     if (aba === 'online' || aba === 'todos') {
       const lista = A.amigos.filter((u) => aba === 'todos' || st(u.id)[0] !== 'off');
       titulo = `${aba === 'online' ? 'Online' : 'Todos os amigos'} — ${lista.length}`;
       itens = lista.map((u) => linha(u, st(u.id)[1], conversar(u),
-        bt('✕', 'Desfazer amizade', () => { if (confirm(`Desfazer amizade com ${u.nome}?`)) acaoAmigo('DELETE', `/amigos/${u.id}`); }, 'perigo')));
+        bt(ic('x', 18), 'Desfazer amizade', () => { if (confirm(`Desfazer amizade com ${u.nome}?`)) acaoAmigo('DELETE', `/amigos/${u.id}`); }, 'perigo')));
     } else if (aba === 'pendentes') {
       titulo = `Pendentes — ${A.recebidos.length + A.enviados.length}`;
       itens = [...A.recebidos.map((u) => linha(u, 'Pedido de amizade recebido',
-        bt('✓', 'Aceitar', () => acaoAmigo('POST', `/amigos/${u.id}/aceitar`, `Agora você e ${u.nome} são amigos!`), 'ok'),
-        bt('✕', 'Recusar', () => acaoAmigo('DELETE', `/amigos/${u.id}`), 'perigo'))),
-      ...A.enviados.map((u) => linha(u, 'Pedido enviado', bt('✕', 'Cancelar pedido', () => acaoAmigo('DELETE', `/amigos/${u.id}`), 'perigo')))];
+        bt(ic('check', 18), 'Aceitar', () => acaoAmigo('POST', `/amigos/${u.id}/aceitar`, `Agora você e ${u.nome} são amigos!`), 'ok'),
+        bt(ic('x', 18), 'Recusar', () => acaoAmigo('DELETE', `/amigos/${u.id}`), 'perigo'))),
+      ...A.enviados.map((u) => linha(u, 'Pedido enviado', bt(ic('x', 18), 'Cancelar pedido', () => acaoAmigo('DELETE', `/amigos/${u.id}`), 'perigo')))];
     } else if (aba === 'bloqueados') {
       const ids = listaLocal('kali-bloqueados');
       titulo = `Bloqueados — ${ids.length}`;
@@ -1665,8 +1667,35 @@
         h('div', { class: 'add-amigo' }, u, h('button', { class: 'bt prim', onclick: enviar }, 'Enviar pedido de amizade'))));
       return;
     }
-    main.replaceChildren(topo, h('section', { class: 'col amigos-corpo' }, h('div', { class: 'rot' }, titulo),
-      itens.length ? itens : h('p', { class: 'sub vazio-amigos' }, aba === 'online' ? 'Nenhum amigo online agora.' : 'Nada por aqui.')));
+    // Início: saudação + atalhos em cima, lista de amigos, e "Ativo agora" à direita.
+    const online = A.amigos.filter((u) => st(u.id)[0] !== 'off');
+    const hr = new Date().getHours();
+    const saud = hr < 5 ? 'Boa madrugada' : hr < 12 ? 'Bom dia' : hr < 18 ? 'Boa tarde' : 'Boa noite';
+    const stat = (n, rot) => h('div', { class: 'hh-stat' }, h('b', {}, n), h('small', {}, rot));
+    const card = (icone, tit, sub, fn) => h('button', { class: 'home-card', onclick: fn }, h('span', { class: 'hc-ic' }, icone), h('span', { class: 'hc-txt' }, h('b', {}, tit), h('small', {}, sub)));
+    const inicio = aba === 'online' || aba === 'todos';
+    const vazio = h('div', { class: 'vazio-home' }, h('div', { class: 'vh-logo' }, logo('logo-grande')),
+      h('b', {}, aba === 'online' ? (A.amigos.length ? 'Ninguém online agora' : 'Sua lista tá vazia') : aba === 'pendentes' ? 'Nenhum pedido pendente' : 'Nada por aqui'),
+      h('p', {}, aba === 'online' && A.amigos.length ? 'Quando a galera entrar, ela aparece aqui.' : 'Adiciona alguém pelo @ e começa a resenha.'),
+      aba !== 'bloqueados' ? h('button', { class: 'bt prim', onclick: () => trocar('adicionar') }, 'Adicionar amigo') : null);
+    const corpo = h('section', { class: 'col amigos-corpo' },
+      inicio ? h('div', { class: 'home-hero' },
+        h('div', { class: 'hh-txt' }, h('small', { class: 'hh-prompt' }, 'root@kali:~$ ./inicio'),
+          h('h2', {}, saud + ', ', h('span', { class: 'grad-txt' }, E.eu.nome)),
+          h('p', {}, online.length ? `${online.length} amigo${online.length > 1 ? 's' : ''} online agora. Bora?` : 'Tudo calmo por aqui. Chama alguém pra resenha.')),
+        h('div', { class: 'hh-stats' }, stat(online.length, 'online'), stat(A.amigos.length, 'amigos'), stat(E.servidores.length, 'servidores'))) : null,
+      inicio ? h('div', { class: 'home-acoes' },
+        card(ic('convidar', 22), 'Adicionar amigo', 'Pelo @ da pessoa', () => trocar('adicionar')),
+        card(ic('mais', 22), 'Criar servidor', 'Sua galera, suas regras', modalServidor),
+        card(ic('hash', 22), 'Entrar com convite', 'Tem um código? Cola aqui', modalServidor),
+        card(ic('loja', 22), 'Loja', 'Banner, moldura e cor do nome', modalLoja)) : null,
+      h('div', { class: 'rot' }, titulo),
+      itens.length ? h('div', { class: 'lista-amigos' }, itens) : vazio);
+    const ativo = h('aside', { class: 'ativo-agora' }, h('h3', {}, 'Ativo agora'),
+      online.length ? online.slice(0, 10).map((u) => h('button', { class: 'ativo-item', onclick: () => abrirDm(u) }, avatar(u, '', true),
+        h('span', { class: 'txt' }, h('b', {}, u.nome), h('small', {}, u.statusTexto || st(u.id)[1]))))
+        : h('div', { class: 'ativo-vazio' }, h('b', {}, 'Tá tranquilo por enquanto…'), h('small', {}, 'Quando seus amigos ficarem online, eles aparecem aqui.')));
+    main.replaceChildren(topo, h('div', { class: 'home' }, corpo, ativo));
   }
   // ---------- amigos ----------
   async function carregarAmigos() {

@@ -895,3 +895,64 @@ body.pagina-entrar{animation:none}
   .barra-call .encerrar{width:58px}
   .faixa .tile{width:130px}
 }
+
+/* ==================== início (tela de Amigos) ==================== */
+.home{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) 300px}
+.home .amigos-corpo{overflow-y:auto;padding-top:20px;padding-bottom:24px;max-width:none;width:100%}
+.home-hero{position:relative;overflow:hidden;display:flex;align-items:flex-end;justify-content:space-between;gap:20px;flex-wrap:wrap;padding:26px 26px 22px;border-radius:24px;border:1px solid var(--borda);background:linear-gradient(135deg,rgba(31,95,214,.22),rgba(14,116,144,.12) 55%,transparent),var(--card);box-shadow:var(--sombra);margin-bottom:14px;animation:tileEntra .5s var(--ease) both}
+.home-hero::before{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(rgba(47,208,255,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(47,208,255,.06) 1px,transparent 1px);background-size:28px 28px;-webkit-mask:radial-gradient(ellipse at 85% 0%,#000,transparent 70%);mask:radial-gradient(ellipse at 85% 0%,#000,transparent 70%)}
+.home-hero::after{content:"";position:absolute;width:320px;height:320px;right:-80px;top:-160px;border-radius:50%;background:radial-gradient(circle,rgba(47,208,255,.35),transparent 65%);filter:blur(20px);pointer-events:none;animation:heroGlow 8s ease-in-out infinite alternate}
+@keyframes heroGlow{to{transform:translate(-40px,30px) scale(1.15);opacity:.7}}
+.hh-txt{position:relative;z-index:1;min-width:0}
+.hh-prompt{font-family:var(--mono);font-size:12px;color:var(--ok);letter-spacing:.02em}
+.home-hero h2{font-size:30px;line-height:1.15;margin:6px 0 6px;letter-spacing:-.01em;overflow-wrap:anywhere}
+.grad-txt{background:linear-gradient(90deg,#5a9cff,#2fd0ff,#3ee6a8);-webkit-background-clip:text;background-clip:text;color:transparent}
+:root:not([data-theme="dark"]) .grad-txt{background:linear-gradient(90deg,#1f5fd6,#0e7490);-webkit-background-clip:text;background-clip:text}
+.home-hero p{color:var(--suave)}
+.hh-stats{position:relative;z-index:1;display:flex;gap:8px}
+.hh-stat{display:flex;flex-direction:column;align-items:center;min-width:76px;padding:10px 12px;border-radius:16px;background:var(--chip);border:1px solid var(--chip-borda);backdrop-filter:blur(8px)}
+.hh-stat b{font-family:var(--mono);font-size:22px;line-height:1.1}
+.hh-stat small{color:var(--fraco);font-size:11px;text-transform:uppercase;letter-spacing:.08em}
+.home-acoes{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin-bottom:10px}
+.home-card{display:flex;align-items:center;gap:12px;padding:14px;border-radius:18px;border:1px solid var(--borda);background:var(--card);text-align:left;transition:transform .2s var(--ease),border-color .2s,box-shadow .2s;animation:tileEntra .45s var(--ease) both}
+.home-card:nth-child(2){animation-delay:.05s}.home-card:nth-child(3){animation-delay:.1s}.home-card:nth-child(4){animation-delay:.15s}
+.home-card:hover{border-color:rgba(47,208,255,.5);box-shadow:0 12px 30px rgba(31,95,214,.18)}
+@media (hover:hover){.home-card:hover{transform:translateY(-3px)}}
+.home-card:active{transform:scale(.97)}
+.hc-ic{width:44px;height:44px;border-radius:14px;display:grid;place-items:center;flex:none;background:var(--grad);color:#fff;box-shadow:0 8px 20px rgba(31,95,214,.35)}
+.hc-txt{display:flex;flex-direction:column;min-width:0}
+.hc-txt b{font-weight:600}
+.hc-txt small{color:var(--fraco);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lista-amigos{display:flex;flex-direction:column}
+.linha-amigo .icbtn{border:0;width:38px;height:38px}
+.linha-amigo .acoes{opacity:.75;transition:opacity .2s}
+.linha-amigo:hover .acoes{opacity:1}
+.linha-amigo{cursor:default}
+.vazio-home{display:flex;flex-direction:column;align-items:center;text-align:center;gap:8px;padding:40px 16px;color:var(--suave);animation:tileEntra .5s var(--ease) both}
+.vh-logo{position:relative;margin-bottom:6px}
+.vh-logo::before{content:"";position:absolute;inset:-18px;border-radius:50%;background:radial-gradient(circle,rgba(47,208,255,.28),transparent 70%);animation:heroGlow 4s ease-in-out infinite alternate}
+.vh-logo img{position:relative;width:84px;height:84px;border-radius:22px}
+.vazio-home b{color:var(--texto);font-size:17px}
+.vazio-home .bt{margin-top:6px}
+.ativo-agora{border-left:1px solid var(--borda);padding:20px 14px;overflow-y:auto;background:var(--sidebar)}
+.ativo-agora h3{font-size:17px;margin:0 6px 12px}
+.ativo-item{display:flex;align-items:center;gap:10px;width:100%;padding:10px;border-radius:14px;text-align:left;border:1px solid transparent;transition:background .2s,border-color .2s;animation:entraLado .35s var(--ease) both}
+.ativo-item:hover{background:var(--hover);border-color:var(--chip-borda)}
+.ativo-item .av{width:36px;height:36px}
+.ativo-item .txt{display:flex;flex-direction:column;min-width:0}
+.ativo-item b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ativo-item small{color:var(--fraco);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ativo-vazio{display:flex;flex-direction:column;gap:4px;padding:16px;border-radius:16px;border:1px solid var(--borda);background:var(--chip);text-align:center}
+.ativo-vazio small{color:var(--fraco);line-height:1.45}
+@media (max-width:1100px){.home{grid-template-columns:minmax(0,1fr)}.ativo-agora{display:none}}
+@media (max-width:760px){
+  .home-hero{padding:20px 18px 18px;border-radius:20px}
+  .home-hero h2{font-size:24px}
+  .hh-stats{width:100%}
+  .hh-stat{flex:1;min-width:0}
+  .home-acoes{grid-template-columns:1fr 1fr}
+  .home-card{flex-direction:column;align-items:flex-start;gap:8px}
+  .hc-txt small{white-space:normal}
+}
+/* no início não tem lista de membros: o "Ativo agora" ocupa o lugar */
+@media (min-width:1101px){.app:has(.home){grid-template-columns:72px 260px 1fr 0}.app:has(.home) .membros{display:none}}
