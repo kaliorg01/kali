@@ -13,9 +13,38 @@
       else if (k.startsWith('on') && typeof v === 'function') e.addEventListener(k.slice(2), v);
       else e.setAttribute(k, v === true ? '' : v);
     }
+    if (props && props.title && !props['aria-label'] && tag === 'button') e.setAttribute('aria-label', props.title);
     for (const f of filhos.flat(Infinity)) if (f != null && f !== false) e.append(f instanceof Node ? f : String(f));
     return e;
   }
+  // Remove com animação de saída (classe .saindo); fallback se o animationend não vier.
+  function sair(el, ms = 260) {
+    if (!el || el.classList.contains('saindo')) return;
+    el.classList.add('saindo');
+    const fim = () => el.remove();
+    el.addEventListener('animationend', (e) => { if (e.target === el) fim(); }, { once: true });
+    setTimeout(fim, ms);
+  }
+  const ehCelular = () => matchMedia('(max-width: 760px)').matches;
+  // Segurar (toque) ou clique direito (mouse) → fn(x, y).
+  function aoSegurar(el, fn) {
+    let t = null, x = 0, y = 0, ultimo = 0;
+    const disparar = (px, py) => { if (Date.now() - ultimo < 700) return; ultimo = Date.now(); el.classList.remove('segurando'); fn(px, py); };
+    const cancela = () => { if (t) { clearTimeout(t); t = null; } el.classList.remove('segurando'); };
+    el.addEventListener('pointerdown', (e) => {
+      if (e.pointerType === 'mouse' || e.target.closest('a,button,textarea,input,audio,video')) return;
+      x = e.clientX; y = e.clientY; el.classList.add('segurando');
+      t = setTimeout(() => { t = null; try { navigator.vibrate && navigator.vibrate(10); } catch (er) {} disparar(x, y); }, 420);
+    });
+    el.addEventListener('pointermove', (e) => { if (t && Math.hypot(e.clientX - x, e.clientY - y) > 8) cancela(); });
+    el.addEventListener('pointerup', cancela);
+    el.addEventListener('pointercancel', cancela);
+    el.addEventListener('contextmenu', (e) => {
+      if (e.target.closest('a,textarea,input,audio,video')) return;
+      e.preventDefault(); cancela(); disparar(e.clientX, e.clientY);
+    });
+  }
+  if ('serviceWorker' in navigator) addEventListener('load', () => { navigator.serviceWorker.register('/sw.js').catch(() => {}); });
   // Logo: public/img/icone.png (recorte quadrado do dragão); se faltar, kali.svg.
   function logo(cls) {
     const i = document.createElement('img');
@@ -99,16 +128,44 @@
   // ---------- toasts, menus, modais ----------
   function toast(texto, tipo) {
     if (!tipo && E.eu && E.eu.status === 'foco') return; // modo foco: sem avisos
-    const t = h('div', { class: 'toast ' + (tipo || '') }, texto);
+    const t = h('div', { class: 'toast ' + (tipo || '') }, h('span', {}, texto), h('button', { class: 'x', type: 'button', title: 'Fechar', onclick: () => sair(t) }, '✕'));
     $('#toasts').append(t);
-    setTimeout(() => t.remove(), 3800);
+    let resta = 3800, desde = Date.now(), tm = setTimeout(() => sair(t), resta);
+    t.onmouseenter = () => { clearTimeout(tm); resta -= Date.now() - desde; };
+    t.onmouseleave = () => { desde = Date.now(); tm = setTimeout(() => sair(t), Math.max(800, resta)); };
   }
 
-  let menuAberto = null;
-  function fecharMenu() { if (menuAberto) { menuAberto.remove(); menuAberto = null; } }
+  let menuAberto = null, fundoMenu = null;
+  function fecharMenu() {
+    if (menuAberto) { sair(menuAberto); menuAberto = null; }
+    if (fundoMenu) { sair(fundoMenu); fundoMenu = null; }
+  }
   function abrirMenu(ancora, conteudo, cls) {
     fecharMenu();
-    const m = h('div', { class: 'menu ' + (cls || '') }, conteudo);
+    const sheet = ehCelular();
+    const m = h('div', { class: 'menu ' + (cls || '') + (sheet ? ' sheet' : ''), role: 'menu' }, conteudo);
+    m.querySelectorAll('button').forEach((b) => b.setAttribute('role', 'menuitem'));
+    m.addEventListener('keydown', (e) => {
+      const bs = [...m.querySelectorAll('button:not([disabled])')], i = bs.indexOf(document.activeElement);
+      const ir = { ArrowDown: i + 1, ArrowUp: i - 1, Home: 0, End: bs.length - 1 }[e.key];
+      if (ir != null && bs.length) { e.preventDefault(); bs[(ir + bs.length) % bs.length].focus(); }
+    });
+    if (sheet) {
+      fundoMenu = h('div', { class: 'fundo-sheet' });
+      document.body.append(fundoMenu);
+      document.body.append(m);
+      menuAberto = m;
+      // arrastar a alça pra baixo fecha
+      let y0 = null;
+      m.addEventListener('touchstart', (e) => { y0 = m.scrollTop <= 0 ? e.touches[0].clientY : null; }, { passive: true });
+      m.addEventListener('touchmove', (e) => { if (y0 != null) { const d = e.touches[0].clientY - y0; if (d > 0) m.style.transform = `translateY(${d}px)`; } }, { passive: true });
+      m.addEventListener('touchend', (e) => {
+        if (y0 == null) return;
+        const d = e.changedTouches[0].clientY - y0; y0 = null;
+        if (d > 90) fecharMenu(); else m.style.transform = '';
+      });
+      return;
+    }
     document.body.append(m);
     const r = ancora.getBoundingClientRect();
     let x = r.left, y = r.bottom + 6;
@@ -117,18 +174,45 @@
     m.style.left = Math.max(8, x) + 'px';
     m.style.top = Math.max(8, y) + 'px';
     menuAberto = m;
+    if (matchMedia('(hover: hover)').matches) setTimeout(() => { if (menuAberto === m) m.querySelector('button')?.focus({ preventScroll: true }); });
+  }
+  // Abre o mesmo menu de um botão, mas na posição do clique direito.
+  function abrirMenuEm(x, y, botao) {
+    const r0 = botao.getBoundingClientRect;
+    botao.getBoundingClientRect = () => ({ left: x, top: y, bottom: y, right: x, width: 0, height: 0 });
+    try { botao.click(); } finally { botao.getBoundingClientRect = r0; }
   }
   const item = (texto, acao, cls) => h('button', { class: cls || '', type: 'button', onclick: () => { fecharMenu(); acao(); } }, texto);
   document.addEventListener('mousedown', (e) => { if (menuAberto && !menuAberto.contains(e.target)) fecharMenu(); });
 
-  let modalAberto = null;
-  function fecharModal() { if (modalAberto) { modalAberto.remove(); modalAberto = null; } }
+  let modalAberto = null, focoAntes = null;
+  function fecharModal() {
+    if (!modalAberto) return;
+    sair(modalAberto); modalAberto = null;
+    if (focoAntes && document.contains(focoAntes)) focoAntes.focus({ preventScroll: true });
+    focoAntes = null;
+  }
+  // Tab fica preso dentro do diálogo.
+  function prenderFoco(el) {
+    el.addEventListener('keydown', (e) => {
+      if (e.key !== 'Tab') return;
+      const fs = [...el.querySelectorAll('button,input,select,textarea,a[href],[tabindex]:not([tabindex="-1"])')].filter((x) => !x.disabled && x.offsetParent);
+      if (!fs.length) return;
+      const a = fs[0], z = fs[fs.length - 1];
+      if (e.shiftKey && document.activeElement === a) { e.preventDefault(); z.focus(); }
+      else if (!e.shiftKey && document.activeElement === z) { e.preventDefault(); a.focus(); }
+    });
+  }
+  let idModal = 0;
   function abrirModal({ titulo, sub, corpo, botao, acao, perigo }) {
+    const antes = modalAberto ? focoAntes : document.activeElement;
     fecharModal();
-    const erro = h('p', { class: 'erro-form', hidden: true });
+    focoAntes = antes;
+    const erro = h('p', { class: 'erro-form', hidden: true, role: 'alert' });
     const ok = botao ? h('button', { class: 'bt ' + (perigo ? 'perigo' : 'prim'), type: 'submit' }, botao) : null;
-    const form = h('form', { class: 'modal', novalidate: true },
-      h('h2', {}, titulo), sub ? h('p', { class: 'sub' }, sub) : null, corpo || [], erro,
+    const idT = 'modal-t' + (++idModal);
+    const form = h('form', { class: 'modal', novalidate: true, role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': idT },
+      h('h2', { id: idT }, titulo), sub ? h('p', { class: 'sub' }, sub) : null, corpo || [], erro,
       h('div', { class: 'acoes' }, h('button', { class: 'bt', type: 'button', onclick: fecharModal }, botao ? 'Cancelar' : 'Fechar'), ok));
     form.onsubmit = async (e) => {
       e.preventDefault();
@@ -140,7 +224,9 @@
     fundo.addEventListener('mousedown', (e) => { if (e.target === fundo) fecharModal(); });
     document.body.append(fundo);
     modalAberto = fundo;
-    const primeiro = form.querySelector('input'); if (primeiro) primeiro.focus();
+    prenderFoco(form);
+    const primeiro = form.querySelector('input,select,textarea') || ok || form.querySelector('button');
+    if (primeiro && !(ehCelular() && primeiro.tagName !== 'BUTTON')) primeiro.focus();
     return form;
   }
   const campo = (rotulo, input) => h('label', { class: 'campo' }, h('span', {}, rotulo), input);
@@ -456,7 +542,7 @@
       h('button', { class: 'pill', title: 'Membros', onclick: alternarMembros }, '👥'),
       h('label', { class: 'pill busca' }, '⌕ ', busca));
     const lista = h('div', { class: 'col', id: 'lista' });
-    const msgs = h('section', { class: 'msgs', id: 'msgs' }, lista);
+    const msgs = h('section', { class: 'msgs', id: 'msgs', role: 'log', 'aria-live': 'polite', 'aria-relevant': 'additions', 'aria-label': 'Mensagens' }, lista);
     msgs.addEventListener('scroll', () => { if (msgs.scrollTop < 80) carregarAntigas(); }, { passive: true });
 
     const ta = h('textarea', { rows: 1, maxlength: 2000, placeholder: (c.dm ? 'Conversar com @' + c.dm.outro.usuario : 'Conversar em #' + c.nome) + (c.modoLento ? ` · 🐢 modo lento: ${RLENTO.find((x) => x[0] === c.modoLento)?.[1] || c.modoLento + 's'}` : '') });
@@ -670,6 +756,7 @@
       // Igual ao Discord: reagir e responder à mostra; o resto no "⋯ Mais".
       const bMais = h('button', { title: 'Mais' }, '⋯');
       bMais.onclick = () => abrirMenu(bMais, [
+        ehCelular() ? h('div', { class: 'emojis rapido' }, EMOJIS.map((em) => item(em, () => reagir(m.id, em)))) : null,
         minha && m.texto ? item('Editar mensagem', () => { E.editando = m.id; renderLista(); }) : null,
         item('Responder', () => bResp.click()),
         s && c && c.tipo === 'texto' && !c.paiCanal && !m.topico ? item('Criar tópico', () => {
@@ -690,6 +777,7 @@
       bLembrar.hidden = true; bEnc.hidden = true;
       acoes.append(bEmoji, bResp, bMais, bLembrar, bEnc);
       div.append(acoes);
+      aoSegurar(div, (x, y) => { if (E.editando === m.id) return; ehCelular() ? bMais.click() : abrirMenuEm(x, y, bMais); });
     }
     return div;
   }
@@ -720,7 +808,7 @@
       } else if (todas.length) {
         itens.push(h('div', { class: 'carregando' }, 'Carregando mensagens antigas…'));
       } else {
-        itens.push(h('div', { class: 'carregando' }, 'Carregando…'));
+        itens.push(h('div', { 'aria-busy': 'true', 'aria-label': 'Carregando mensagens' }, [0, 1, 2, 3].map(() => h('div', { class: 'esqueleto' }, h('i'), h('div', {}, h('b'), h('b'), h('b'))))));
       }
       let ant = null, diaAnt = '';
       const nova = E.novaDesde.get(c.id);

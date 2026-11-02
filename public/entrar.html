@@ -2,11 +2,15 @@
 <html lang="pt-BR" data-theme="dark">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Entrar — KALI</title>
 <link rel="icon" type="image/png" href="/img/icone.png">
 <link rel="apple-touch-icon" href="/img/icone-180.png">
 <meta name="theme-color" content="#000000">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KALI">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -23,12 +27,12 @@
     <p class="prompt">root@kali:~$ sua galera conectada<span class="cursor">_</span></p>
   </div>
   <div class="abas" role="tablist">
-    <button type="button" class="ativa" data-aba="entrar">Entrar</button>
-    <button type="button" data-aba="registrar">Criar conta</button>
+    <button type="button" class="ativa" role="tab" aria-selected="true" data-aba="entrar">Entrar</button>
+    <button type="button" role="tab" aria-selected="false" data-aba="registrar">Criar conta</button>
   </div>
-  <label class="campo"><span>Usuário</span><input id="usuario" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="20" placeholder="ex: carter_br" required></label>
+  <label class="campo"><span>Usuário</span><input id="usuario" aria-describedby="erro" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="20" placeholder="ex: carter_br" required></label>
   <label class="campo" id="campoNome" hidden><span>Nome de exibição (opcional)</span><input id="nome" maxlength="32" placeholder="Como a galera vai te ver"></label>
-  <label class="campo"><span>Senha</span><input id="senha" type="password" autocomplete="current-password" maxlength="200" placeholder="Mínimo 6 caracteres" required></label>
+  <div class="campo campo-senha"><label for="senha"><span>Senha</span></label><input id="senha" type="password" autocomplete="current-password" maxlength="200" placeholder="Mínimo 6 caracteres" required aria-describedby="erro"><button type="button" class="olho" id="olho" aria-label="Mostrar senha" aria-pressed="false">👁</button></div>
   <p class="erro-form" id="erro" role="alert"></p>
   <button class="bt prim" id="botao" type="submit">Entrar</button>
 </form>
@@ -40,21 +44,32 @@
   fetch('/api/eu').then((r) => { if (r.ok) location.replace('/'); }).catch(() => {});
   document.querySelectorAll('.abas button').forEach((b) => b.onclick = () => {
     aba = b.dataset.aba;
-    document.querySelectorAll('.abas button').forEach((x) => x.classList.toggle('ativa', x === b));
+    document.querySelectorAll('.abas button').forEach((x) => { x.classList.toggle('ativa', x === b); x.setAttribute('aria-selected', String(x === b)); });
     $('#campoNome').hidden = aba !== 'registrar';
     $('#botao').textContent = aba === 'registrar' ? 'Criar conta' : 'Entrar';
     $('#senha').autocomplete = aba === 'registrar' ? 'new-password' : 'current-password';
     $('#erro').textContent = '';
   });
-  $('#usuario').addEventListener('input', (e) => { e.target.value = e.target.value.toLowerCase(); });
+  $('#usuario').addEventListener('input', (e) => { e.target.value = e.target.value.toLowerCase(); e.target.removeAttribute('aria-invalid'); });
+  $('#senha').addEventListener('input', (e) => e.target.removeAttribute('aria-invalid'));
+  $('#olho').onclick = () => {
+    const ver = $('#senha').type === 'password';
+    $('#senha').type = ver ? 'text' : 'password';
+    $('#olho').setAttribute('aria-pressed', String(ver));
+    $('#olho').setAttribute('aria-label', ver ? 'Esconder senha' : 'Mostrar senha');
+    $('#olho').textContent = ver ? '🙈' : '👁';
+  };
+  const invalido = (id, msg) => { $(id).setAttribute('aria-invalid', 'true'); $(id).focus(); $('#erro').textContent = msg; };
   $('#form').onsubmit = async (e) => {
     e.preventDefault();
     const usuario = $('#usuario').value.trim(), senha = $('#senha').value;
-    if (!/^[a-z0-9_.]{3,20}$/.test(usuario)) { $('#erro').textContent = 'Usuário: 3 a 20 caracteres (letras minúsculas, números, "_" ou ".").'; return; }
-    if (senha.length < 6) { $('#erro').textContent = 'A senha precisa ter pelo menos 6 caracteres.'; return; }
+    if (!/^[a-z0-9_.]{3,20}$/.test(usuario)) return invalido('#usuario', 'Usuário: 3 a 20 caracteres (letras minúsculas, números, "_" ou ".").');
+    if (senha.length < 6) return invalido('#senha', 'A senha precisa ter pelo menos 6 caracteres.');
     const corpo = { usuario, senha };
     if (aba === 'registrar' && $('#nome').value.trim()) corpo.nome = $('#nome').value.trim();
+    const rotulo = $('#botao').textContent;
     $('#botao').disabled = true; $('#erro').textContent = '';
+    $('#botao').replaceChildren(Object.assign(document.createElement('span'), { className: 'giro' }), aba === 'registrar' ? 'Criando conta…' : 'Entrando…');
     try {
       const r = await fetch('/api/' + aba, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corpo) });
       const d = await r.json().catch(() => ({}));
@@ -62,7 +77,8 @@
       location.replace('/');
     } catch (err) {
       $('#erro').textContent = err.message === 'Failed to fetch' ? 'Servidor fora do ar.' : err.message;
-    } finally { $('#botao').disabled = false; }
+      $('#botao').disabled = false; $('#botao').textContent = rotulo;
+    }
   };
 })();
 </script>
