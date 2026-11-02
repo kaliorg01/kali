@@ -642,7 +642,10 @@
       h('label', { class: 'pill busca' }, busca, ic('lupa', 16)));
     const lista = h('div', { class: 'col', id: 'lista' });
     const msgs = h('section', { class: 'msgs', id: 'msgs', role: 'log', 'aria-live': 'polite', 'aria-relevant': 'additions', 'aria-label': 'Mensagens' }, lista);
-    msgs.addEventListener('scroll', () => { if (msgs.scrollTop < 80) carregarAntigas(); }, { passive: true });
+    msgs.addEventListener('scroll', () => {
+      if (msgs.scrollTop < 80) carregarAntigas();
+      if (E.foraDoFim === c.id && msgs.scrollTop + msgs.clientHeight > msgs.scrollHeight - 120) carregarNovas(c.id);
+    }, { passive: true });
 
     const ta = h('textarea', { rows: 1, maxlength: 2000, placeholder: (c.dm ? 'Conversar com @' + c.dm.outro.usuario : 'Conversar em #' + c.nome) + (c.modoLento ? ` · 🐢 modo lento: ${RLENTO.find((x) => x[0] === c.modoLento)?.[1] || c.modoLento + 's'}` : '') });
     ta.value = E.rascunho.get(c.id) || '';
@@ -655,6 +658,8 @@
     };
     ta.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); enviar(c.id, ta); } };
     const emoji = h('button', { class: 'icbtn', type: 'button', title: 'Emoji' }, ic('sorriso'));
+    const bGif = h('button', { class: 'icbtn bt-gif', type: 'button', title: 'GIFs favoritos' }, 'GIF');
+    bGif.onclick = () => menuGifs(bGif, c.id, ta);
     emoji.onclick = () => abrirMenu(emoji, [h('div', { class: 'emojis' }, EMOJIS.map((em) => item(em, () => { ta.value += em; ta.oninput(); ta.focus(); }))),
       E.emojis.size ? [h('div', { class: 'sec-menu' }, 'Emojis dos seus servidores'), h('div', { class: 'emojis emojis-srv' },
         [...E.emojis].map(([nome, url]) => item(h('img', { class: 'emoji-srv', src: url, alt: ':' + nome + ':', title: ':' + nome + ':' }), () => { ta.value += `:${nome}: `; ta.oninput(); ta.focus(); })))] : null]);
@@ -680,7 +685,7 @@
     const compositor = h('div', { class: 'compositor' }, h('div', { class: 'col' },
       h('div', { class: 'digitando', id: 'digitando' }),
       h('div', { class: 'respondendo', id: 'respondendo', hidden: true }),
-      h('div', { class: 'caixa' }, bAnexo, arq, ta, info, emoji, bGrav, h('button', { class: 'enviar', title: 'Enviar', onclick: () => enviar(c.id, ta) }, ic('enviar', 17))),
+      h('div', { class: 'caixa' }, bAnexo, arq, ta, info, bGif, emoji, bGrav, h('button', { class: 'enviar', title: 'Enviar', onclick: () => enviar(c.id, ta) }, ic('enviar', 17))),
       h('div', { class: 'dica' }, '@usuario menciona · /time 5 Valorant · /pomodoro 25 · /confete /fogo /explosao')));
     main.replaceChildren(topo, c.tipo === 'assistir' ? h('section', { class: 'palco', id: 'palco' }) : '', msgs, compositor);
     // Arrastar e soltar arquivos em qualquer lugar do chat.
@@ -761,6 +766,30 @@
     }
     solta();
     return frag;
+  }
+  // GIFs/imagens favoritos (neste aparelho): reenviados como arquivo novo, então funcionam em qualquer canal.
+  const gifsFav = () => { try { return JSON.parse(ler('kali-gifs') || '[]'); } catch (e) { return []; } };
+  function alternarFav(a) {
+    let l = gifsFav();
+    if (l.some((g) => g.url === a.url)) { l = l.filter((g) => g.url !== a.url); toast('Tirado dos favoritos', 'ok'); }
+    else { l.unshift({ url: a.url, nome: a.nome, tipo: a.tipo }); l = l.slice(0, 60); toast('⭐ Salvo nos favoritos (botão GIF na caixa de mensagem)', 'ok'); }
+    salvar('kali-gifs', JSON.stringify(l));
+  }
+  function menuGifs(botao, canalId, ta) {
+    const l = gifsFav();
+    abrirMenu(botao, [h('div', { class: 'sec-menu' }, 'GIFs e imagens favoritos'),
+      l.length ? h('div', { class: 'grade-gifs' }, l.map((g) => {
+        const b = h('button', { type: 'button', class: 'gif-fav', title: 'Enviar · clique direito tira dos favoritos' }, h('img', { src: g.url, alt: g.nome || 'gif', loading: 'lazy' }));
+        b.onclick = async () => {
+          fecharMenu();
+          try {
+            const blob = await fetch(g.url).then((x) => { if (!x.ok) throw new Error('Esse favorito não está mais disponível.'); return x.blob(); });
+            await enviarArquivo(canalId, new File([blob], g.nome || 'gif.gif', { type: g.tipo || blob.type }), ta);
+          } catch (err) { toast(err.message, 'erro'); }
+        };
+        b.oncontextmenu = (e) => { e.preventDefault(); alternarFav(g); fecharMenu(); };
+        return b;
+      })) : h('p', { class: 'vazio-gifs' }, 'Nenhum favorito ainda. Em qualquer GIF ou imagem do chat: botão direito (ou segurar) → ⭐ Salvar nos favoritos.')], 'menu-gifs');
   }
   // Bloqueados e canais silenciados ficam só neste navegador.
   const listaLocal = (k) => { try { return JSON.parse(ler(k) || '[]'); } catch (e) { return []; } };
@@ -947,6 +976,7 @@
         }) : null,
         item('Encaminhar', () => bEnc.click()),
         item('Me lembra disso', () => bLembrar.click()),
+        m.anexo && /^image\//.test(m.anexo.tipo || '') ? item(gifsFav().some((g) => g.url === m.anexo.url) ? '⭐ Tirar dos favoritos' : '⭐ Salvar nos favoritos (GIF/imagem)', () => alternarFav(m.anexo)) : null,
         m.texto ? item('Copiar texto', () => { navigator.clipboard?.writeText(m.texto).then(() => toast('Texto copiado ✓', 'ok')).catch(() => {}); }) : null,
         !minha && s ? item('Denunciar mensagem', () => modalDenuncia(m)) : null,
         minha || (s && (souDono(s) || (souStaffEm(s.id) && nivelDe(s.id, m.autor?.id) < 2))) ? item('Apagar mensagem', () => apagarMsg(m), 'perigo') : null,
@@ -1115,6 +1145,21 @@
       corpo: [h('div', { class: 'lista-busca' }, res), d.mais || pagina ? h('div', { class: 'acoes', style: 'justify-content:space-between' },
         pagina ? h('button', { class: 'bt', type: 'button', onclick: () => buscarNoServidor(texto, pagina - 1) }, '← Anteriores') : h('span'),
         d.mais ? h('button', { class: 'bt', type: 'button', onclick: () => buscarNoServidor(texto, pagina + 1) }, 'Mais →') : null) : null] });
+  }
+  let carregandoNovas = false;
+  async function carregarNovas(canalId) {
+    const arr = E.msgs.get(canalId);
+    if (carregandoNovas || !arr || !arr.length) return;
+    carregandoNovas = true;
+    try {
+      const ult = arr[arr.length - 1].id;
+      const novas = (await api('GET', `/canais/${canalId}/mensagens?ao_redor=${ult}`)).filter((m) => m.id > ult);
+      arr.push(...novas.filter((m) => !arr.some((x) => x.id === m.id)));
+      if (novas.length < 25) E.foraDoFim = null; // chegou no presente
+      const box = $('#msgs'), topo = box && box.scrollTop;
+      renderLista();
+      if (box) box.scrollTop = topo;
+    } catch (e) {} finally { carregandoNovas = false; }
   }
   async function irPara(id, canalId) {
     canalId = canalId || E.canalId;
@@ -2848,6 +2893,17 @@
     addEventListener('keydown', tecla, true);
     document.body.append(fundo); mostrar();
   });
+  // Celular: arrastar da borda esquerda pra direita volta pra lista de canais.
+  (() => {
+    let x0 = null, y0 = null;
+    addEventListener('touchstart', (e) => { const t = e.touches[0]; x0 = t.clientX < 28 && $('#app').classList.contains('chat') ? t.clientX : null; y0 = t.clientY; }, { passive: true });
+    addEventListener('touchend', (e) => {
+      if (x0 == null) return;
+      const t = e.changedTouches[0];
+      if (t.clientX - x0 > 70 && Math.abs(t.clientY - y0) < 60) $('#app').classList.remove('chat');
+      x0 = null;
+    }, { passive: true });
+  })();
   // Pede permissão de notificação no primeiro clique (navegador exige um gesto).
   if (window.Notification && Notification.permission === 'default') document.addEventListener('click', () => { Notification.requestPermission().catch(() => {}); }, { once: true });
   function atualizarTitulo() {
