@@ -1024,3 +1024,11 @@ button.editado:hover{color:var(--texto)}
 .meu-id{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:16px;padding:14px 16px;border-radius:16px;border:1px solid var(--borda);background:linear-gradient(135deg,rgba(31,95,214,.18),transparent),var(--card)}
 .meu-id small{display:block;color:var(--fraco);font-size:11px;letter-spacing:.06em}
 .meu-id b{display:block;font-family:var(--mono);font-size:24px;margin:2px 0}
+.lista-convidar{display:flex;flex-direction:column;gap:4px;max-height:220px;overflow:auto;margin-bottom:12px}
+.linha-convidar{display:flex;align-items:center;gap:10px;padding:6px 8px;border-radius:12px}
+.linha-convidar:hover{background:var(--hover)}
+.linha-convidar .av{width:32px;height:32px;font-size:12px}
+.linha-convidar .txt{flex:1;min-width:0;display:flex;flex-direction:column}
+.linha-convidar small{color:var(--fraco);font-size:12px}
+.linha-convidar .bt{padding:6px 12px}
+.menu button.apagado{opacity:.5}

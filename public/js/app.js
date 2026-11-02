@@ -55,8 +55,10 @@
     let t = null, x = 0, y = 0, ultimo = 0;
     const disparar = (px, py) => { if (Date.now() - ultimo < 700) return; ultimo = Date.now(); el.classList.remove('segurando'); fn(px, py); };
     const cancela = () => { if (t) { clearTimeout(t); t = null; } el.classList.remove('segurando'); };
+    el.addEventListener('click', (e) => { if (Date.now() - ultimo < 700) { e.preventDefault(); e.stopPropagation(); } }, true);
     el.addEventListener('pointerdown', (e) => {
-      if (e.pointerType === 'mouse' || e.target.closest('a,button,textarea,input,audio,video')) return;
+      const alvo = e.target.closest('a,button,textarea,input,audio,video');
+      if (e.pointerType === 'mouse' || (alvo && alvo !== el)) return;
       x = e.clientX; y = e.clientY; el.classList.add('segurando');
       t = setTimeout(() => { t = null; try { navigator.vibrate && navigator.vibrate(10); } catch (er) {} disparar(x, y); }, 420);
     });
@@ -64,7 +66,7 @@
     el.addEventListener('pointerup', cancela);
     el.addEventListener('pointercancel', cancela);
     el.addEventListener('contextmenu', (e) => {
-      if (e.target.closest('a,textarea,input,audio,video')) return;
+      if (e.target.closest('textarea,input,audio,video') || (e.target.closest('a') && e.target.closest('a') !== el)) return;
       e.preventDefault(); cancela(); disparar(e.clientX, e.clientY);
     });
   }
@@ -402,6 +404,7 @@
       const b = h('button', { class: 'srv' + (E.modo === 'servidor' && s.id === E.servidorId ? ' ativo' : ''), title: s.nome, onclick: () => selecionarServidor(s.id) }, s.icone ? h('img', { class: 'icone-srv', src: s.icone, alt: '' }) : s.sigla || inicial(s.nome));
       const n = naoLidosServidor(s);
       if (n) b.append(h('span', { class: 'bad' }, n > 99 ? '99+' : n));
+      aoSegurar(b, (x, y) => menuServidorEm(s, x, y));
       itens.push(b);
     }
     itens.push(h('button', { class: 'srv add', title: 'Criar ou entrar em servidor', onclick: modalServidor }, '+'));
@@ -416,6 +419,7 @@
       h('span', { class: 'ic' }, icn), h('span', { class: 'nm' }, c.nome),
       men ? h('span', { class: 'n mencao' }, '@' + men) : n ? h('span', { class: 'n' }, n > 99 ? '99+' : n) : null);
     const linha = h('div', { class: 'canal-linha' }, b);
+    aoSegurar(b, (x, y) => menuCanal(c, s, x, y));
     const extras = h('span', { class: 'canal-extras' }, c.tipo === 'texto' ? h('button', { title: 'Convidar pra cá', onclick: modalConvite }, ic('convidar', 15)) : null);
     if (souStaffEm(s.id) && c.servidorId) extras.append(h('button', { title: 'Editar canal (categoria, modo lento)', onclick: () => modalEditarCanal(c, s) }, ic('engrenagem', 15)));
     if (souDono(s)) extras.append(h('button', { class: 'perigo', title: 'Apagar canal', onclick: () => apagarCanal(c) }, ic('x', 15)));
@@ -472,10 +476,12 @@
       if (!E.dms.length) corpo.append(h('p', { class: 'vazio-lateral' }, 'Nenhuma conversa ainda. Clica no ＋ ou chama um amigo.'));
       for (const d of E.dms) {
         const n = E.naoLidos[d.canalId] || 0;
-        corpo.append(h('button', { class: 'dm-item' + (!E.telaAmigos && d.canalId === E.canalId ? ' ativo' : ''), onclick: () => { E.telaAmigos = false; abrirCanal(d.canalId); } },
+        const bDm = h('button', { class: 'dm-item' + (!E.telaAmigos && d.canalId === E.canalId ? ' ativo' : ''), onclick: () => { E.telaAmigos = false; abrirCanal(d.canalId); } },
           avatar(d.outro, '', !d.grupo),
           h('span', { class: 'txt' }, h('b', {}, d.outro.nome), h('small', {}, d.ultima ? corta(d.ultima.texto || '🎙 áudio', 40) : '@' + d.outro.usuario)),
-          n ? h('span', { class: 'n' }, n) : null));
+          n ? h('span', { class: 'n' }, n) : null);
+        aoSegurar(bDm, (x, y) => menuDm(d, x, y));
+        corpo.append(bDm);
       }
       partes.push(corpo);
     } else {
@@ -1102,9 +1108,10 @@
       membros.sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
       partes.push(h('div', { class: 'rot' }, `${nome} — ${membros.length}`));
       for (const m of membros) {
-        const b = h('button', { class: 'membro' + (nome === 'Offline' ? ' offline' : ''), onclick: (e) => cartaoMembro(e.currentTarget, m) },
+        const b = h('button', { class: 'membro' + (nome === 'Offline' ? ' offline' : ''), 'data-uid': m.id, onclick: (e) => cartaoMembro(e.currentTarget, m) },
           avatar(m, '', true), h('span', { class: 'txt' }, h('b', { style: estiloNome(m.corNome) || (corCargo(s.id, m.id) ? `color:${corCargo(s.id, m.id)}` : null) }, m.nome, fazAniver(m) ? ' 🎂' : '', SELO_CARGO[m.cargo] ? h('span', { class: 'coroa', title: m.cargo }, SELO_CARGO[m.cargo]) : null),
             h('small', {}, rotStatus(m))));
+        aoSegurar(b, (x, y) => menuUsuario(m, x, y));
         partes.push(b);
       }
     }
@@ -1543,6 +1550,27 @@
   // Link fixo (GitHub Pages) que leva pro servidor ligado e já entra no servidor convidado.
   const LINK_CONVITE = 'https://kaliorg01.github.io/kali/?c=';
   const codigoDoConvite = (t) => ((t || '').match(/[?&#]c(?:onvite)?=([A-Za-z0-9]+)/) || [])[1] || (t || '').trim().split('/').pop();
+  // Amigos que ainda não estão no servidor, com botão que manda o link na DM.
+  function listaConvidarAmigos(s, link) {
+    const dentro = new Set((E.membros.get(s.id) || []).map((m) => m.id));
+    const fora = E.amigos.amigos.filter((u) => !dentro.has(u.id));
+    if (!E.amigos.amigos.length) return h('p', { class: 'sub' }, 'Adiciona amigos (pelo @ ou #ID) pra convidar eles com um clique.');
+    if (!fora.length) return h('p', { class: 'sub' }, 'Todos os seus amigos já estão aqui. 🎉');
+    return [h('div', { class: 'sub', style: 'margin:2px 0 6px' }, 'Convidar amigos:'), h('div', { class: 'lista-convidar' }, fora.map((u) => {
+      const b = h('button', { class: 'bt prim', type: 'button' }, 'Convidar');
+      b.onclick = async () => {
+        b.disabled = true; b.textContent = 'Enviando…';
+        try {
+          const d = await api('POST', '/dms', { usuario: u.usuario });
+          if (!E.dms.some((x) => x.canalId === d.canalId)) E.dms.unshift(d);
+          const res = await pedir('msg:enviar', { canalId: d.canalId, texto: `Bora pro **${s.nome}** no KALI? 🐉 ${link}` });
+          if (res.erro) throw new Error(res.erro);
+          b.textContent = 'Enviado ✓';
+        } catch (err) { b.disabled = false; b.textContent = 'Convidar'; toast(err.message, 'erro'); }
+      };
+      return h('div', { class: 'linha-convidar' }, avatar(u, '', true), h('span', { class: 'txt' }, h('b', {}, u.nome), h('small', {}, '@' + u.usuario)), b);
+    }))];
+  }
   function modalConvite() {
     const s = servidorAtual();
     if (!s) return;
@@ -1558,6 +1586,7 @@
     abrirModal({ titulo: 'Convidar pra ' + s.nome, sub: 'Manda o link pra galera: quem abrir já cai dentro do servidor (cria a conta se precisar).',
       corpo: [h('div', { class: 'convite convite-link' }, h('code', {}, link), botaoCopiar(link, 'Copiar link')),
         navigator.share ? h('button', { class: 'bt', type: 'button', style: 'width:100%;margin-bottom:12px', onclick: () => navigator.share({ title: 'KALI', text: 'Cola no ' + s.nome + ' no KALI 🐉', url: link }).catch(() => {}) }, 'Compartilhar…') : null,
+        listaConvidarAmigos(s, link),
         h('div', { class: 'sub', style: 'margin:4px 0 6px' }, 'Ou o código, pra colar em + → Entrar com convite:'),
         h('div', { class: 'convite' }, h('code', {}, s.convite), botaoCopiar(s.convite, 'Copiar'))] });
   }
@@ -1620,8 +1649,9 @@
     if (!s) return;
     // Mesma ordem do menu do servidor no Discord.
     const srvMudo = listaLocal('kali-srv-silenciados').includes(s.id);
+    const extras = arguments[1] ? [item('Marcar tudo como lido', () => { s.canais.forEach((c) => { if (E.naoLidos[c.id]) marcarLido(c.id); }); renderSide(); renderRail(); })] : [];
     const itens = [item('Convidar pessoas', modalConvite),
-      item(srvMudo ? '🔔 Reativar avisos do servidor' : '🔕 Silenciar servidor', () => { const on = alternarLocal('kali-srv-silenciados', s.id); toast(on ? 'Servidor silenciado: sem som nem aviso (menções também)' : 'Avisos do servidor reativados', 'ok'); })];
+      item(srvMudo ? '🔔 Reativar avisos do servidor' : '🔕 Silenciar servidor', () => { const on = alternarLocal('kali-srv-silenciados', s.id); toast(on ? 'Servidor silenciado: sem som nem aviso (menções também)' : 'Avisos do servidor reativados', 'ok'); }), ...extras];
     if (souStaffEm(s.id)) itens.push(item('Configurações do servidor', () => configServidor(s)));
     if (souDono(s)) itens.push(item('Criar canal', () => modalCanal('texto')));
     if (souStaffEm(s.id)) itens.push(item('Criar evento', () => modalCriarEvento(s)));
@@ -1634,9 +1664,58 @@
         try { await api('POST', `/servidores/${s.id}/sair`); aoServidorApagado({ id: s.id }); } catch (err) { toast(err.message, 'erro'); }
       }, 'perigo'));
     }
+    if (arguments[1]) itens.push(item('Copiar ID do servidor', () => copiar(s.id, 'ID copiado ✓')));
     abrirMenu(ancora, itens);
   }
 
+  // ---------- clique direito (ou segurar no celular): menus do jeito do Discord ----------
+  const pontoEm = (x, y) => ({ getBoundingClientRect: () => ({ left: x, top: y, bottom: y, right: x, width: 0, height: 0 }) });
+  const copiar = (t, ok) => navigator.clipboard?.writeText(String(t)).then(() => toast(ok || 'Copiado ✓', 'ok')).catch(() => toast('Não consegui copiar.', 'erro'));
+  function menuUsuario(m, x, y) {
+    const s = E.modo === 'servidor' ? servidorAtual() : null;
+    const eu = m.id === E.eu.id, amigo = E.amigos.amigos.some((u) => u.id === m.id);
+    const staff = s && souStaffEm(s.id) && !eu && s.donoId !== m.id;
+    abrirMenu(pontoEm(x, y), [
+      h('div', { class: 'sec-menu' }, m.nome + (m.usuario ? ' · @' + m.usuario : '')),
+      item('Perfil', () => { const a = $(`.membro[data-uid="${m.id}"]`); cartaoMembro(a || pontoEm(x, y), m); }),
+      !eu && m.usuario ? item('Mandar mensagem', () => abrirDmCom(m.usuario).catch((err) => toast(err.message, 'erro'))) : null,
+      !eu && m.usuario ? item('Mencionar', () => { const t = $('.caixa textarea'); if (t) { t.value += (t.value && !t.value.endsWith(' ') ? ' ' : '') + '@' + m.usuario + ' '; t.oninput(); t.focus(); } }) : null,
+      !eu && !amigo && m.usuario ? item('Adicionar amigo', () => adicionarAmigo(m.usuario).catch((err) => toast(err.message, 'erro'))) : null,
+      staff ? [h('hr'), item('⏳ Castigar 10 min', async () => { try { await api('POST', `/servidores/${s.id}/membros/${m.id}/castigo`, { minutos: 10 }); toast(m.nome + ' de castigo por 10 min', 'ok'); } catch (err) { toast(err.message, 'erro'); } }),
+        item('👢 Expulsar', () => moderar('expulsar', m)), item('⛔ Banir', () => moderar('banir', m), 'perigo')] : null,
+      h('hr'),
+      m.usuario ? item('Copiar @' + m.usuario, () => copiar('@' + m.usuario)) : null,
+      item('Copiar ID #' + m.id, () => copiar('#' + m.id, 'ID copiado ✓')),
+      !eu ? item(bloqueado(m.id) ? 'Desbloquear' : 'Bloquear', () => { toast(alternarLocal('kali-bloqueados', m.id) ? `🚫 ${m.nome} bloqueado` : `${m.nome} desbloqueado`, 'ok'); renderLista(); }, bloqueado(m.id) ? '' : 'perigo') : null,
+    ].flat().filter(Boolean));
+  }
+  function menuCanal(c, s, x, y) {
+    const n = E.naoLidos[c.id] || 0;
+    abrirMenu(pontoEm(x, y), [
+      h('div', { class: 'sec-menu' }, (c.tipo === 'voz' ? '🔊 ' : '# ') + c.nome),
+      c.tipo !== 'voz' ? item('Marcar como lido', () => { marcarLido(c.id); renderSide(); renderRail(); }, n ? '' : 'apagado') : item('Entrar na call', () => abrirCanal(c.id)),
+      item(silenciado(c.id) ? '🔔 Reativar avisos' : '🔕 Silenciar canal', () => { const on = alternarLocal('kali-silenciados', c.id); toast(on ? 'Canal silenciado' : 'Avisos do canal reativados', 'ok'); renderSide(); }),
+      item('Convidar pessoas', modalConvite),
+      souStaffEm(s.id) ? item('Editar canal', () => modalEditarCanal(c, s)) : null,
+      h('hr'),
+      item('Copiar ID do canal', () => copiar(c.id, 'ID copiado ✓')),
+      souDono(s) ? item('Apagar canal', () => apagarCanal(c), 'perigo') : null,
+    ].filter(Boolean));
+  }
+  async function menuServidorEm(sv, x, y) {
+    if (E.modo !== 'servidor' || E.servidorId !== sv.id) await selecionarServidor(sv.id);
+    menuServidor(pontoEm(x, y), true);
+  }
+  function menuDm(d, x, y) {
+    abrirMenu(pontoEm(x, y), [
+      h('div', { class: 'sec-menu' }, d.outro.nome),
+      item('Marcar como lido', () => { marcarLido(d.canalId); renderSide(); renderRail(); }),
+      item(silenciado(d.canalId) ? '🔔 Reativar avisos' : '🔕 Silenciar conversa', () => toast(alternarLocal('kali-silenciados', d.canalId) ? 'Conversa silenciada' : 'Avisos reativados', 'ok')),
+      !d.grupo ? item('Copiar @' + d.outro.usuario, () => copiar('@' + d.outro.usuario)) : null,
+      !d.grupo ? item('Copiar ID #' + d.outro.id, () => copiar('#' + d.outro.id, 'ID copiado ✓')) : null,
+      d.grupo ? [h('hr'), item('Sair do grupo', () => sairDoGrupo({ id: d.canalId, dm: d }), 'perigo')] : null,
+    ].flat().filter(Boolean));
+  }
   // ---------- DMs e perfil ----------
   async function abrirDmCom(usuario) {
     const d = await api('POST', '/dms', { usuario });
