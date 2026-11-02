@@ -13,6 +13,7 @@
   function aplicarVolume(uid) {
     const p = pares.get(uid); if (!p) return;
     const v = volDe(uid);
+    if (p.audioTela) p.audioTela.muted = surdo;
     if (p.ganho) p.ganho.gain.value = surdo ? 0 : v * REFORCO;
     else { p.audio.volume = Math.min(1, v); p.audio.muted = surdo || v === 0; }
   }
@@ -44,6 +45,15 @@
         aoMudar();
         return;
       }
+      const st0 = e.streams[0] || new MediaStream([e.track]);
+      if (par.micId && st0.id !== par.micId) { // som do PC vindo junto com a tela compartilhada
+        if (!par.audioTela) { par.audioTela = new Audio(); par.audioTela.autoplay = true; }
+        par.audioTela.srcObject = st0;
+        par.audioTela.muted = surdo;
+        par.audioTela.play().catch(() => {});
+        return;
+      }
+      par.micId = st0.id;
       audio.srcObject = e.streams[0];
       if (espacial && ctx) { // Sala 3D: o som sai pelo PannerNode; o <audio> fica mudo (exigência do Chrome)
         audio.muted = true;
@@ -70,6 +80,12 @@
     pc.onicecandidate = (e) => { if (e.candidate) sock.emit('voz:sinal', { para: uid, dados: { candidato: e.candidate } }); };
     const par = { pc, audio, pend: [] };
     pares.set(uid, par);
+    if (tela) {
+      par.telaSender = pc.addTrack(tela.getVideoTracks()[0], tela);
+      const aT = tela.getAudioTracks()[0];
+      if (aT) par.telaAudioSender = pc.addTrack(aT, tela);
+      if (!iniciar) setTimeout(() => renegociar(uid), 1500); // quem chegou depois também recebe a tela
+    }
     if (iniciar) {
       pc.createOffer()
         .then((o) => pc.setLocalDescription(hd(o)))
@@ -104,7 +120,12 @@
     if (!tela) return;
     tela.getTracks().forEach((t) => t.stop());
     tela = null;
-    pares.forEach((p, uid) => { if (p.telaSender) { try { p.pc.removeTrack(p.telaSender); } catch (e) {} p.telaSender = null; renegociar(uid); } });
+    pares.forEach((p, uid) => {
+      if (!p.telaSender) return;
+      try { p.pc.removeTrack(p.telaSender); } catch (e) {}
+      if (p.telaAudioSender) { try { p.pc.removeTrack(p.telaAudioSender); } catch (e) {} p.telaAudioSender = null; }
+      p.telaSender = null; renegociar(uid);
+    });
     aoMudar();
   }
 
@@ -122,6 +143,7 @@
     if (!p) return;
     try { p.pc.close(); } catch (e) {}
     p.audio.srcObject = null;
+    if (p.audioTela) p.audioTela.srcObject = null;
     pares.delete(uid);
     if (telas.delete(uid)) aoMudar();
   }
@@ -195,13 +217,20 @@
       if (!canalId) throw new Error('Entra numa call pra compartilhar a tela.');
       if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) throw new Error('Seu navegador não compartilha tela.');
       try {
-        tela = await navigator.mediaDevices.getDisplayMedia({ video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 60, max: 60 } }, audio: false });
+        // audio: som do PC/aba junto (o navegador mostra a caixinha "Compartilhar áudio")
+        tela = await navigator.mediaDevices.getDisplayMedia({ video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 60, max: 60 } },
+          audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }, systemAudio: 'include' });
       } catch (e) { tela = null; return; } // cancelou a escolha
       const v = tela.getVideoTracks()[0];
       v.contentHint = 'detail'; // prioriza nitidez (texto e jogo em 1080p) em vez de baixar a resolução
       v.onended = pararTela; // botão "parar" do próprio navegador
       tipoVideo = 'tela';
-      pares.forEach((p, uid) => { p.telaSender = p.pc.addTrack(v, tela); renegociar(uid); });
+      const somPC = tela.getAudioTracks()[0];
+      pares.forEach((p, uid) => {
+        p.telaSender = p.pc.addTrack(v, tela);
+        if (somPC) p.telaAudioSender = p.pc.addTrack(somPC, tela);
+        renegociar(uid);
+      });
       aoMudar();
     },
     // Câmera: usa o mesmo canal de vídeo da tela (um vídeo por pessoa: câmera OU tela).

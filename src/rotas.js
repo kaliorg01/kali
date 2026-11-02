@@ -543,6 +543,24 @@ export function criarRotas() {
     res.json(db.edicoesDe(m.id));
   });
 
+  // Reordenar canais (arrastar na barra lateral): staff.
+  r.patch('/servidores/:id/canais/ordem', exigirLogin, (req, res) => {
+    const uid = req.usuario.id;
+    const s = servidorComoStaff(uid, idDe(req.params.id));
+    const ordem = corpoDe(req).ordem;
+    if (!Array.isArray(ordem) || !ordem.length || ordem.length > 500) throw erro(400, 'Ordem inválida.');
+    const meus = new Set(db.canaisDoServidor(s.id).filter((c) => !c.pai_canal).map((c) => c.id));
+    const limpa = ordem.map((it, i) => {
+      if (!it || !Number.isSafeInteger(it.id) || !meus.has(it.id)) throw erro(400, 'Canal inválido na ordem.');
+      const cat = typeof it.categoria === 'string' && it.categoria.trim() ? it.categoria.trim().slice(0, 30) : null;
+      return { id: it.id, posicao: i, categoria: cat };
+    });
+    db.reordenarCanais(s.id, limpa);
+    emitir(`s:${s.id}`, 'canais:ordem', { servidorId: s.id, ordem: limpa });
+    db.registrarAuditoria(s.id, uid, 'ordem', null, 'reorganizou os canais');
+    res.json({ ok: true });
+  });
+
   // Banidos (ver e desfazer), registro da staff e trocar o link de convite.
   r.get('/servidores/:id/banidos', exigirLogin, (req, res) => {
     const s = servidorComoStaff(req.usuario.id, idDe(req.params.id));

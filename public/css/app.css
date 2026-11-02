@@ -1032,3 +1032,8 @@ button.editado:hover{color:var(--texto)}
 .linha-convidar small{color:var(--fraco);font-size:12px}
 .linha-convidar .bt{padding:6px 12px}
 .menu button.apagado{opacity:.5}
+.texto .men.todos{background:rgba(255,170,60,.16);color:#ffb347}
+.canal-linha.arrastando{opacity:.4}
+.canal-linha.alvo-cima{box-shadow:0 -2px 0 var(--roxo)}
+.canal-linha.alvo-baixo{box-shadow:0 2px 0 var(--roxo)}
+.canal-linha[draggable=true] .canal{cursor:grab}

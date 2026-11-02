@@ -1085,3 +1085,10 @@ export function mencoesDoServidor(uid, usuario, sid) {
   for (const x of rows) if (x.n) r[x.canal_id] = x.n;
   return r;
 }
+
+/** Nova ordem/categoria dos canais (só canais do próprio servidor, sem tópicos). */
+export function reordenarCanais(sid, ordem) {
+  transacao(() => {
+    for (const it of ordem) q('UPDATE canais SET posicao = ?, categoria = ? WHERE id = ? AND servidor_id = ? AND pai_canal IS NULL').run(it.posicao, it.categoria, it.id, sid);
+  });
+}

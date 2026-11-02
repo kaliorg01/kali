@@ -116,7 +116,7 @@
     msgs: new Map(), fim: new Set(), carregandoAntigas: false,
     membros: new Map(), presenca: new Map(), voz: new Map(),
     naoLidos: {}, mencoes: {}, digitando: new Map(), resumo: new Map(), rascunho: new Map(),
-    novaDesde: new Map(), busca: '', editando: null,
+    novaDesde: new Map(), busca: '', editando: null, bloqueados: new Map(),
     missoes: new Map(), temp: 0, assistindo: null,
     amigos: { amigos: [], recebidos: [], enviados: [] },
     cargos: new Map(), eventos: new Map(), emojis: new Map(), animado: new Map(), novaAte: new Map(),
@@ -282,7 +282,16 @@
     return a;
   }
   const regexMencao = () => new RegExp('@' + E.eu.usuario.replace(/[.]/g, '\\.') + '(?![a-z0-9_.])', 'i');
-  const mencionaEu = (m) => !!m.texto && m.autor?.id !== E.eu.id && regexMencao().test(m.texto);
+  // @usuario, @todos/@aqui (só valem se quem mandou é da staff) e @NomeDoCargo (se eu tenho o cargo).
+  function mencionaEu(m) {
+    if (!m.texto || !m.autor || m.autor.id === E.eu.id) return false;
+    if (regexMencao().test(m.texto)) return true;
+    const c = acharCanal(m.canalId);
+    if (!c || !c.servidorId) return false;
+    if (/@(todos|aqui)(?![a-z0-9_.])/i.test(m.texto) && nivelDe(c.servidorId, m.autor.id) >= 2) return true;
+    const t = m.texto.toLowerCase();
+    return (E.cargos.get(c.servidorId) || []).some((cg) => cg.membros.includes(E.eu.id) && t.includes('@' + cg.nome.toLowerCase()));
+  }
   const naoLidosServidor = (s) => s.canais.reduce((t, c) => t + (E.naoLidos[c.id] || 0), 0);
 
   // ---------- carregar ----------
@@ -294,6 +303,7 @@
     for (const s of servidores) { Object.assign(E.naoLidos, s.naoLidos || {}); Object.assign(E.mencoes, s.mencoes || {}); }
     for (const d of dms) { E.naoLidos[d.canalId] = d.naoLidos || 0; E.presenca.set(d.outro.id, d.outro.status); }
     await carregarAmigos();
+    await carregarBloqueios();
     carregarEmojis();
     E.membros.clear();
   }
@@ -418,7 +428,8 @@
     const b = h('button', { class: 'canal' + (c.id === E.canalId ? ' ativo' : '') + (n ? ' nao-lido' : ''), onclick: () => abrirCanal(c.id) },
       h('span', { class: 'ic' }, icn), h('span', { class: 'nm' }, c.nome),
       men ? h('span', { class: 'n mencao' }, '@' + men) : n ? h('span', { class: 'n' }, n > 99 ? '99+' : n) : null);
-    const linha = h('div', { class: 'canal-linha' }, b);
+    const linha = h('div', { class: 'canal-linha', 'data-cid': c.id }, b);
+    if (souStaffEm(s.id) && c.servidorId && !c.paiCanal) arrastavel(linha, c, s);
     aoSegurar(b, (x, y) => menuCanal(c, s, x, y));
     const extras = h('span', { class: 'canal-extras' }, c.tipo === 'texto' ? h('button', { title: 'Convidar pra cá', onclick: modalConvite }, ic('convidar', 15)) : null);
     if (souStaffEm(s.id) && c.servidorId) extras.append(h('button', { title: 'Editar canal (categoria, modo lento)', onclick: () => modalEditarCanal(c, s) }, ic('engrenagem', 15)));
@@ -448,6 +459,38 @@
     return frag;
   }
 
+  // Arrastar e soltar canais pra mudar a ordem/categoria (staff). Salva no servidor e aparece ao vivo pra todo mundo.
+  let canalArrastado = null;
+  function arrastavel(linha, c, s) {
+    linha.draggable = true;
+    linha.ondragstart = (e) => { canalArrastado = c; linha.classList.add('arrastando'); e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', 'canal'); } catch (er) {} };
+    linha.ondragend = () => { canalArrastado = null; linha.classList.remove('arrastando'); document.querySelectorAll('.alvo-cima,.alvo-baixo').forEach((x) => x.classList.remove('alvo-cima', 'alvo-baixo')); };
+    const lado = (e) => { const r = linha.getBoundingClientRect(); return e.clientY < r.top + r.height / 2 ? 'cima' : 'baixo'; };
+    linha.ondragover = (e) => {
+      if (!canalArrastado || canalArrastado.id === c.id) return;
+      e.preventDefault();
+      const l = lado(e);
+      linha.classList.toggle('alvo-cima', l === 'cima'); linha.classList.toggle('alvo-baixo', l === 'baixo');
+    };
+    linha.ondragleave = () => linha.classList.remove('alvo-cima', 'alvo-baixo');
+    linha.ondrop = async (e) => {
+      if (!canalArrastado || canalArrastado.id === c.id) return;
+      e.preventDefault();
+      const movido = canalArrastado, depois = lado(e) === 'baixo';
+      const lista = s.canais.filter((x) => !x.paiCanal && x.id !== movido.id).sort((a, b) => a.posicao - b.posicao || a.id - b.id);
+      lista.splice(lista.indexOf(c) + (depois ? 1 : 0), 0, movido);
+      const ordem = lista.map((x) => ({ id: x.id, categoria: x === movido ? c.categoria || null : x.categoria || null }));
+      aplicarOrdem(s.id, ordem.map((o, i) => ({ ...o, posicao: i })));
+      try { await api('PATCH', `/servidores/${s.id}/canais/ordem`, { ordem }); } catch (err) { toast(err.message, 'erro'); }
+    };
+  }
+  function aplicarOrdem(servidorId, ordem) {
+    const s = E.servidores.find((x) => x.id === servidorId);
+    if (!s) return;
+    for (const o of ordem) { const c = s.canais.find((x) => x.id === o.id); if (c) { c.posicao = o.posicao; c.categoria = o.categoria; } }
+    s.canais.sort((a, b) => a.posicao - b.posicao || a.id - b.id);
+    if (s.id === E.servidorId) renderSide();
+  }
   function renderSide() {
     const side = $('#side');
     const partes = [];
@@ -674,7 +717,7 @@
         const url = E.emojis.get(t.slice(1, -1).toLowerCase());
         frag.append(url ? h('img', { class: 'emoji-srv' + (texto.trim() === t ? ' grande' : ''), src: url, alt: t, title: t }) : t);
       }
-      else if (t[0] === '@') frag.append(h('span', { class: 'men' + (t.toLowerCase() === eu ? ' eu' : '') }, t));
+      else if (t[0] === '@') frag.append(h('span', { class: 'men' + (t.toLowerCase() === eu ? ' eu' : /^@(todos|aqui)$/i.test(t) ? ' todos' : '') }, t));
       else frag.append(h('a', { href: t, target: '_blank', rel: 'noopener noreferrer' }, t));
       i = m.index + t.length;
     }
@@ -714,7 +757,23 @@
   }
   // Bloqueados e canais silenciados ficam só neste navegador.
   const listaLocal = (k) => { try { return JSON.parse(ler(k) || '[]'); } catch (e) { return []; } };
-  const bloqueado = (uid) => listaLocal('kali-bloqueados').includes(uid);
+  // Bloqueios ficam no servidor (valem em qualquer aparelho).
+  const bloqueado = (uid) => E.bloqueados.has(uid);
+  async function carregarBloqueios() {
+    try {
+      // migração única: o que estava bloqueado só neste navegador vai pro servidor
+      for (const id of listaLocal('kali-bloqueados')) await api('POST', '/bloqueios', { usuarioId: id }).catch(() => {});
+      try { localStorage.removeItem('kali-bloqueados'); } catch (e) {}
+      E.bloqueados = new Map((await api('GET', '/bloqueios')).map((u) => [u.id, u]));
+    } catch (e) {}
+  }
+  async function alternarBloqueio(u) {
+    try {
+      if (E.bloqueados.has(u.id)) { await api('DELETE', '/bloqueios/' + u.id); E.bloqueados.delete(u.id); toast(u.nome + ' desbloqueado', 'ok'); }
+      else { await api('POST', '/bloqueios', { usuarioId: u.id }); E.bloqueados.set(u.id, u); toast(`🚫 ${u.nome} bloqueado: some das suas DMs e as mensagens ficam escondidas`, 'ok'); carregarAmigos(); }
+      renderLista(); if (E.telaAmigos) renderMain();
+    } catch (err) { toast(err.message, 'erro'); }
+  }
   const silenciado = (canalId) => {
     if (listaLocal('kali-silenciados').includes(canalId)) return true;
     const c = acharCanal(canalId);
@@ -882,7 +941,7 @@
         item('Me lembra disso', () => bLembrar.click()),
         m.texto ? item('Copiar texto', () => { navigator.clipboard?.writeText(m.texto).then(() => toast('Texto copiado ✓', 'ok')).catch(() => {}); }) : null,
         !minha && s ? item('Denunciar mensagem', () => modalDenuncia(m)) : null,
-        minha || souDono(s) ? item('Apagar mensagem', () => apagarMsg(m), 'perigo') : null,
+        minha || (s && (souDono(s) || (souStaffEm(s.id) && nivelDe(s.id, m.autor?.id) < 2))) ? item('Apagar mensagem', () => apagarMsg(m), 'perigo') : null,
       ].filter(Boolean));
       bLembrar.hidden = true; bEnc.hidden = true;
       acoes.append(bEmoji, bResp, bMais, bLembrar, bEnc);
@@ -1163,7 +1222,7 @@
     }
     if (m.id !== E.eu.id) {
       const vigia = vigiados().includes(m.id);
-      conteudo.push(h('button', { class: 'bt', onclick: () => { fecharMenu(); toast(alternarLocal('kali-bloqueados', m.id) ? `🚫 ${m.nome} bloqueado: as mensagens dele ficam escondidas` : `${m.nome} desbloqueado`, 'ok'); renderLista(); } },
+      conteudo.push(h('button', { class: 'bt', onclick: () => { fecharMenu(); alternarBloqueio(m); } },
         bloqueado(m.id) ? 'Desbloquear' : '🚫 Bloquear'));
       const ehAmigo = E.amigos.amigos.some((x) => x.id === m.id), pediu = E.amigos.enviados.some((x) => x.id === m.id);
       conteudo.push(h('button', { class: 'bt prim', onclick: () => { fecharMenu(); abrirDmCom(m.usuario); } }, 'Mandar mensagem'),
@@ -1691,7 +1750,7 @@
       h('hr'),
       m.usuario ? item('Copiar @' + m.usuario, () => copiar('@' + m.usuario)) : null,
       item('Copiar ID #' + m.id, () => copiar('#' + m.id, 'ID copiado ✓')),
-      !eu ? item(bloqueado(m.id) ? 'Desbloquear' : 'Bloquear', () => { toast(alternarLocal('kali-bloqueados', m.id) ? `🚫 ${m.nome} bloqueado` : `${m.nome} desbloqueado`, 'ok'); renderLista(); }, bloqueado(m.id) ? '' : 'perigo') : null,
+      !eu ? item(bloqueado(m.id) ? 'Desbloquear' : 'Bloquear', () => alternarBloqueio(m), bloqueado(m.id) ? '' : 'perigo') : null,
     ].flat().filter(Boolean));
   }
   function menuCanal(c, s, x, y) {
@@ -1842,10 +1901,9 @@
         bt(ic('x', 18), 'Recusar', () => acaoAmigo('DELETE', `/amigos/${u.id}`), 'perigo'))),
       ...A.enviados.map((u) => linha(u, 'Pedido enviado', bt(ic('x', 18), 'Cancelar pedido', () => acaoAmigo('DELETE', `/amigos/${u.id}`), 'perigo')))];
     } else if (aba === 'bloqueados') {
-      const ids = listaLocal('kali-bloqueados');
-      titulo = `Bloqueados — ${ids.length}`;
-      itens = ids.map((id) => linha({ id, nome: nomeDe(id), usuario: String(id) }, 'Bloqueado neste aparelho',
-        h('button', { class: 'bt', onclick: () => { alternarLocal('kali-bloqueados', id); renderAmigos(main); renderLista(); } }, 'Desbloquear')));
+      const bl = [...E.bloqueados.values()];
+      titulo = `Bloqueados — ${bl.length}`;
+      itens = bl.map((u) => linha(u, 'Bloqueado (vale em todos os aparelhos)', h('button', { class: 'bt', onclick: () => alternarBloqueio(u) }, 'Desbloquear')));
     } else {
       const u = h('input', { maxlength: 20, placeholder: '@usuario ou #ID da pessoa' });
       u.autocapitalize = 'none';
@@ -1902,13 +1960,15 @@
   }
   async function acaoAmigo(metodo, rota, ok) {
     try { await api(metodo, rota); if (ok) toast(ok, 'ok'); } catch (e) { return toast(e.message, 'erro'); }
-    await carregarAmigos(); renderRail(); if (E.modo === 'dm') renderSide();
+    await carregarAmigos();
+    await carregarBloqueios(); renderRail(); if (E.modo === 'dm') renderSide();
   }
   async function adicionarAmigo(usuario) {
     usuario = String(usuario || '').trim().replace(/^@/, '').toLowerCase();
     const r = await api('POST', '/amigos', { usuario });
     toast(r.amigos ? 'Vocês agora são amigos! 🎉' : 'Pedido de amizade enviado ✓', 'ok');
-    await carregarAmigos(); if (E.modo === 'dm') renderSide();
+    await carregarAmigos();
+    await carregarBloqueios(); if (E.modo === 'dm') renderSide();
   }
   function modalAdicionarAmigo() {
     const u = h('input', { maxlength: 20, placeholder: 'nome_de_usuario' });
@@ -2846,6 +2906,7 @@
       if (servidorId === E.servidorId) renderMembros();
     });
     sock.on('canal:novo', aoCanalNovo);
+    sock.on('canais:ordem', ({ servidorId, ordem }) => aplicarOrdem(servidorId, ordem));
     sock.on('membro:atualizado', aoMembroAtualizado);
     sock.on('denuncia:nova', ({ servidorId }) => {
       const s = E.servidores.find((x) => x.id === servidorId);
@@ -2875,6 +2936,7 @@
       if (pedidoDe) { toast(`👋 ${pedidoDe} quer ser seu amigo — veja em Mensagens diretas`, 'ok'); tocarSom(ler('kali-som') || 'plim'); }
       if (aceitoPor) toast(`🎉 ${aceitoPor} aceitou sua amizade!`, 'ok');
       await carregarAmigos();
+    await carregarBloqueios();
       renderRail(); if (E.modo === 'dm') renderSide();
     });
     sock.on('dm:nova', (d) => {

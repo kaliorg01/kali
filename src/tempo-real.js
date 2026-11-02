@@ -664,6 +664,7 @@ function aoConectar(socket) {
       const dele = row.autor_id != null && canal.servidor_id != null ? db.nivelCargo(canal.servidor_id, row.autor_id) : 0;
       const pode = meu === 4 || (meu >= 2 && dele < 2);
       if (!pode) throw erro(403, 'Você não pode apagar essa mensagem.');
+      db.registrarAuditoria(canal.servidor_id, uid, 'apagar-msg', db.usuarioPorId(row.autor_id)?.nome, (row.texto || '').slice(0, 200));
     }
     removerMensagem(row);
     return { ok: true };
