@@ -1763,13 +1763,14 @@
       itens = ids.map((id) => linha({ id, nome: nomeDe(id), usuario: String(id) }, 'Bloqueado neste aparelho',
         h('button', { class: 'bt', onclick: () => { alternarLocal('kali-bloqueados', id); renderAmigos(main); renderLista(); } }, 'Desbloquear')));
     } else {
-      const u = h('input', { maxlength: 20, placeholder: 'Digite o nome de usuário (o @ da pessoa)' });
+      const u = h('input', { maxlength: 20, placeholder: '@usuario ou #ID da pessoa' });
       u.autocapitalize = 'none';
       const enviar = async () => { try { await adicionarAmigo(u.value.trim()); u.value = ''; } catch (err) { toast(err.message, 'erro'); } };
       u.onkeydown = (e) => { if (e.key === 'Enter') enviar(); };
       main.replaceChildren(topo, h('section', { class: 'col amigos-corpo' }, h('h3', {}, 'ADICIONAR AMIGO'),
-        h('p', { class: 'sub' }, 'Você pode adicionar amigos com o nome de usuário deles.'),
-        h('div', { class: 'add-amigo' }, u, h('button', { class: 'bt prim', onclick: enviar }, 'Enviar pedido de amizade'))));
+        h('p', { class: 'sub' }, 'Adiciona pelo @ da pessoa ou pelo ID dela (ex: #12).'),
+        h('div', { class: 'add-amigo' }, u, h('button', { class: 'bt prim', onclick: enviar }, 'Enviar pedido de amizade')),
+        meuId()));
       return;
     }
     // Início: saudação + atalhos em cima, lista de amigos, e "Ativo agora" à direita.
@@ -1788,7 +1789,7 @@
         h('div', { class: 'hh-txt' }, h('small', { class: 'hh-prompt' }, 'root@kali:~$ ./inicio'),
           h('h2', {}, saud + ', ', h('span', { class: 'grad-txt' }, E.eu.nome)),
           h('p', {}, online.length ? `${online.length} amigo${online.length > 1 ? 's' : ''} online agora. Bora?` : 'Tudo calmo por aqui. Chama alguém pra resenha.')),
-        h('div', { class: 'hh-stats' }, stat(online.length, 'online'), stat(A.amigos.length, 'amigos'), stat(E.servidores.length, 'servidores'))) : null,
+        h('div', { class: 'hh-stats' }, stat('#' + E.eu.id, 'seu id'), stat(online.length, 'online'), stat(A.amigos.length, 'amigos'))) : null,
       inicio ? h('div', { class: 'home-acoes' },
         card(ic('convidar', 22), 'Adicionar amigo', 'Pelo @ da pessoa', () => trocar('adicionar')),
         card(ic('mais', 22), 'Criar servidor', 'Sua galera, suas regras', modalServidor),
@@ -1801,6 +1802,13 @@
         h('span', { class: 'txt' }, h('b', {}, u.nome), h('small', {}, u.statusTexto || st(u.id)[1]))))
         : h('div', { class: 'ativo-vazio' }, h('b', {}, 'Tá tranquilo por enquanto…'), h('small', {}, 'Quando seus amigos ficarem online, eles aparecem aqui.')));
     main.replaceChildren(topo, h('div', { class: 'home' }, corpo, ativo));
+  }
+  // Cartão "Seu ID" pra passar pros amigos te acharem.
+  function meuId() {
+    const cod = '#' + E.eu.id;
+    const b = h('button', { class: 'bt', type: 'button' }, 'Copiar');
+    b.onclick = () => navigator.clipboard?.writeText(cod).then(() => { b.textContent = 'Copiado ✓'; setTimeout(() => { b.textContent = 'Copiar'; }, 1500); }).catch(() => {});
+    return h('div', { class: 'meu-id' }, h('div', {}, h('small', {}, 'SEU ID'), h('b', {}, cod), h('small', {}, 'ou @' + E.eu.usuario + ' · manda pros amigos te adicionarem')), b);
   }
   // ---------- amigos ----------
   async function carregarAmigos() {

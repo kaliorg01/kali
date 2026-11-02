@@ -1021,3 +1021,6 @@ button.res-busca:hover{border-color:var(--roxo);background:var(--hover)}
 button.editado{font:inherit;font-size:11px;color:var(--fraco);margin-left:6px;text-decoration:underline dotted}
 button.editado:hover{color:var(--texto)}
 .ir-presente{position:sticky;bottom:8px;display:block;margin:12px auto 0;padding:8px 16px;border-radius:999px;background:var(--grad);color:#fff;font-size:13px;font-weight:600;box-shadow:0 8px 24px rgba(31,95,214,.4);animation:sobe .3s var(--ease)}
+.meu-id{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:16px;padding:14px 16px;border-radius:16px;border:1px solid var(--borda);background:linear-gradient(135deg,rgba(31,95,214,.18),transparent),var(--card)}
+.meu-id small{display:block;color:var(--fraco);font-size:11px;letter-spacing:.06em}
+.meu-id b{display:block;font-family:var(--mono);font-size:24px;margin:2px 0}

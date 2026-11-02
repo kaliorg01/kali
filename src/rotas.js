@@ -1099,7 +1099,9 @@ export function criarRotas() {
     const uid = req.usuario.id;
     const c = corpoDe(req);
     if (typeof c.usuario !== 'string') throw erro(400, 'Informe o nome de usuário.');
-    const alvo = db.usuarioPorNome(c.usuario.trim().toLowerCase().replace(/^@/, ''));
+    const txt = c.usuario.trim().toLowerCase().replace(/^@/, '');
+    // aceita o ID da pessoa (#123 ou 123) além do @
+    const alvo = /^#?\d{1,9}$/.test(txt) ? db.usuarioPorId(Number(txt.replace('#', ''))) : db.usuarioPorNome(txt);
     if (!alvo) throw erro(404, 'Usuário não encontrado.');
     if (alvo.id === uid) throw erro(400, 'Você não pode se adicionar.');
     if (db.bloqueioEntre(uid, alvo.id)) throw erro(403, '🚫 Não dá pra adicionar essa pessoa (bloqueio).');
