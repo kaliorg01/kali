@@ -9,10 +9,11 @@
   let volumes = {};
   try { volumes = JSON.parse(localStorage.getItem('kali-volumes') || '{}') || {}; } catch (e) {}
   const volDe = (uid) => (typeof volumes[uid] === 'number' ? volumes[uid] : 1);
+  const REFORCO = 2; // ganho base: as vozes chegavam baixas
   function aplicarVolume(uid) {
     const p = pares.get(uid); if (!p) return;
     const v = volDe(uid);
-    if (p.ganho) p.ganho.gain.value = surdo ? 0 : v;
+    if (p.ganho) p.ganho.gain.value = surdo ? 0 : v * REFORCO;
     else { p.audio.volume = Math.min(1, v); p.audio.muted = surdo || v === 0; }
   }
   let ptt = false, apertando = false;
@@ -52,8 +53,16 @@
         ganho.gain.value = surdo ? 0 : 1;
         ctx.createMediaStreamSource(e.streams[0]).connect(pan).connect(ganho).connect(ctx.destination);
         Object.assign(par, { pan, ganho });
-        ganho.gain.value = surdo ? 0 : volDe(uid);
+        ganho.gain.value = surdo ? 0 : volDe(uid) * REFORCO;
         posicionar(uid);
+      } else if (ctx) { // call normal: compressor + reforço de volume (voz mais alta e por igual, sem estourar)
+        audio.muted = true;
+        const comp = ctx.createDynamicsCompressor();
+        comp.threshold.value = -28; comp.knee.value = 20; comp.ratio.value = 4; comp.attack.value = 0.005; comp.release.value = 0.2;
+        const ganho = ctx.createGain();
+        ctx.createMediaStreamSource(e.streams[0]).connect(comp).connect(ganho).connect(ctx.destination);
+        Object.assign(par, { ganho });
+        aplicarVolume(uid);
       }
       if (!par.ganho) aplicarVolume(uid);
       audio.play().catch(() => {});
