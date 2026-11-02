@@ -147,8 +147,25 @@
       })
       .catch(() => {});
   }
+  // Tela vinda do app Android: os quadros (JPEG) chegam pela ponte e viram vídeo num <canvas>.
+  function telaDoApp() {
+    const cv = document.createElement('canvas'); cv.width = 1280; cv.height = 720;
+    const g = cv.getContext('2d'); g.fillStyle = '#000'; g.fillRect(0, 0, cv.width, cv.height);
+    const img = new Image(); let ocupado = false;
+    window.__kaliQuadro = (b64) => {
+      if (ocupado) return;
+      ocupado = true;
+      img.onload = () => { if (cv.width !== img.width || cv.height !== img.height) { cv.width = img.width; cv.height = img.height; } g.drawImage(img, 0, 0); ocupado = false; };
+      img.onerror = () => { ocupado = false; };
+      img.src = 'data:image/jpeg;base64,' + b64;
+    };
+    window.__kaliTelaParou = () => pararTela();
+    window.KaliNativo.iniciarTela();
+    return cv.captureStream(20);
+  }
   function pararTela() {
     if (!tela) return;
+    if (window.KaliNativo && tipoVideo === 'tela') { try { window.KaliNativo.pararTela(); } catch (e) {} window.__kaliQuadro = null; }
     tela.getTracks().forEach((t) => t.stop());
     tela = null;
     pares.forEach((p, uid) => {
@@ -252,7 +269,16 @@
     async alternarTela() {
       if (tela) return pararTela();
       if (!canalId) throw new Error('Entra numa call pra compartilhar a tela.');
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) throw new Error('O celular não deixa compartilhar a tela pelo navegador (limite do Android/iPhone). Pra transmitir, usa o PC.');
+      if (window.KaliNativo) { // app KALI pra Android: o app grava a tela e manda os quadros pra cá
+        tela = telaDoApp();
+        tipoVideo = 'tela';
+        const vApp = tela.getVideoTracks()[0];
+        vApp.contentHint = 'motion';
+        pares.forEach((p, uid) => { p.telaSender = p.pc.addTrack(vApp, tela); renegociar(uid); });
+        aoMudar();
+        return;
+      }
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) throw new Error(/Android/i.test(navigator.userAgent) ? 'Pra transmitir a tela do celular, instala o app KALI pra Android (Configurações → Baixar app).' : 'O iPhone não deixa compartilhar a tela pelo navegador. Pra transmitir, usa o PC ou um Android com o app KALI.');
       try {
         // audio: som do PC/aba junto (o navegador mostra a caixinha "Compartilhar áudio")
         tela = await navigator.mediaDevices.getDisplayMedia({ video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 60, max: 60 } },

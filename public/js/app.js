@@ -1688,6 +1688,7 @@
   }
   // Link fixo (GitHub Pages) que leva pro servidor ligado e já entra no servidor convidado.
   const LINK_CONVITE = 'https://kaliorg01.github.io/kali/?c=';
+  const LINK_APK = 'https://github.com/kaliorg01/kali/releases/latest/download/KALI.apk';
   const codigoDoConvite = (t) => ((t || '').match(/[?&#]c(?:onvite)?=([A-Za-z0-9]+)/) || [])[1] || (t || '').trim().split('/').pop();
   // Amigos que ainda não estão no servidor, com botão que manda o link na DM.
   function listaConvidarAmigos(s, link) {
@@ -2107,7 +2108,8 @@
         card(ic('convidar', 22), 'Adicionar amigo', 'Pelo @ da pessoa', () => trocar('adicionar')),
         card(ic('mais', 22), 'Criar servidor', 'Sua galera, suas regras', modalServidor),
         card(ic('hash', 22), 'Entrar com convite', 'Tem um código? Cola aqui', modalServidor),
-        card(ic('loja', 22), 'Loja', 'Banner, moldura e cor do nome', modalLoja)) : null,
+        card(ic('loja', 22), 'Loja', 'Banner, moldura e cor do nome', modalLoja),
+        /Android/i.test(navigator.userAgent) && !window.KaliNativo ? card(ic('tela', 22), 'App KALI pra Android', 'Pra transmitir a tela do celular', () => { location.href = LINK_APK; }) : null) : null,
       h('div', { class: 'rot' }, titulo),
       itens.length ? h('div', { class: 'lista-amigos' }, itens) : vazio);
     const ativo = h('aside', { class: 'ativo-agora' }, h('h3', {}, 'Ativo agora'),
@@ -2353,6 +2355,8 @@
           linhaCfg('Volume de cada pessoa', 'Na call, passa o mouse (ou toca) no quadro da pessoa e ajusta o volume dela só pra você.'),
         ];
       }],
+      ['Baixar app', () => [linhaCfg('App KALI pra Android', 'Igual ao site, mas deixa transmitir a tela do celular na call. Depois de baixar, abre o arquivo e permite instalar.',
+        h('a', { class: 'bt prim', href: LINK_APK }, 'Baixar KALI.apk'))]],
       ['Atalhos e novidades', () => [
         linhaCfg('Atalhos do teclado', null, h('button', { type: 'button', class: 'bt', onclick: modalAtalhos }, 'Ver atalhos')),
         linhaCfg('Novidades do app', null, h('button', { type: 'button', class: 'bt', onclick: modalNovidades }, 'Ver novidades')),
