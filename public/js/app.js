@@ -1764,7 +1764,7 @@
         h('button', { class: 'bt', onclick: () => { alternarLocal('kali-bloqueados', id); renderAmigos(main); renderLista(); } }, 'Desbloquear')));
     } else {
       const u = h('input', { maxlength: 20, placeholder: 'Digite o nome de usuário (o @ da pessoa)' });
-      u.oninput = () => { u.value = u.value.toLowerCase().replace(/^@/, ''); };
+      u.autocapitalize = 'none';
       const enviar = async () => { try { await adicionarAmigo(u.value.trim()); u.value = ''; } catch (err) { toast(err.message, 'erro'); } };
       u.onkeydown = (e) => { if (e.key === 'Enter') enviar(); };
       main.replaceChildren(topo, h('section', { class: 'col amigos-corpo' }, h('h3', {}, 'ADICIONAR AMIGO'),
@@ -1813,13 +1813,14 @@
     await carregarAmigos(); renderRail(); if (E.modo === 'dm') renderSide();
   }
   async function adicionarAmigo(usuario) {
+    usuario = String(usuario || '').trim().replace(/^@/, '').toLowerCase();
     const r = await api('POST', '/amigos', { usuario });
     toast(r.amigos ? 'Vocês agora são amigos! 🎉' : 'Pedido de amizade enviado ✓', 'ok');
     await carregarAmigos(); if (E.modo === 'dm') renderSide();
   }
   function modalAdicionarAmigo() {
     const u = h('input', { maxlength: 20, placeholder: 'nome_de_usuario' });
-    u.oninput = () => { u.value = u.value.toLowerCase().replace(/^@/, ''); };
+    u.autocapitalize = 'none';
     abrirModal({ titulo: 'Adicionar amigo', sub: 'Digita o nome de usuário do seu amigo (o @ dele).', corpo: [campo('Usuário', u)], botao: 'Enviar pedido',
       acao: () => adicionarAmigo(u.value.trim()) });
   }
@@ -1931,9 +1932,9 @@
   }
   function modalNovaDm() {
     const u = h('input', { maxlength: 20, placeholder: 'nome_de_usuario' });
-    u.oninput = () => { u.value = u.value.toLowerCase().replace(/^@/, ''); };
+    u.autocapitalize = 'none';
     abrirModal({ titulo: 'Nova conversa', sub: 'Digita o nome de usuário da pessoa.', corpo: [campo('Usuário', u)], botao: 'Conversar',
-      acao: () => abrirDmCom(u.value.trim()) });
+      acao: () => abrirDmCom(u.value.trim().replace(/^@/, '').toLowerCase()) });
   }
   // ---------- telas cheias (estilo Discord): abas à esquerda, conteúdo à direita, Esc fecha ----------
   let telaAberta = null;
