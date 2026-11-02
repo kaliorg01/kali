@@ -1037,3 +1037,10 @@ button.editado:hover{color:var(--texto)}
 .canal-linha.alvo-cima{box-shadow:0 -2px 0 var(--roxo)}
 .canal-linha.alvo-baixo{box-shadow:0 2px 0 var(--roxo)}
 .canal-linha[draggable=true] .canal{cursor:grab}
+.convite-custom{margin:0 0 12px;border:1px solid var(--borda);border-radius:14px;padding:8px 12px;background:var(--chip)}
+.convite-custom summary{cursor:pointer;color:var(--suave);font-size:13px;font-weight:500}
+.convite-custom[open] summary{margin-bottom:8px}
+.convite-custom .linha-form select{min-width:0}
+.convite-custom .convite{margin:8px 0 0}
+.em-comum{display:flex;flex-direction:column;gap:2px;margin:6px 0}
+.em-comum small{color:var(--suave)!important;font-size:12px;line-height:1.4}

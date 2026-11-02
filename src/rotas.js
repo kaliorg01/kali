@@ -1,6 +1,7 @@
 // Rotas REST /api da KALI.
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import express from 'express';
 import * as db from './db.js';
 import { erro } from './db.js';
@@ -178,7 +179,7 @@ export function criarRotas() {
       if (String(e?.message).includes('UNIQUE')) throw erro(409, 'Esse nome de usuário já está em uso.');
       throw e;
     }
-    definirCookieSessao(req, res, db.criarSessao(id));
+    definirCookieSessao(req, res, db.criarSessao(id, req.headers['user-agent']));
     res.status(201).json(usuarioPublico(db.usuarioPorId(id), { proprio: true }));
   });
 
@@ -199,7 +200,7 @@ export function criarRotas() {
       throw erro(401, 'Usuário ou senha incorretos.');
     }
     limparFalhasLogin(usuario);
-    definirCookieSessao(req, res, db.criarSessao(row.id));
+    definirCookieSessao(req, res, db.criarSessao(row.id, req.headers['user-agent']));
     res.json(usuarioPublico(row, { proprio: true }));
   });
 
@@ -297,7 +298,7 @@ export function criarRotas() {
 
   r.post('/convites/:codigo', exigirLogin, (req, res) => {
     const codigo = String(req.params.codigo || '');
-    const s = RE_CONVITE.test(codigo) ? db.servidorPorConvite(codigo) : null;
+    const s = RE_CONVITE.test(codigo) ? (db.servidorPorConvite(codigo) || db.usarConviteTemporario(codigo)) : null;
     if (!s) throw erro(404, 'Convite inválido ou expirado.');
     const uid = req.usuario.id;
     if (db.ehBanido(s.id, uid)) throw erro(403, 'Você foi banido deste servidor.');
@@ -559,6 +560,55 @@ export function criarRotas() {
     emitir(`s:${s.id}`, 'canais:ordem', { servidorId: s.id, ordem: limpa });
     db.registrarAuditoria(s.id, uid, 'ordem', null, 'reorganizou os canais');
     res.json({ ok: true });
+  });
+
+  // Convites com validade e limite de usos (qualquer membro cria; staff vê e apaga).
+  r.post('/servidores/:id/convites', exigirLogin, (req, res) => {
+    const uid = req.usuario.id;
+    const s = servidorComoMembro(uid, idDe(req.params.id));
+    const c = corpoDe(req);
+    const VALIDADES = [30, 60, 360, 720, 1440, 10080];
+    const expiraMin = c.expiraMin == null ? null : Number(c.expiraMin);
+    if (expiraMin !== null && !VALIDADES.includes(expiraMin)) throw erro(400, 'Validade inválida.');
+    const maxUsos = c.maxUsos == null ? null : Number(c.maxUsos);
+    if (maxUsos !== null && ![1, 5, 10, 25, 50, 100].includes(maxUsos)) throw erro(400, 'Limite de usos inválido.');
+    if (expiraMin === null && maxUsos === null) return res.json({ codigo: s.convite }); // sem limite = o link fixo
+    const codigo = db.criarConviteTemporario(s.id, uid, expiraMin ? Date.now() + expiraMin * 60000 : null, maxUsos);
+    res.json({ codigo });
+  });
+  r.get('/servidores/:id/convites', exigirLogin, (req, res) => {
+    const s = servidorComoStaff(req.usuario.id, idDe(req.params.id));
+    res.json(db.convitesDoServidor(s.id).map((c) => ({ codigo: c.codigo, criador: c.criador_nome, expiraEm: c.expira_em, maxUsos: c.max_usos, usos: c.usos })));
+  });
+  r.delete('/servidores/:id/convites/:codigo', exigirLogin, (req, res) => {
+    const uid = req.usuario.id;
+    const s = servidorComoStaff(uid, idDe(req.params.id));
+    if (!db.apagarConvite(s.id, String(req.params.codigo))) throw erro(404, 'Convite não encontrado.');
+    db.registrarAuditoria(s.id, uid, 'convite', null, 'apagou um convite');
+    res.json({ ok: true });
+  });
+
+  // Aparelhos conectados: ver e desconectar.
+  const idSessao = (token) => crypto.createHash('sha256').update(token).digest('hex').slice(0, 16);
+  r.get('/eu/sessoes', exigirLogin, (req, res) => {
+    const atual = tokenDaRequisicao(req);
+    res.json(db.sessoesDe(req.usuario.id).map((x) => ({ id: idSessao(x.token), ua: x.ua || '', criadoEm: x.criado_em, ultimo: x.ultimo || x.criado_em, atual: x.token === atual })));
+  });
+  r.delete('/eu/sessoes/:id', exigirLogin, async (req, res) => {
+    const uid = req.usuario.id, atual = tokenDaRequisicao(req);
+    const alvo = db.sessoesDe(uid).find((x) => idSessao(x.token) === String(req.params.id));
+    if (!alvo) throw erro(404, 'Aparelho não encontrado.');
+    if (alvo.token === atual) throw erro(400, 'Esse é o aparelho que você está usando (use Sair da conta).');
+    db.apagarSessao(alvo.token);
+    await desconectarSessao(uid, alvo.token);
+    res.json({ ok: true });
+  });
+
+  // Perfil: servidores e amigos em comum.
+  r.get('/usuarios/:id/comum', exigirLogin, (req, res) => {
+    const uid = req.usuario.id, alvo = idDe(req.params.id);
+    if (!db.usuarioPorId(alvo)) throw erro(404, 'Usuário não encontrado.');
+    res.json({ servidores: db.servidoresEmComum(uid, alvo), amigos: db.amigosEmComum(uid, alvo) });
   });
 
   // Banidos (ver e desfazer), registro da staff e trocar o link de convite.

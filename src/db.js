@@ -143,6 +143,8 @@ CREATE TABLE IF NOT EXISTS selos (
 
 // Staff e moderação: colunas novas em bancos antigos + tabelas próprias.
 for (const [tabela, coluna, def] of [
+  ['sessoes', 'ua', 'TEXT'],
+  ['sessoes', 'ultimo', 'INTEGER'],
   ['membros', 'cargo', "TEXT NOT NULL DEFAULT 'membro'"],
   ['canais', 'privado', 'INTEGER NOT NULL DEFAULT 0'],
   ['mensagens', 'resposta_a', 'INTEGER'],
@@ -539,17 +541,21 @@ export const usuariosComFocoExpirado = (agora) =>
 
 // ---------------------------------------------------------------- sessões
 const DURACAO_SESSAO = 30 * 24 * 60 * 60 * 1000;
-export function criarSessao(usuarioId) {
+export function criarSessao(usuarioId, ua) {
   const token = crypto.randomBytes(32).toString('hex');
   const agora = Date.now();
-  q('INSERT INTO sessoes (token, usuario_id, criado_em, expira_em) VALUES (?, ?, ?, ?)')
-    .run(token, usuarioId, agora, agora + DURACAO_SESSAO);
+  q('INSERT INTO sessoes (token, usuario_id, criado_em, expira_em, ua, ultimo) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(token, usuarioId, agora, agora + DURACAO_SESSAO, typeof ua === 'string' ? ua.slice(0, 300) : null, agora);
   return token;
 }
 export function usuarioDaSessao(token) {
   if (typeof token !== 'string' || !/^[0-9a-f]{64}$/.test(token)) return null;
-  return q(`SELECT u.* FROM sessoes s JOIN usuarios u ON u.id = s.usuario_id
-            WHERE s.token = ? AND s.expira_em > ?`).get(token, Date.now()) || null;
+  const agora = Date.now();
+  const u = q(`SELECT u.* FROM sessoes s JOIN usuarios u ON u.id = s.usuario_id
+            WHERE s.token = ? AND s.expira_em > ?`).get(token, agora) || null;
+  // "visto por último" do aparelho, no máximo 1 escrita a cada 5 min
+  if (u) q('UPDATE sessoes SET ultimo = ? WHERE token = ? AND (ultimo IS NULL OR ultimo < ?)').run(agora, token, agora - 300000);
+  return u;
 }
 export const apagarSessao = (token) => q('DELETE FROM sessoes WHERE token = ?').run(String(token));
 export const apagarSessoesExpiradas = () => q('DELETE FROM sessoes WHERE expira_em <= ?').run(Date.now());
@@ -1091,4 +1097,46 @@ export function reordenarCanais(sid, ordem) {
   transacao(() => {
     for (const it of ordem) q('UPDATE canais SET posicao = ?, categoria = ? WHERE id = ? AND servidor_id = ? AND pai_canal IS NULL').run(it.posicao, it.categoria, it.id, sid);
   });
+}
+
+// ---------------------------------------------------------------- convites com validade/usos, aparelhos, em comum
+db.exec(`
+CREATE TABLE IF NOT EXISTS convites (
+  codigo      TEXT PRIMARY KEY,
+  servidor_id INTEGER NOT NULL REFERENCES servidores(id) ON DELETE CASCADE,
+  criador_id  INTEGER REFERENCES usuarios(id) ON DELETE SET NULL,
+  expira_em   INTEGER,
+  max_usos    INTEGER,
+  usos        INTEGER NOT NULL DEFAULT 0,
+  criado_em   INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_convites_srv ON convites(servidor_id);
+`);
+export function criarConviteTemporario(sid, criador, expiraEm, maxUsos) {
+  let c;
+  do { c = novoConvite(); } while (q('SELECT 1 FROM convites WHERE codigo = ?').get(c));
+  q('INSERT INTO convites (codigo, servidor_id, criador_id, expira_em, max_usos, criado_em) VALUES (?, ?, ?, ?, ?, ?)').run(c, sid, criador, expiraEm, maxUsos, Date.now());
+  return c;
+}
+/** Convite temporário válido → servidor (e conta 1 uso). null se não existe, venceu ou acabou. */
+export function usarConviteTemporario(codigo) {
+  const cv = q('SELECT * FROM convites WHERE codigo = ?').get(codigo);
+  if (!cv) return null;
+  if ((cv.expira_em && cv.expira_em <= Date.now()) || (cv.max_usos && cv.usos >= cv.max_usos)) return null;
+  q('UPDATE convites SET usos = usos + 1 WHERE codigo = ?').run(codigo);
+  return servidorPorId(cv.servidor_id);
+}
+export const convitesDoServidor = (sid) =>
+  q(`SELECT c.*, u.nome AS criador_nome FROM convites c LEFT JOIN usuarios u ON u.id = c.criador_id
+     WHERE c.servidor_id = ? AND (c.expira_em IS NULL OR c.expira_em > ?) AND (c.max_usos IS NULL OR c.usos < c.max_usos)
+     ORDER BY c.criado_em DESC`).all(sid, Date.now());
+export const apagarConvite = (sid, codigo) => q('DELETE FROM convites WHERE servidor_id = ? AND codigo = ?').run(sid, codigo).changes > 0;
+export const sessoesDe = (uid) =>
+  q('SELECT token, ua, criado_em, ultimo FROM sessoes WHERE usuario_id = ? AND expira_em > ? ORDER BY COALESCE(ultimo, criado_em) DESC').all(uid, Date.now());
+export const servidoresEmComum = (a, b) =>
+  q(`SELECT s.id, s.nome FROM membros x JOIN membros y ON y.servidor_id = x.servidor_id AND y.usuario_id = ?
+     JOIN servidores s ON s.id = x.servidor_id WHERE x.usuario_id = ? ORDER BY s.nome COLLATE NOCASE`).all(b, a);
+export function amigosEmComum(a, b) {
+  const meus = new Set(amigosDe(a));
+  return amigosDe(b).filter((id) => meus.has(id)).map((id) => usuarioPorId(id)).filter(Boolean).map((u) => ({ id: u.id, nome: u.nome, usuario: u.usuario }));
 }

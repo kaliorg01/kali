@@ -292,7 +292,14 @@
     const t = m.texto.toLowerCase();
     return (E.cargos.get(c.servidorId) || []).some((cg) => cg.membros.includes(E.eu.id) && t.includes('@' + cg.nome.toLowerCase()));
   }
-  const naoLidosServidor = (s) => s.canais.reduce((t, c) => t + (E.naoLidos[c.id] || 0), 0);
+  // Notificações por servidor: 'todas' (padrão), 'mencoes' (só @) ou 'nada'. Fica neste aparelho.
+  const nivelNotif = (sid) => { try { return JSON.parse(ler('kali-notif-srv') || '{}')[sid] || 'todas'; } catch (e) { return 'todas'; } };
+  const definirNivelNotif = (sid, v) => { let o = {}; try { o = JSON.parse(ler('kali-notif-srv') || '{}'); } catch (e) {} o[sid] = v; salvar('kali-notif-srv', JSON.stringify(o)); };
+  const naoLidosServidor = (s) => {
+    const nv = nivelNotif(s.id);
+    if (nv === 'nada') return 0;
+    return s.canais.reduce((t, c) => t + (nv === 'mencoes' ? (E.mencoes[c.id] || 0) : (E.naoLidos[c.id] || 0)), 0);
+  };
 
   // ---------- carregar ----------
   async function carregarTudo() {
@@ -777,6 +784,7 @@
   const silenciado = (canalId) => {
     if (listaLocal('kali-silenciados').includes(canalId)) return true;
     const c = acharCanal(canalId);
+    if (c && c.servidorId && nivelNotif(c.servidorId) === 'nada') return true;
     return !!(c && c.servidorId && listaLocal('kali-srv-silenciados').includes(c.servidorId));
   };
   const alternarLocal = (k, id) => { const l = listaLocal(k); salvar(k, JSON.stringify(l.includes(id) ? l.filter((x) => x !== id) : [...l, id])); return !l.includes(id); };
@@ -1248,6 +1256,16 @@
           h('button', { class: 'bt', onclick: () => { fecharMenu(); const t = $('.caixa textarea'); if (t) { t.value = `/tribunal @${m.usuario} `; t.oninput(); t.focus(); } } }, '⚖️ Levar ao tribunal'));
       }
     }
+    if (m.id !== E.eu.id) {
+      const comum = h('div', { class: 'em-comum' });
+      conteudo.push(comum);
+      api('GET', `/usuarios/${m.id}/comum`).then((d) => {
+        const partes = [];
+        if (d.servidores.length) partes.push(h('small', {}, `🏠 ${d.servidores.length} servidor${d.servidores.length > 1 ? 'es' : ''} em comum: `, d.servidores.slice(0, 4).map((x) => x.nome).join(', ') + (d.servidores.length > 4 ? '…' : '')));
+        if (d.amigos.length) partes.push(h('small', {}, `👥 ${d.amigos.length} amigo${d.amigos.length > 1 ? 's' : ''} em comum: `, d.amigos.slice(0, 4).map((x) => x.nome).join(', ') + (d.amigos.length > 4 ? '…' : '')));
+        comum.replaceChildren(...partes);
+      }).catch(() => {});
+    }
     abrirMenu(ancora, conteudo, 'menu-perfil');
   }
   // ---------- missões, XP e ranking ----------
@@ -1635,6 +1653,21 @@
       return h('div', { class: 'linha-convidar' }, avatar(u, '', true), h('span', { class: 'txt' }, h('b', {}, u.nome), h('small', {}, '@' + u.usuario)), b);
     }))];
   }
+  function conviteCustom(s) {
+    const val = h('select', { 'aria-label': 'Validade' }, [[null, 'Nunca expira'], [30, '30 minutos'], [60, '1 hora'], [360, '6 horas'], [720, '12 horas'], [1440, '1 dia'], [10080, '7 dias']].map(([v, t]) => h('option', { value: v ?? '' }, t)));
+    const usos = h('select', { 'aria-label': 'Limite de usos' }, [[null, 'Sem limite de usos'], [1, '1 uso'], [5, '5 usos'], [10, '10 usos'], [25, '25 usos'], [100, '100 usos']].map(([v, t]) => h('option', { value: v ?? '' }, t)));
+    const out = h('div', { class: 'convite convite-link', hidden: true });
+    const gerar = h('button', { class: 'bt', type: 'button' }, 'Gerar');
+    gerar.onclick = async () => {
+      try {
+        const d = await api('POST', `/servidores/${s.id}/convites`, { expiraMin: val.value ? Number(val.value) : null, maxUsos: usos.value ? Number(usos.value) : null });
+        const l = LINK_CONVITE + d.codigo;
+        const cp = h('button', { class: 'bt prim', type: 'button', onclick: () => navigator.clipboard?.writeText(l).then(() => { cp.textContent = 'Copiado ✓'; }).catch(() => {}) }, 'Copiar');
+        out.replaceChildren(h('code', {}, l), cp); out.hidden = false;
+      } catch (err) { toast(err.message, 'erro'); }
+    };
+    return h('details', { class: 'convite-custom' }, h('summary', {}, 'Link com validade ou limite de usos'), h('div', { class: 'linha-form' }, val, usos, gerar), out);
+  }
   function modalConvite() {
     const s = servidorAtual();
     if (!s) return;
@@ -1650,6 +1683,7 @@
     abrirModal({ titulo: 'Convidar pra ' + s.nome, sub: 'Manda o link pra galera: quem abrir já cai dentro do servidor (cria a conta se precisar).',
       corpo: [h('div', { class: 'convite convite-link' }, h('code', {}, link), botaoCopiar(link, 'Copiar link')),
         navigator.share ? h('button', { class: 'bt', type: 'button', style: 'width:100%;margin-bottom:12px', onclick: () => navigator.share({ title: 'KALI', text: 'Cola no ' + s.nome + ' no KALI 🐉', url: link }).catch(() => {}) }, 'Compartilhar…') : null,
+        conviteCustom(s),
         listaConvidarAmigos(s, link),
         h('div', { class: 'sub', style: 'margin:4px 0 6px' }, 'Ou o código, pra colar em + → Entrar com convite:'),
         h('div', { class: 'convite' }, h('code', {}, s.convite), botaoCopiar(s.convite, 'Copiar'))] });
@@ -1714,7 +1748,10 @@
     // Mesma ordem do menu do servidor no Discord.
     const srvMudo = listaLocal('kali-srv-silenciados').includes(s.id);
     const extras = arguments[1] ? [item('Marcar tudo como lido', () => { s.canais.forEach((c) => { if (E.naoLidos[c.id]) marcarLido(c.id); }); renderSide(); renderRail(); })] : [];
+    const nv = nivelNotif(s.id);
     const itens = [item('Convidar pessoas', modalConvite),
+      item('🔔 Notificações: ' + { todas: 'todas as mensagens', mencoes: 'só @menções', nada: 'nada' }[nv], () => abrirMenu(ancora, [h('div', { class: 'sec-menu' }, 'Notificações de ' + s.nome),
+        [['todas', 'Todas as mensagens'], ['mencoes', 'Só @menções'], ['nada', 'Nada']].map(([v, t]) => item((nv === v ? '✓ ' : '') + t, () => { definirNivelNotif(s.id, v); renderRail(); toast('Notificações: ' + t, 'ok'); }))])),
       item(srvMudo ? '🔔 Reativar avisos do servidor' : '🔕 Silenciar servidor', () => { const on = alternarLocal('kali-srv-silenciados', s.id); toast(on ? 'Servidor silenciado: sem som nem aviso (menções também)' : 'Avisos do servidor reativados', 'ok'); }), ...extras];
     if (souStaffEm(s.id)) itens.push(item('Configurações do servidor', () => configServidor(s)));
     if (souDono(s)) itens.push(item('Criar canal', () => modalCanal('texto')));
@@ -2115,6 +2152,19 @@
       ['Minha conta', () => [
         h('div', { class: 'cartao-conta' }, avatar(E.eu, 'av-conta'), h('div', {}, h('b', {}, E.eu.nome), h('small', {}, '@' + E.eu.usuario))),
         linhaCfg('Nome de exibição e bio', 'Como a galera te vê.', h('button', { type: 'button', class: 'bt', onclick: modalPerfil }, 'Editar perfil')),
+        (() => {
+          const box = h('div', { class: 'lista-busca' }, h('p', { class: 'sub' }, 'Carregando aparelhos…'));
+          const nomeUa = (ua) => {
+            const nav = /Edg\//.test(ua) ? 'Edge' : /OPR\//.test(ua) ? 'Opera' : /Chrome\//.test(ua) ? 'Chrome' : /Firefox\//.test(ua) ? 'Firefox' : /Safari\//.test(ua) ? 'Safari' : 'Navegador';
+            const so = /Android/.test(ua) ? 'Android' : /iPhone|iPad/.test(ua) ? 'iPhone' : /Windows/.test(ua) ? 'Windows' : /Mac OS/.test(ua) ? 'Mac' : /Linux/.test(ua) ? 'Linux' : '';
+            return (/Android|iPhone|iPad/.test(ua) ? '📱 ' : '💻 ') + nav + (so ? ' · ' + so : '');
+          };
+          const carregar = () => api('GET', '/eu/sessoes').then((l) => box.replaceChildren(...l.map((x) => h('div', { class: 'res-busca' },
+            h('div', { class: 'rb-topo' }, h('b', {}, nomeUa(x.ua) + (x.atual ? ' (este aparelho)' : '')), h('small', {}, 'visto ' + new Date(x.ultimo).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }))),
+            x.atual ? null : h('div', {}, h('button', { class: 'bt perigo', type: 'button', onclick: async () => { try { await api('DELETE', '/eu/sessoes/' + x.id); toast('Aparelho desconectado ✓', 'ok'); carregar(); } catch (err) { toast(err.message, 'erro'); } } }, 'Desconectar')))))).catch((err) => box.replaceChildren(h('p', { class: 'sub' }, err.message)));
+          carregar();
+          return h('div', { class: 'linha-cfg', style: 'display:block' }, h('b', {}, 'Aparelhos conectados'), h('small', {}, 'Onde sua conta está logada. Desconecta o que você não reconhece.'), box);
+        })(),
         linhaCfg('Senha', 'Trocar a senha desconecta os outros aparelhos.', h('button', { type: 'button', class: 'bt', onclick: () => {
           const atual = h('input', { type: 'password', autocomplete: 'current-password', maxlength: 200 }), nova = h('input', { type: 'password', autocomplete: 'new-password', maxlength: 200, placeholder: 'Mínimo 6 caracteres' });
           abrirModal({ titulo: 'Trocar senha', corpo: [campo('Senha atual', atual), campo('Senha nova', nova)], botao: 'Trocar senha',
