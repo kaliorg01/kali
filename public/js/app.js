@@ -358,7 +358,11 @@
   async function abrirCanal(id, semMobile) {
     const c = acharCanal(id);
     if (!c) return;
-    if (c.tipo === 'voz') return entrarVoz(c);
+    if (c.tipo === 'voz') {
+      if (window.Voz && Voz.estado.canalId === c.id) { abrirCall(); return; }
+      return entrarVoz(c);
+    }
+    E.verCall = false;
     if (gravacao) gravacao.parar(false);
     if (E.assistindo && E.assistindo !== id) sairAssistir();
     E.canalId = id;
@@ -426,6 +430,7 @@
       if (membros.length) frag.push(h('div', { class: 'voz-users' }, membros.map((m) => h('span', { class: 'voz-user' },
         Object.assign(h('i', { class: 'mini' + (m.falando ? ' falando' : '') }, inicial(m.nome)), { style: `background:${CORES.includes(m.cor) ? m.cor : '#6b7280'}` }),
         h('span', { class: 'nm' }, m.nome),
+        window.Voz && c.id === Voz.estado.canalId && streamDe(m.usuarioId) ? h('span', { class: 'ao-vivo', title: 'Transmitindo — clica pra assistir', onclick: () => { abrirCall(); E.focoTela = m.usuarioId; atualizarCall(); } }, 'AO VIVO') : null,
         h('span', { class: 'icones' }, m.surdo ? '🔇' : m.mudo ? '🎙̸' : '')))));
     }
     return frag;
@@ -539,6 +544,7 @@
   function renderMain() {
     const main = $('#main');
     if (E.modo === 'dm' && E.telaAmigos) return renderAmigos(main);
+    if (E.verCall && window.Voz && Voz.estado.canalId) return renderCall(main);
     const c = canalAtual();
     if (!c || c.tipo === 'voz') {
       const semServidor = !E.servidores.length && E.modo === 'servidor';
@@ -1970,13 +1976,89 @@
 
   // ---------- voz ----------
   async function entrarVoz(c) {
-    try { await Voz.entrar(c.id, !!c.espacial); Voz.posicoes(E.voz.get(c.id), E.eu.id); renderMapa(); toast('Você entrou em ' + c.nome, 'ok'); } catch (err) { toast(err.message, 'erro'); }
+    try { await Voz.entrar(c.id, !!c.espacial); Voz.posicoes(E.voz.get(c.id), E.eu.id); renderMapa(); abrirCall(); } catch (err) { toast(err.message, 'erro'); }
+  }
+
+  // ---------- tela da call (estilo Discord): grade de quem está na voz, tela/câmera ao vivo, foco e barra de controles ----------
+  function abrirCall() {
+    E.verCall = true; E.focoTela = null;
+    $('#app').classList.add('chat');
+    renderMain(); renderTelas();
+  }
+  function menuSoundboard(el) {
+    abrirMenu(el, [h('div', { class: 'sec-menu' }, 'Soundboard (todo mundo da call ouve)'),
+      h('div', { class: 'soundboard' }, Object.entries(SONS_BOARD).map(([k, [icn, rot]]) => h('button', { type: 'button', onclick: async () => { const r = await pedir('voz:som', { som: k }); if (r.erro) toast(r.erro, 'erro'); } }, h('span', {}, icn), rot)))]);
+  }
+  const streamDe = (uid) => (uid === E.eu.id ? Voz.minhaTela : Voz.telas.get(uid)) || null;
+  function renderCall(main) {
+    const ev = Voz.estado, c = acharCanal(ev.canalId), srv = c && E.servidores.find((x) => x.id === c.servidorId);
+    const topo = h('header', { class: 'topo' },
+      h('button', { class: 'icbtn voltar', title: 'Voltar', onclick: () => $('#app').classList.remove('chat') }, ic('voltar')),
+      h('h1', { class: 'titulo-call' }, ic('voz', 18), c ? c.nome : 'Call'), h('span', { class: 'desc' }, srv ? srv.nome : ''),
+      h('button', { class: 'pill', style: 'margin-left:auto', title: 'Voltar pro chat', onclick: () => { E.verCall = false; renderMain(); renderTelas(); } }, ic('hash', 16), h('span', { class: 'rotulo' }, ' Abrir chat')));
+    main.replaceChildren(topo, h('section', { class: 'palco-call', id: 'palco-call' }), h('div', { class: 'barra-call', id: 'barra-call' }));
+    atualizarCall();
+  }
+  function tileCall(m) {
+    const uid = m.usuarioId, eu = uid === E.eu.id, stm = streamDe(uid), foco = E.focoTela === uid;
+    const u = [...E.membros.values()].flat().find((x) => x.id === uid) || (eu ? E.eu : { id: uid, nome: m.nome, cor: m.cor });
+    const t = h('div', { class: 'tile' + (m.falando ? ' falando' : '') + (stm ? ' com-video' : ''), tabindex: stm ? 0 : null });
+    if (stm) {
+      let v = videosTela.get(uid);
+      if (!v) { v = h('video', { autoplay: true, playsinline: true }); v.muted = true; videosTela.set(uid, v); }
+      if (v.srcObject !== stm) v.srcObject = stm;
+      t.append(v, h('button', { class: 'cheia', title: 'Tela cheia', onclick: (e) => { e.stopPropagation(); t.requestFullscreen && t.requestFullscreen().catch(() => {}); } }, '⛶'));
+      t.title = foco ? 'Clica pra voltar pra grade' : 'Clica pra assistir em destaque';
+      t.onclick = () => { E.focoTela = foco ? null : uid; atualizarCall(); };
+      t.ondblclick = () => t.requestFullscreen && t.requestFullscreen().catch(() => {});
+      t.onkeydown = (e) => { if (e.key === 'Enter') t.onclick(); };
+    } else {
+      t.append(avatar(u, 'av-call'));
+    }
+    t.append(h('span', { class: 'rotulo' }, stm ? h('span', { class: 'ao-vivo' }, 'AO VIVO') : null, eu ? 'Você' : (m.nome || u.nome),
+      m.surdo ? ic('foneOff', 14) : m.mudo ? ic('micOff', 14) : null));
+    return t;
+  }
+  function atualizarCall() {
+    const palco = $('#palco-call');
+    if (!palco) return;
+    const ev = Voz.estado;
+    if (!ev.canalId) { E.verCall = false; renderMain(); return; }
+    let membros = (E.voz.get(ev.canalId) || []).slice();
+    if (!membros.some((m) => m.usuarioId === E.eu.id)) membros.unshift({ usuarioId: E.eu.id, nome: E.eu.nome, cor: E.eu.cor, mudo: ev.mudo, surdo: ev.surdo, falando: ev.falando });
+    // quem está ao vivo vai pra frente
+    membros.sort((a, b) => !!streamDe(b.usuarioId) - !!streamDe(a.usuarioId));
+    if (E.focoTela && !streamDe(E.focoTela)) E.focoTela = null;
+    const vivos = new Set(membros.filter((m) => streamDe(m.usuarioId)).map((m) => m.usuarioId));
+    for (const k of [...videosTela.keys()]) if (!vivos.has(k)) videosTela.delete(k);
+    if (E.focoTela) {
+      const f = membros.find((m) => m.usuarioId === E.focoTela);
+      palco.className = 'palco-call foco';
+      palco.replaceChildren(h('div', { class: 'foco-principal' }, tileCall(f)), h('div', { class: 'faixa' }, membros.filter((m) => m !== f).map(tileCall)));
+    } else {
+      palco.className = 'palco-call grade' + (membros.length === 1 ? ' um' : membros.length === 2 ? ' dois' : '');
+      palco.replaceChildren(...membros.map(tileCall));
+    }
+    videosTela.forEach((v) => { if (v.paused) v.play().catch(() => {}); });
+    const erro = (err) => toast(err.message, 'erro');
+    $('#barra-call').replaceChildren(
+      h('button', { class: ev.camera ? 'ligado' : '', title: ev.camera ? 'Desligar câmera' : 'Ligar câmera', 'aria-pressed': String(ev.camera), onclick: () => Voz.alternarCamera().catch(erro) }, ic('camera', 22)),
+      h('button', { class: ev.compartilhando ? 'ligado' : '', title: ev.compartilhando ? 'Parar de transmitir' : 'Compartilhar tela', 'aria-pressed': String(ev.compartilhando), onclick: () => Voz.alternarTela().catch(erro) }, ic('tela', 22)),
+      h('button', { class: ev.mudo ? 'desligado' : '', title: ev.mudo ? 'Ativar microfone' : 'Silenciar microfone', 'aria-pressed': String(ev.mudo), onclick: () => Voz.alternarMudo() }, ic(ev.mudo ? 'micOff' : 'mic', 22)),
+      h('button', { class: ev.surdo ? 'desligado' : '', title: ev.surdo ? 'Ativar áudio' : 'Desativar áudio', 'aria-pressed': String(ev.surdo), onclick: () => Voz.alternarSurdo() }, ic(ev.surdo ? 'foneOff' : 'fone', 22)),
+      h('button', { title: 'Soundboard', onclick: (e) => menuSoundboard(e.currentTarget) }, ic('som', 22)),
+      h('button', { class: 'encerrar', title: 'Desconectar', onclick: () => Voz.sair() }, ic('desligar', 22)));
   }
 
   // Telas compartilhadas na call: grade flutuante (1 tela grande, 2+ em grade). Os <video> são reaproveitados pra não piscar.
   const videosTela = new Map();
   function renderTelas() {
     let painel = $('#telas');
+    if (E.verCall) {
+      if (painel) painel.remove();
+      if (!Voz.estado.canalId) { E.verCall = false; renderMain(); return; }
+      return atualizarCall();
+    }
     const lista = [];
     if (Voz.minhaTela) lista.push([E.eu.id, Voz.minhaTela, 'Você']);
     Voz.telas.forEach((st, uid) => lista.push([uid, st, nomeDe(uid)]));
@@ -1995,7 +2077,9 @@
     for (const k of [...videosTela.keys()]) if (!vivos.has(k)) videosTela.delete(k);
     painel.replaceChildren(
       h('div', { class: 'telas-topo' }, h('b', {}, `🖥️ Telas na call (${lista.length})`),
-        h('button', { class: 'icbtn', title: 'Minimizar', onclick: () => painel.classList.toggle('mini') }, '–')),
+        h('span', { style: 'display:flex;gap:6px' },
+          Voz.estado.canalId ? h('button', { class: 'pill', onclick: abrirCall }, 'Abrir na call') : null,
+          h('button', { class: 'icbtn', title: 'Minimizar', onclick: () => painel.classList.toggle('mini') }, '–'))),
       h('div', { class: 'telas-grade' }, cards));
     videosTela.forEach((v) => { if (v.paused) v.play().catch(() => {}); });
   }
@@ -2424,7 +2508,7 @@
       const antes = new Set((E.voz.get(canalId) || []).map((m) => m.usuarioId));
       if (canalId === Voz.estado.canalId && antes.size && (membros || []).some((m) => !antes.has(m.usuarioId) && m.usuarioId !== E.eu.id)) tocarSom('vinheta');
       if (membros && membros.length) E.voz.set(canalId, membros); else E.voz.delete(canalId);
-      if (canalId === Voz.estado.canalId) { Voz.posicoes(membros, E.eu.id); renderMapa(); }
+      if (canalId === Voz.estado.canalId) { Voz.posicoes(membros, E.eu.id); renderMapa(); if (E.verCall) atualizarCall(); }
       renderSide();
     });
     sock.on('xp:ganho', (d) => {
