@@ -92,7 +92,9 @@
         sock.emit('voz:sinal', { para: uid, dados: { sdp: p.pc.localDescription } });
         if (p.telaSender) {
           const prm = p.telaSender.getParameters();
-          prm.encodings = [{ ...(prm.encodings && prm.encodings[0]), maxBitrate: 6_000_000, maxFramerate: 60 }];
+          // tela: segura a resolução (1080p nítido) e corta FPS se a rede apertar; câmera: equilibrado
+          if (tipoVideo === 'tela') prm.degradationPreference = 'maintain-resolution';
+          prm.encodings = [{ ...(prm.encodings && prm.encodings[0]), maxBitrate: tipoVideo === 'tela' ? 10_000_000 : 3_000_000, maxFramerate: tipoVideo === 'tela' ? 60 : 30, scaleResolutionDownBy: 1, priority: 'high', networkPriority: 'high' }];
           p.telaSender.setParameters(prm).catch(() => {});
         }
       })
@@ -196,7 +198,7 @@
         tela = await navigator.mediaDevices.getDisplayMedia({ video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 60, max: 60 } }, audio: false });
       } catch (e) { tela = null; return; } // cancelou a escolha
       const v = tela.getVideoTracks()[0];
-      v.contentHint = 'motion';
+      v.contentHint = 'detail'; // prioriza nitidez (texto e jogo em 1080p) em vez de baixar a resolução
       v.onended = pararTela; // botão "parar" do próprio navegador
       tipoVideo = 'tela';
       pares.forEach((p, uid) => { p.telaSender = p.pc.addTrack(v, tela); renegociar(uid); });
