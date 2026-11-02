@@ -14,8 +14,11 @@
     const p = pares.get(uid); if (!p) return;
     const v = volDe(uid);
     if (p.audioTela) p.audioTela.muted = surdo;
-    if (p.ganho) p.ganho.gain.value = surdo ? 0 : v * REFORCO;
-    else { p.audio.volume = Math.min(1, v); p.audio.muted = surdo || v === 0; }
+    if (p.ganho) {
+      p.ganho.gain.value = surdo ? 0 : v * REFORCO;
+      const ctxOk = ctx && ctx.state === 'running';
+      p.audio.volume = Math.min(1, v); p.audio.muted = surdo || v === 0 || ctxOk; // reserva: só toca pelo <audio> se o ctx parou
+    } else { p.audio.volume = Math.min(1, v); p.audio.muted = surdo || v === 0; }
   }
   let ptt = false, apertando = false;
   try { ptt = localStorage.getItem('kali-ptt') === '1'; } catch (e) {}
@@ -202,6 +205,8 @@
   function detector() {
     try {
       ctx = new (window.AudioContext || window.webkitAudioContext)();
+      ctx.onstatechange = () => pares.forEach((_, uid) => aplicarVolume(uid));
+      ctx.resume().catch(() => {});
       const an = ctx.createAnalyser();
       an.fftSize = 512;
       ctx.createMediaStreamSource(local).connect(an);
@@ -227,6 +232,10 @@
     aoMudar();
   }
 
+  // O navegador pode pausar o áudio da página (aba em segundo plano, volta sem clique): retoma no primeiro sinal.
+  const retomar = () => { if (ctx && ctx.state === 'suspended') ctx.resume().catch(() => {}); pares.forEach((p) => { if (p.audio.paused && p.audio.srcObject) p.audio.play().catch(() => {}); }); };
+  for (const ev of ['pointerdown', 'keydown', 'focus']) addEventListener(ev, retomar, true);
+  document.addEventListener('visibilitychange', retomar);
   window.Voz = {
     get estado() { return { canalId, mudo, surdo, falando, espacial, compartilhando: !!tela && tipoVideo === 'tela', camera: !!tela && tipoVideo === 'camera' }; },
     get telas() { return telas; },

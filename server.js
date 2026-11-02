@@ -63,6 +63,9 @@ app.use((erro, req, res, next) => {
 const servidorHttp = http.createServer(app);
 const io = new Server(servidorHttp, {
   maxHttpBufferSize: 100_000,
+  // aba em segundo plano atrasa os timers do navegador: tolera mais antes de derrubar (e tirar da call)
+  pingInterval: 25_000,
+  pingTimeout: 60_000,
   allowRequest: (req, callback) => {
     callback(null, origemPermitida(req.headers.origin, req.headers.host));
   },
