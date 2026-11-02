@@ -32,7 +32,7 @@
     enviar: 'M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z', tela: 'M2 3h20v14H2zM8 21h8M12 17v4', camera: 'M23 7l-7 5 7 5V7zM1 5h15v14H1z',
     som: 'M9 18V5l12-2v13M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0M21 16a3 3 0 1 1-6 0 3 3 0 0 1 6 0',
     desligar: 'M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7 2 2 0 0 1 1.72 2v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.42 19.42 0 0 1-3.33-2.67m-2.67-3.34a19.79 19.79 0 0 1-3.07-8.63A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91M23 1 1 23',
-    sinal: 'M2 20h.01M7 20v-4M12 20v-8M17 20V8M22 4v16', convidar: 'M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M8.5 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M20 8v6M23 11h-6',
+    sinal: 'M2 20h.01M7 20v-4M12 20v-8M17 20V8M22 4v16', grade: 'M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z', convidar: 'M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M8.5 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M20 8v6M23 11h-6',
     balao: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z', check: 'M20 6 9 17l-5-5', loja: 'M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4zM3 6h18M16 10a4 4 0 0 1-8 0',
     porta: 'M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9', calendario: 'M3 4h18v18H3zM16 2v4M8 2v4M3 10h18',
   };
@@ -535,8 +535,7 @@
           onclick: () => Voz.alternarCamera().catch((err) => toast(err.message, 'erro')) }, ic('camera', 18)),
         h('button', { class: 'icbtn' + (ev.compartilhando ? ' ativo-tela' : ''), title: ev.compartilhando ? 'Parar de compartilhar' : 'Compartilhar tela (1080p/60fps)',
           onclick: () => Voz.alternarTela().catch((err) => toast(err.message, 'erro')) }, ic('tela', 18)),
-        h('button', { class: 'icbtn', title: 'Soundboard: tocar som pra call', onclick: (e) => abrirMenu(e.currentTarget, [h('div', { class: 'sec-menu' }, 'Soundboard (todo mundo da call ouve)'),
-          h('div', { class: 'soundboard' }, Object.entries(SONS_BOARD).map(([k, [ic, rot]]) => h('button', { type: 'button', onclick: async () => { const r = await pedir('voz:som', { som: k }); if (r.erro) toast(r.erro, 'erro'); } }, h('span', {}, ic), rot)))]) }, ic('som', 18))));
+        h('button', { class: 'icbtn' + (E.verCall ? ' ativo-tela' : ''), title: 'Abrir a call (ver todo mundo e as telas)', onclick: abrirCall }, ic('grade', 18))));
     }
     // rodapé do usuário
     const eu = h('button', { class: 'eu', title: 'Status e perfil', onclick: (e) => menuPerfil(e.currentTarget) },
@@ -2319,7 +2318,6 @@
       h('button', { class: ev.compartilhando ? 'ligado' : '', title: ev.compartilhando ? 'Parar de transmitir' : 'Compartilhar tela', 'aria-pressed': String(ev.compartilhando), onclick: () => Voz.alternarTela().catch(erro) }, ic('tela', 22)),
       h('button', { class: ev.mudo ? 'desligado' : '', title: ev.mudo ? 'Ativar microfone' : 'Silenciar microfone', 'aria-pressed': String(ev.mudo), onclick: () => Voz.alternarMudo() }, ic(ev.mudo ? 'micOff' : 'mic', 22)),
       h('button', { class: ev.surdo ? 'desligado' : '', title: ev.surdo ? 'Ativar áudio' : 'Desativar áudio', 'aria-pressed': String(ev.surdo), onclick: () => Voz.alternarSurdo() }, ic(ev.surdo ? 'foneOff' : 'fone', 22)),
-      h('button', { title: 'Soundboard', onclick: (e) => menuSoundboard(e.currentTarget) }, ic('som', 22)),
       h('button', { class: 'encerrar', title: 'Desconectar', onclick: () => Voz.sair() }, ic('desligar', 22)));
   }
 
