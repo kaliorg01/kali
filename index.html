@@ -63,6 +63,9 @@
     return offline('root@kali:~$ servidor offline (o PC do host está desligado). Tenta mais tarde.');
   }
   if (location.hash === '#painel') url = url.replace(/\/?$/, '/painel');
+  // Link de convite: kaliorg01.github.io/kali/?c=CODIGO → entra direto no servidor.
+  const conv = new URLSearchParams(location.search).get('c');
+  if (conv && /^[A-Za-z0-9]{4,16}$/.test(conv)) url = url.replace(/\/?$/, '/?convite=' + conv);
   botao.href = url;
   botao.removeAttribute('aria-disabled');
   status.textContent = 'root@kali:~$ conectado. Entrando…';
