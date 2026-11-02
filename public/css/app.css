@@ -956,3 +956,4 @@ body.pagina-entrar{animation:none}
 }
 /* no início não tem lista de membros: o "Ativo agora" ocupa o lugar */
 @media (min-width:1101px){.app:has(.home){grid-template-columns:72px 260px 1fr 0}.app:has(.home) .membros{display:none}}
+.convite-link code{font-size:13px;letter-spacing:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;overflow-wrap:normal;min-width:0}

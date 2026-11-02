@@ -1427,7 +1427,7 @@
             try { s.canais.push(await api('POST', `/servidores/${s.id}/canais`, { nome: n, tipo })); } catch (e) {}
           }
         } else {
-          const cod = codigo.value.trim().split('/').pop();
+          const cod = codigoDoConvite(codigo.value);
           if (!cod) throw new Error('Cola o código do convite.');
           s = await api('POST', '/convites/' + encodeURIComponent(cod));
         }
@@ -1447,16 +1447,26 @@
     bCriar.onclick = () => trocar('criar');
     bEntrar.onclick = () => trocar('entrar');
   }
+  // Link fixo (GitHub Pages) que leva pro servidor ligado e já entra no servidor convidado.
+  const LINK_CONVITE = 'https://kaliorg01.github.io/kali/?c=';
+  const codigoDoConvite = (t) => ((t || '').match(/[?&#]c(?:onvite)?=([A-Za-z0-9]+)/) || [])[1] || (t || '').trim().split('/').pop();
   function modalConvite() {
     const s = servidorAtual();
     if (!s) return;
-    const copiar = h('button', { class: 'bt prim', type: 'button' }, 'Copiar');
-    copiar.onclick = async () => {
-      try { await navigator.clipboard.writeText(s.convite); copiar.textContent = 'Copiado!'; }
-      catch (e) { toast('Não consegui copiar. Seleciona o código manualmente.', 'erro'); }
+    const link = LINK_CONVITE + s.convite;
+    const botaoCopiar = (texto, rot) => {
+      const b = h('button', { class: 'bt prim', type: 'button' }, rot);
+      b.onclick = async () => {
+        try { await navigator.clipboard.writeText(texto); b.textContent = 'Copiado ✓'; setTimeout(() => { b.textContent = rot; }, 1600); }
+        catch (e) { toast('Não consegui copiar. Seleciona e copia na mão.', 'erro'); }
+      };
+      return b;
     };
-    abrirModal({ titulo: 'Convidar pra ' + s.nome, sub: 'Manda esse código pra galera. Eles entram pelo + → Entrar com convite.',
-      corpo: [h('div', { class: 'convite' }, h('code', {}, s.convite), copiar)] });
+    abrirModal({ titulo: 'Convidar pra ' + s.nome, sub: 'Manda o link pra galera: quem abrir já cai dentro do servidor (cria a conta se precisar).',
+      corpo: [h('div', { class: 'convite convite-link' }, h('code', {}, link), botaoCopiar(link, 'Copiar link')),
+        navigator.share ? h('button', { class: 'bt', type: 'button', style: 'width:100%;margin-bottom:12px', onclick: () => navigator.share({ title: 'KALI', text: 'Cola no ' + s.nome + ' no KALI 🐉', url: link }).catch(() => {}) }, 'Compartilhar…') : null,
+        h('div', { class: 'sub', style: 'margin:4px 0 6px' }, 'Ou o código, pra colar em + → Entrar com convite:'),
+        h('div', { class: 'convite' }, h('code', {}, s.convite), botaoCopiar(s.convite, 'Copiar'))] });
   }
   // Campo de categoria com sugestão das que já existem no servidor.
   function campoCategoria(s, valor) {
@@ -2552,6 +2562,29 @@
   }
 
   // ---------- início ----------
+  // Convite que veio no link (?convite=CODIGO): guarda antes do login, usa depois.
+  try {
+    const cv = new URLSearchParams(location.search).get('convite');
+    if (cv && /^[A-Za-z0-9]{4,16}$/.test(cv)) salvar('kali-convite', cv);
+    if (cv) history.replaceState(null, '', location.pathname);
+  } catch (e) {}
+  async function usarConvitePendente() {
+    const cv = ler('kali-convite');
+    if (!cv) return false;
+    try { localStorage.removeItem('kali-convite'); } catch (e) {}
+    try {
+      const s = await api('POST', '/convites/' + encodeURIComponent(cv));
+      adicionarServidor(s); E.membros.delete(s.id);
+      await selecionarServidor(s.id);
+      toast('Você entrou em ' + s.nome + ' 🎉', 'ok');
+      return true;
+    } catch (err) {
+      const ja = E.servidores.find((x) => x.convite === cv);
+      if (ja) { await selecionarServidor(ja.id); return true; }
+      toast('Convite: ' + err.message, 'erro');
+      return false;
+    }
+  }
   async function iniciar() {
     try {
       E.eu = await api('GET', '/eu');
@@ -2561,6 +2594,7 @@
       return;
     }
     conectar();
+    if (await usarConvitePendente()) return;
     const salvo = ler('kali-servidor');
     if (salvo === 'dm') return abrirDms();
     const s = E.servidores.find((x) => x.id === Number(salvo)) || E.servidores[0];
