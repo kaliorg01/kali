@@ -17,6 +17,29 @@
     for (const f of filhos.flat(Infinity)) if (f != null && f !== false) e.append(f instanceof Node ? f : String(f));
     return e;
   }
+  // Ícones SVG (traço 2px, currentColor) no lugar de emoji nos controles.
+  const ICONES = {
+    hash: 'M4 9h16M4 15h16M10 3 8 21M16 3l-2 18', voz: 'M11 5 6 9H2v6h4l5 4V5zM15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14',
+    cadeado: 'M5 11h14v10H5zM8 11V7a4 4 0 0 1 8 0v4', tv: 'M2 7h20v13H2zM7 2l5 5 5-5',
+    sino: 'M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.94 1.94 0 0 0 3.4 0', sinoOff: 'M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.94 1.94 0 0 0 3.4 0M2 2l20 20',
+    pino: 'M12 17v5M5 17h14l-2-4V6H7v7l-2 4zM6 2h12', pessoas: 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75',
+    lupa: 'M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16M21 21l-4.35-4.35', mais: 'M12 5v14M5 12h14', x: 'M18 6 6 18M6 6l12 12', voltar: 'M19 12H5M12 19l-7-7 7-7',
+    sorriso: 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20M8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01',
+    mic: 'M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3M19 10v2a7 7 0 0 1-14 0v-2M12 19v3', micOff: 'M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3M19 10v2a7 7 0 0 1-14 0v-2M12 19v3M2 2l20 20',
+    fone: 'M3 18v-6a9 9 0 0 1 18 0v6M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z',
+    foneOff: 'M3 18v-6a9 9 0 0 1 18 0v6M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3zM2 2l20 20',
+    engrenagem: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z',
+    enviar: 'M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z', tela: 'M2 3h20v14H2zM8 21h8M12 17v4', camera: 'M23 7l-7 5 7 5V7zM1 5h15v14H1z',
+    som: 'M9 18V5l12-2v13M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0M21 16a3 3 0 1 1-6 0 3 3 0 0 1 6 0',
+    desligar: 'M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7 2 2 0 0 1 1.72 2v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.42 19.42 0 0 1-3.33-2.67m-2.67-3.34a19.79 19.79 0 0 1-3.07-8.63A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91M23 1 1 23',
+    sinal: 'M2 20h.01M7 20v-4M12 20v-8M17 20V8M22 4v16', convidar: 'M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M8.5 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M20 8v6M23 11h-6',
+    porta: 'M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9', calendario: 'M3 4h18v18H3zM16 2v4M8 2v4M3 10h18',
+  };
+  function ic(nome, tam = 20) {
+    const NS = 'http://www.w3.org/2000/svg', sv = document.createElementNS(NS, 'svg'), p = document.createElementNS(NS, 'path');
+    for (const [k, v] of Object.entries({ viewBox: '0 0 24 24', width: tam, height: tam, fill: 'none', stroke: 'currentColor', 'stroke-width': 2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true', class: 'ico' })) sv.setAttribute(k, v);
+    p.setAttribute('d', ICONES[nome] || ''); sv.append(p); return sv;
+  }
   // Remove com animação de saída (classe .saindo); fallback se o animationend não vier.
   function sair(el, ms = 260) {
     if (!el || el.classList.contains('saindo')) return;
@@ -381,14 +404,16 @@
   }
 
   function linhaCanal(c, s) {
-    const ic = c.tipo === 'voz' ? (c.espacial ? '🌌' : '🔊') : c.tipo === 'assistir' ? '🍿' : c.ticket ? '🎫' : c.comSenha ? '🔒' : '#';
+    const icn = c.tipo === 'voz' ? (c.espacial ? '🌌' : ic('voz', 18)) : c.tipo === 'assistir' ? ic('tv', 18) : c.ticket ? '🎫' : c.comSenha ? ic('cadeado', 18) : ic('hash', 18);
     const n = E.naoLidos[c.id] || 0, men = E.mencoes[c.id] || 0;
     const b = h('button', { class: 'canal' + (c.id === E.canalId ? ' ativo' : '') + (n ? ' nao-lido' : ''), onclick: () => abrirCanal(c.id) },
-      h('span', { class: 'ic' }, ic), h('span', { class: 'nm' }, c.nome),
+      h('span', { class: 'ic' }, icn), h('span', { class: 'nm' }, c.nome),
       men ? h('span', { class: 'n mencao' }, '@' + men) : n ? h('span', { class: 'n' }, n > 99 ? '99+' : n) : null);
     const linha = h('div', { class: 'canal-linha' }, b);
-    if (souStaffEm(s.id) && c.servidorId) linha.append(h('button', { class: 'editar-canal', title: 'Editar canal (categoria, modo lento)', onclick: () => modalEditarCanal(c, s) }, '⚙'));
-    if (souDono(s)) linha.append(h('button', { class: 'apagar-canal', title: 'Apagar canal', onclick: () => apagarCanal(c) }, '✕'));
+    const extras = h('span', { class: 'canal-extras' }, c.tipo === 'texto' ? h('button', { title: 'Convidar pra cá', onclick: modalConvite }, ic('convidar', 15)) : null);
+    if (souStaffEm(s.id) && c.servidorId) extras.append(h('button', { title: 'Editar canal (categoria, modo lento)', onclick: () => modalEditarCanal(c, s) }, ic('engrenagem', 15)));
+    if (souDono(s)) extras.append(h('button', { class: 'perigo', title: 'Apagar canal', onclick: () => apagarCanal(c) }, ic('x', 15)));
+    linha.append(extras);
     const frag = [linha];
     // tópicos desse canal aparecem logo embaixo dele
     for (const t of s.canais.filter((x) => x.paiCanal === c.id)) {
@@ -410,7 +435,7 @@
     const side = $('#side');
     const partes = [];
     if (E.modo === 'dm') {
-      partes.push(h('div', { class: 'side-topo' }, h('span', {}, 'Mensagens diretas')));
+      partes.push(h('div', { class: 'side-topo topo-busca' }, h('button', { class: 'achar-conversa', onclick: modalNovaDm }, 'Encontre ou comece uma conversa')));
       // Igual ao Discord: Amigos e Loja no topo, depois "Mensagens diretas ＋".
       const pend = E.amigos.recebidos.length;
       const corpo = h('div', { class: 'side-corpo' },
@@ -453,7 +478,7 @@
         partes.push(h('button', { class: 'side-topo', onclick: (e) => menuServidor(e.currentTarget) }, h('span', {}, s.nome), h('span', { class: 'seta' }, '▾')));
         const nEv = (E.eventos.get(s.id) || []).length;
         const corpo = h('div', { class: 'side-corpo' },
-          h('button', { class: 'nav-dm', onclick: () => modalEventos(s) }, h('span', { class: 'ic' }, '📅'), nEv ? `${nEv} evento${nEv > 1 ? 's' : ''}` : 'Eventos'),
+          h('button', { class: 'nav-dm', onclick: () => modalEventos(s) }, h('span', { class: 'ic' }, ic('calendario', 18)), nEv ? `${nEv} evento${nEv > 1 ? 's' : ''}` : 'Eventos'),
           h('button', { class: 'btn-novo', onclick: modalConvite }, h('span', { style: 'font-size:18px' }, '＋'), 'Convidar amigos'));
         const dono = souDono(s);
         // Canais sem categoria em cima (Texto/Voz); depois cada categoria, que dá pra recolher (igual ao Discord).
@@ -461,11 +486,11 @@
         const texto = semCat.filter((c) => c.tipo === 'texto');
         const voz = semCat.filter((c) => c.tipo !== 'texto');
         if (texto.length || !s.canais.some((c) => c.categoria)) {
-          corpo.append(h('div', { class: 'rot' }, 'Texto', dono ? h('button', { title: 'Criar canal de texto', onclick: () => modalCanal('texto') }, '＋') : null));
+          corpo.append(h('div', { class: 'rot' }, 'Canais de texto', dono ? h('button', { title: 'Criar canal de texto', onclick: () => modalCanal('texto') }, ic('mais', 15)) : null));
           texto.forEach((c) => corpo.append(...linhaCanal(c, s)));
         }
         if (voz.length || !s.canais.some((c) => c.categoria)) {
-          corpo.append(h('div', { class: 'rot' }, 'Voz', dono ? h('button', { title: 'Criar canal de voz', onclick: () => modalCanal('voz') }, '＋') : null));
+          corpo.append(h('div', { class: 'rot' }, 'Canais de voz', dono ? h('button', { title: 'Criar canal de voz', onclick: () => modalCanal('voz') }, ic('mais', 15)) : null));
           voz.forEach((c) => corpo.append(...linhaCanal(c, s)));
         }
         for (const cat of [...new Set(s.canais.map((c) => c.categoria).filter(Boolean))]) {
@@ -484,27 +509,30 @@
     }
     // barra de voz conectada
     const ev = window.Voz ? Voz.estado : {};
+    let vozPainel = null;
     if (ev.canalId) {
       const c = acharCanal(ev.canalId);
       const srv = c && E.servidores.find((x) => x.id === c.servidorId);
-      partes.push(h('div', { class: 'voz-barra' },
-        h('div', { class: 'info' }, h('b', {}, '● Conectado à voz'), h('small', {}, (c ? c.nome : '') + (srv ? ' / ' + srv.nome : ''))),
-        h('button', { class: 'icbtn' + (ev.compartilhando ? ' ativo-tela' : ''), title: ev.compartilhando ? 'Parar de compartilhar' : 'Compartilhar tela (1080p/60fps)',
-          onclick: () => Voz.alternarTela().catch((err) => toast(err.message, 'erro')) }, '🖥️'),
+      vozPainel = h('div', { class: 'painel-voz' },
+        h('div', { class: 'pv-topo' }, h('span', { class: 'pv-sinal' }, ic('sinal', 18)),
+          h('div', { class: 'info' }, h('b', {}, 'Voz conectada'), h('small', {}, (c ? c.nome : '') + (srv ? ' / ' + srv.nome : ''))),
+          h('button', { class: 'icbtn sair-voz', title: 'Desconectar', onclick: () => { Voz.sair(); } }, ic('desligar', 18))),
+        h('div', { class: 'pv-acoes' },
         h('button', { class: 'icbtn' + (ev.camera ? ' ativo-tela' : ''), title: ev.camera ? 'Desligar câmera' : 'Ligar câmera',
-          onclick: () => Voz.alternarCamera().catch((err) => toast(err.message, 'erro')) }, '📷'),
+          onclick: () => Voz.alternarCamera().catch((err) => toast(err.message, 'erro')) }, ic('camera', 18)),
+        h('button', { class: 'icbtn' + (ev.compartilhando ? ' ativo-tela' : ''), title: ev.compartilhando ? 'Parar de compartilhar' : 'Compartilhar tela (1080p/60fps)',
+          onclick: () => Voz.alternarTela().catch((err) => toast(err.message, 'erro')) }, ic('tela', 18)),
         h('button', { class: 'icbtn', title: 'Soundboard: tocar som pra call', onclick: (e) => abrirMenu(e.currentTarget, [h('div', { class: 'sec-menu' }, 'Soundboard (todo mundo da call ouve)'),
-          h('div', { class: 'soundboard' }, Object.entries(SONS_BOARD).map(([k, [ic, rot]]) => h('button', { type: 'button', onclick: async () => { const r = await pedir('voz:som', { som: k }); if (r.erro) toast(r.erro, 'erro'); } }, h('span', {}, ic), rot)))]) }, '🎵'),
-        h('button', { class: 'icbtn sair-voz', title: 'Sair da voz', onclick: () => { Voz.sair(); } }, '📞')));
+          h('div', { class: 'soundboard' }, Object.entries(SONS_BOARD).map(([k, [ic, rot]]) => h('button', { type: 'button', onclick: async () => { const r = await pedir('voz:som', { som: k }); if (r.erro) toast(r.erro, 'erro'); } }, h('span', {}, ic), rot)))]) }, ic('som', 18))));
     }
     // rodapé do usuário
     const eu = h('button', { class: 'eu', title: 'Status e perfil', onclick: (e) => menuPerfil(e.currentTarget) },
       avatar(E.eu, '', true), h('span', { class: 'txt' }, h('b', {}, E.eu.nome), h('small', {}, rotStatus(E.eu))));
     eu.querySelector('.av').style.cssText += ';width:34px;height:34px';
-    partes.push(h('div', { class: 'side-pe' }, eu,
-      h('button', { class: 'icbtn' + (ev.mudo ? ' desligado' : ''), title: ev.mudo ? 'Ativar microfone' : 'Silenciar microfone', onclick: () => Voz.alternarMudo() }, '🎤'),
-      h('button', { class: 'icbtn' + (ev.surdo ? ' desligado' : ''), title: ev.surdo ? 'Ativar áudio' : 'Desativar áudio', onclick: () => Voz.alternarSurdo() }, '🎧'),
-      h('button', { class: 'icbtn', title: 'Configurações', onclick: () => configUsuario() }, '⚙')));
+    partes.push(h('div', { class: 'painel-pe' }, vozPainel, h('div', { class: 'side-pe' }, eu,
+      h('button', { class: 'icbtn' + (ev.mudo ? ' desligado' : ''), title: ev.mudo ? 'Ativar microfone' : 'Silenciar microfone', 'aria-pressed': String(!!ev.mudo), onclick: () => Voz.alternarMudo() }, ic(ev.mudo ? 'micOff' : 'mic')),
+      h('button', { class: 'icbtn' + (ev.surdo ? ' desligado' : ''), title: ev.surdo ? 'Ativar áudio' : 'Desativar áudio', 'aria-pressed': String(!!ev.surdo), onclick: () => Voz.alternarSurdo() }, ic(ev.surdo ? 'foneOff' : 'fone')),
+      h('button', { class: 'icbtn', title: 'Configurações', onclick: () => configUsuario() }, ic('engrenagem')))));
     side.replaceChildren(...partes);
   }
 
@@ -526,21 +554,21 @@
     }
     const titulo = c.dm ? (c.dm.grupo ? '👥 ' : '@ ') + c.dm.outro.nome : c.paiCanal ? '🧵 ' + c.nome : (c.tipo === 'assistir' ? '🍿 ' : '# ') + c.nome;
     const desc = c.dm ? '@' + c.dm.outro.usuario + (c.dm.outro.statusTexto ? ' · ' + c.dm.outro.statusTexto : '') : (servidorAtual() || {}).nome || '';
-    const busca = h('input', { placeholder: 'Buscar', 'aria-label': 'Buscar mensagens' });
+    const busca = h('input', { placeholder: 'Buscar ' + (c.dm ? c.dm.outro.nome : (servidorAtual() || {}).nome || ''), 'aria-label': 'Buscar mensagens' });
     busca.oninput = () => { E.busca = busca.value.trim().toLowerCase(); renderLista({ fim: true }); };
     const topo = h('header', { class: 'topo' },
-      h('button', { class: 'icbtn voltar', title: 'Voltar', onclick: () => $('#app').classList.remove('chat') }, '←'),
+      h('button', { class: 'icbtn voltar', title: 'Voltar', onclick: () => $('#app').classList.remove('chat') }, ic('voltar')),
       h('h1', {}, titulo), h('span', { class: 'desc' }, desc),
       h('button', { class: 'pill ia', onclick: verResumo }, '✦', h('span', { class: 'rotulo' }, ' O que eu perdi?')),
       // Mesma ordem do Discord: notificações, fixadas, membros, busca.
-      h('button', { class: 'pill', title: silenciado(c.id) ? 'Reativar avisos deste canal' : 'Silenciar este canal', onclick: (e) => {
-        const on = alternarLocal('kali-silenciados', c.id); e.currentTarget.textContent = on ? '🔕' : '🔔';
+      h('button', { class: 'ic-topo', title: silenciado(c.id) ? 'Reativar avisos deste canal' : 'Silenciar este canal', onclick: (e) => {
+        const on = alternarLocal('kali-silenciados', c.id); e.currentTarget.replaceChildren(ic(on ? 'sinoOff' : 'sino'));
         toast(on ? '🔕 Canal silenciado: sem som nem aviso' : '🔔 Avisos do canal reativados', 'ok');
-      } }, silenciado(c.id) ? '🔕' : '🔔'),
-      h('button', { class: 'pill', title: 'Mensagens fixadas', onclick: () => modalFixadas(c.id) }, '📌'),
-      c.dm && c.dm.grupo ? h('button', { class: 'pill', title: 'Sair do grupo', onclick: () => sairDoGrupo(c) }, '🚪') : null,
-      h('button', { class: 'pill', title: 'Membros', onclick: alternarMembros }, '👥'),
-      h('label', { class: 'pill busca' }, '⌕ ', busca));
+      } }, ic(silenciado(c.id) ? 'sinoOff' : 'sino')),
+      h('button', { class: 'ic-topo', title: 'Mensagens fixadas', onclick: () => modalFixadas(c.id) }, ic('pino')),
+      c.dm && c.dm.grupo ? h('button', { class: 'ic-topo', title: 'Sair do grupo', onclick: () => sairDoGrupo(c) }, ic('porta')) : null,
+      h('button', { class: 'ic-topo', title: 'Membros', onclick: alternarMembros }, ic('pessoas')),
+      h('label', { class: 'pill busca' }, busca, ic('lupa', 16)));
     const lista = h('div', { class: 'col', id: 'lista' });
     const msgs = h('section', { class: 'msgs', id: 'msgs', role: 'log', 'aria-live': 'polite', 'aria-relevant': 'additions', 'aria-label': 'Mensagens' }, lista);
     msgs.addEventListener('scroll', () => { if (msgs.scrollTop < 80) carregarAntigas(); }, { passive: true });
@@ -555,12 +583,12 @@
       if (ta.value && Date.now() - ultimoDigitando > 2000) { ultimoDigitando = Date.now(); sock && sock.emit('digitando', { canalId: c.id }); }
     };
     ta.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); enviar(c.id, ta); } };
-    const emoji = h('button', { class: 'icbtn', type: 'button', title: 'Emoji' }, '☺');
+    const emoji = h('button', { class: 'icbtn', type: 'button', title: 'Emoji' }, ic('sorriso'));
     emoji.onclick = () => abrirMenu(emoji, [h('div', { class: 'emojis' }, EMOJIS.map((em) => item(em, () => { ta.value += em; ta.oninput(); ta.focus(); }))),
       E.emojis.size ? [h('div', { class: 'sec-menu' }, 'Emojis dos seus servidores'), h('div', { class: 'emojis emojis-srv' },
         [...E.emojis].map(([nome, url]) => item(h('img', { class: 'emoji-srv', src: url, alt: ':' + nome + ':', title: ':' + nome + ':' }), () => { ta.value += `:${nome}: `; ta.oninput(); ta.focus(); })))] : null]);
     const info = h('span', { class: 'gravando', hidden: true });
-    const bGrav = h('button', { class: 'icbtn', type: 'button', title: 'Mensagem de voz (até 60s, com transcrição)' }, '🎙');
+    const bGrav = h('button', { class: 'icbtn', type: 'button', title: 'Mensagem de voz (até 60s, com transcrição)' }, ic('mic'));
     bGrav.onclick = () => alternarGravacao(c.id, bGrav, info);
     const curto = () => TEMPOS.find((t) => t[0] === E.temp)[2];
     const bTemp = h('button', { class: 'icbtn' + (E.temp ? ' temp-on' : ''), type: 'button', title: 'Mensagem temporária' }, curto());
@@ -569,7 +597,7 @@
     const arq = h('input', { type: 'file', hidden: true });
     arq.onchange = () => { if (arq.files[0]) enviarArquivo(c.id, arq.files[0], ta); arq.value = ''; };
     // Igual ao Discord: um ＋ à esquerda com arquivo e extras.
-    const bAnexo = h('button', { class: 'icbtn mais-caixa' + (E.temp ? ' temp-on' : ''), type: 'button', title: 'Enviar arquivo e mais' }, '＋');
+    const bAnexo = h('button', { class: 'icbtn mais-caixa' + (E.temp ? ' temp-on' : ''), type: 'button', title: 'Enviar arquivo e mais' }, ic('mais', 22));
     bAnexo.onclick = () => abrirMenu(bAnexo, [
       item('Enviar foto, GIF ou arquivo', () => arq.click()),
       item('Mensagem temporária: ' + TEMPOS.find((t) => t[0] === E.temp)[1], () => abrirMenu(bAnexo, [h('div', { class: 'sec-menu' }, 'A mensagem some depois de'),
@@ -580,7 +608,7 @@
     const compositor = h('div', { class: 'compositor' }, h('div', { class: 'col' },
       h('div', { class: 'digitando', id: 'digitando' }),
       h('div', { class: 'respondendo', id: 'respondendo', hidden: true }),
-      h('div', { class: 'caixa' }, bAnexo, arq, ta, info, emoji, bGrav, h('button', { class: 'enviar', title: 'Enviar', onclick: () => enviar(c.id, ta) }, '↑')),
+      h('div', { class: 'caixa' }, bAnexo, arq, ta, info, emoji, bGrav, h('button', { class: 'enviar', title: 'Enviar', onclick: () => enviar(c.id, ta) }, ic('enviar', 17))),
       h('div', { class: 'dica' }, '@usuario menciona · /time 5 Valorant · /pomodoro 25 · /confete /fogo /explosao')));
     main.replaceChildren(topo, c.tipo === 'assistir' ? h('section', { class: 'palco', id: 'palco' }) : '', msgs, compositor);
     requestAnimationFrame(ajustar);
@@ -1104,7 +1132,7 @@
     gravacao = {
       parar(mandar) {
         clearInterval(relogio); gravacao = null;
-        info.hidden = true; botao.textContent = '🎙'; botao.classList.remove('gravando-on');
+        info.hidden = true; botao.replaceChildren(ic('mic')); botao.classList.remove('gravando-on');
         const dur = Math.min(60, Math.max(0.5, (Date.now() - inicio) / 1000));
         rec.onstop = async () => {
           stream.getTracks().forEach((t) => t.stop());
@@ -1596,7 +1624,7 @@
     const abas = [['online', 'Online'], ['todos', 'Todos'], ['pendentes', 'Pendentes' + (A.recebidos.length ? ` (${A.recebidos.length})` : '')], ['bloqueados', 'Bloqueados']];
     const trocar = (a) => { E.abaAmigos = a; renderAmigos(main); };
     const topo = h('header', { class: 'topo topo-amigos' },
-      h('button', { class: 'icbtn voltar', title: 'Voltar', onclick: () => $('#app').classList.remove('chat') }, '←'),
+      h('button', { class: 'icbtn voltar', title: 'Voltar', onclick: () => $('#app').classList.remove('chat') }, ic('voltar')),
       h('h1', {}, '👋 Amigos'),
       h('div', { class: 'abas-amigos' }, abas.map(([k, r]) => h('button', { class: aba === k ? 'ativa' : '', onclick: () => trocar(k) }, r)),
         h('button', { class: 'add' + (aba === 'adicionar' ? ' ativa' : ''), onclick: () => trocar('adicionar') }, 'Adicionar amigo')));

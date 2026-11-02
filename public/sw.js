@@ -1,6 +1,6 @@
 // KALI — service worker: guarda só a "casca" do app (html, css, js, imagens) e atualiza em segundo plano.
 // Nunca guarda /api nem /socket.io. Troque VERSAO pra forçar todo mundo a baixar de novo.
-const VERSAO = 'kali-v1';
+const VERSAO = 'kali-v2';
 const CASCA = ['/index.html', '/entrar.html', '/css/app.css', '/js/app.js', '/js/voz.js', '/img/icone.png', '/img/logo-dragao.png', '/manifest.webmanifest'];
 
 self.addEventListener('install', (e) => {
@@ -21,10 +21,8 @@ self.addEventListener('fetch', (e) => {
     e.respondWith(fetch(req).catch(() => caches.match(url.pathname === '/entrar.html' ? '/entrar.html' : '/index.html')));
     return;
   }
-  // Resto da casca: responde do cache na hora e atualiza por trás (stale-while-revalidate).
-  e.respondWith(caches.open(VERSAO).then(async (c) => {
-    const salvo = await c.match(req);
-    const rede = fetch(req).then((r) => { if (r.ok && r.type === 'basic') c.put(req, r.clone()); return r; }).catch(() => salvo);
-    return salvo || rede;
-  }));
+  // Resto da casca: rede primeiro (atualização chega na hora) e guarda cópia; offline usa a cópia.
+  e.respondWith(caches.open(VERSAO).then((c) => fetch(req)
+    .then((r) => { if (r.ok && r.type === 'basic') c.put(req, r.clone()); return r; })
+    .catch(() => c.match(req))));
 });

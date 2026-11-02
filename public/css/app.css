@@ -800,3 +800,56 @@ body.pagina-entrar{animation:none}
   *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}
   .esqueleto{opacity:1}
 }
+
+/* ==================== layout v3: controles no lugar de sempre, com a cara da KALI ==================== */
+.ico{display:block;flex:none}
+/* topo do canal: ícones limpos à direita + busca */
+.topo{gap:6px}
+.topo h1{margin-right:4px}
+.ic-topo{width:36px;height:36px;border-radius:10px;display:grid;place-items:center;color:var(--suave);flex:none;transition:color var(--dur) var(--ease),background var(--dur) var(--ease),transform var(--dur) var(--ease)}
+.ic-topo:hover{color:var(--texto);background:var(--hover)}
+.ic-topo:active{transform:scale(.92)}
+.topo .pill.ia{margin-left:auto}
+.busca{width:220px;height:34px;border-radius:10px;background:var(--chip);gap:8px;padding:0 10px 0 12px;color:var(--fraco);transition:width .25s var(--ease),border-color var(--dur),box-shadow var(--dur)}
+.busca:focus-within{width:280px}
+/* lateral: linha do canal com atalhos que aparecem no hover */
+.canal .ic{display:grid;place-items:center;width:20px;opacity:.75}
+.canal.ativo .ic,.canal:hover .ic{opacity:1}
+.canal-extras{position:absolute;right:6px;display:flex;gap:2px;opacity:0;transition:opacity var(--dur) var(--ease)}
+.canal-linha:hover .canal-extras,.canal-linha:focus-within .canal-extras,.canal-linha:has(.canal.ativo) .canal-extras{opacity:1}
+.canal-linha:hover .canal .n,.canal-linha:has(.canal.ativo) .canal .n{visibility:hidden}
+.canal-extras button{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;color:var(--fraco)}
+.canal-extras button:hover{color:var(--texto);background:var(--hover)}
+.canal-extras button.perigo:hover{color:var(--ocup)}
+.rot button{display:grid;place-items:center}
+.topo-busca{padding:0 10px}
+.achar-conversa{width:100%;height:32px;border-radius:10px;background:var(--chip);border:1px solid var(--chip-borda);color:var(--suave);font-family:"Segoe UI",system-ui,sans-serif;font-size:13px;letter-spacing:0;text-transform:none;font-weight:500;transition:border-color var(--dur),color var(--dur)}
+.achar-conversa:hover{border-color:var(--roxo);color:var(--texto)}
+/* rodapé: cartão flutuante com voz conectada + você */
+.painel-pe{margin:8px;border:1px solid var(--borda);border-radius:18px;background:var(--card);box-shadow:var(--sombra);flex:none;overflow:hidden}
+.painel-pe .side-pe{border-top:0;padding:8px 8px max(8px,env(safe-area-inset-bottom)) 10px;gap:4px}
+.painel-pe .side-pe .icbtn{border:0;width:34px;height:34px}
+.icbtn.desligado::after{display:none}
+.icbtn.desligado{background:rgba(255,107,136,.12)}
+.painel-voz{padding:10px 10px 10px;border-bottom:1px solid var(--borda-fina);animation:soEsmaece .3s var(--ease)}
+.pv-topo{display:flex;align-items:center;gap:10px}
+.pv-sinal{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;color:var(--ok);background:rgba(62,230,168,.1);flex:none}
+.pv-topo .info{flex:1;min-width:0}
+.pv-topo b{display:block;color:var(--ok);font-size:14px;font-weight:600}
+.pv-topo small{display:block;color:var(--fraco);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pv-topo .sair-voz{border:0;color:var(--suave)}
+.pv-topo .sair-voz:hover{color:#fff;background:var(--ocup)}
+.pv-acoes{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:10px}
+.pv-acoes .icbtn{width:auto;height:36px;border-radius:10px;background:var(--chip);border:1px solid var(--chip-borda)}
+.pv-acoes .icbtn:hover{background:var(--hover);color:var(--texto);transform:translateY(-1px)}
+/* caixa de mensagem numa linha só: + à esquerda, ações à direita */
+.caixa{align-items:center;border-radius:16px;padding:6px 6px 6px 8px}
+.caixa .icbtn{color:var(--suave);width:36px;height:36px}
+.caixa .icbtn:hover{color:var(--texto)}
+.caixa .mais-caixa{border-radius:10px!important;background:var(--chip)}
+.enviar .ico{transform:translateX(-1px)}
+@media (max-width:760px){
+  .busca{width:auto}
+  .ic-topo{width:34px;height:34px}
+  .painel-pe{margin:6px}
+}
