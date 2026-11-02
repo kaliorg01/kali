@@ -2352,7 +2352,7 @@
 
   // ---------- voz ----------
   async function entrarVoz(c) {
-    try { await Voz.entrar(c.id, !!c.espacial); Voz.posicoes(E.voz.get(c.id), E.eu.id); renderMapa(); abrirCall(); } catch (err) { toast(err.message, 'erro'); }
+    try { await Voz.entrar(c.id, !!c.espacial); try { sessionStorage.setItem('kali-voz', String(c.id)); } catch (e) {} Voz.posicoes(E.voz.get(c.id), E.eu.id); renderMapa(); abrirCall(); } catch (err) { toast(err.message, 'erro'); }
   }
 
   // ---------- tela da call (estilo Discord): grade de quem está na voz, tela/câmera ao vivo, foco e barra de controles ----------
@@ -2899,7 +2899,16 @@
   function conectar() {
     sock = io({ transports: ['websocket', 'polling'] });
     let jaConectou = false;
-    Voz.init(sock, () => { renderSide(); renderMapa(); renderTelas(); });
+    Voz.init(sock, () => {
+      try { if (Voz.estado.canalId) sessionStorage.setItem('kali-voz', String(Voz.estado.canalId)); } catch (e) {}
+      renderSide(); renderMapa(); renderTelas();
+    });
+    sock.on('connect', () => { // F5 ou servidor reiniciado: volta sozinho pra call
+      let id = null;
+      try { id = Number(sessionStorage.getItem('kali-voz')) || null; } catch (e) {}
+      const c = id && acharCanal(id);
+      if (c && c.tipo === 'voz' && !Voz.estado.canalId) setTimeout(() => entrarVoz(c), 400);
+    });
     sock.on('connect', async () => {
       $('#conexao').hidden = true;
       if (jaConectou) {

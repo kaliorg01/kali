@@ -21,7 +21,35 @@
   try { ptt = localStorage.getItem('kali-ptt') === '1'; } catch (e) {}
   const aplicarTrack = () => { if (local) local.getAudioTracks().forEach((t) => { t.enabled = !mudo && (!ptt || apertando); }); };
   // Áudio HD grátis: Opus estéreo com bitrate alto + correção de perda de pacote.
-  const hd = (d) => ({ type: d.type, sdp: d.sdp.replace(/a=fmtp:111 ([^\r\n]*)/, 'a=fmtp:111 $1;stereo=1;sprop-stereo=1;maxaveragebitrate=256000;useinbandfec=1') });
+  function videoAlto(sdp) {
+    const nl = sdp.includes('\r\n') ? '\r\n' : '\n';
+    const L = sdp.split(nl), out = [];
+    let emVideo = false;
+    const pts = new Set();
+    for (const l of L) { const m = /^a=rtpmap:(\d+) (VP8|VP9|H264|AV1)\//i.exec(l); if (m) pts.add(m[1]); }
+    const BR = 'x-google-start-bitrate=4500;x-google-min-bitrate=2500;x-google-max-bitrate=10000';
+    const comFmtp = new Set();
+    for (const l of L) { const m = /^a=fmtp:(\d+) /.exec(l); if (m && pts.has(m[1])) comFmtp.add(m[1]); }
+    for (const l of L) {
+      if (l.startsWith('m=')) emVideo = l.startsWith('m=video');
+      const f = /^a=fmtp:(\d+) (.*)$/.exec(l);
+      if (f && pts.has(f[1]) && !f[2].includes('x-google-start-bitrate')) { out.push(l + ';' + BR); continue; }
+      out.push(l);
+      const rm = /^a=rtpmap:(\d+) /.exec(l);
+      if (rm && pts.has(rm[1]) && !comFmtp.has(rm[1])) out.push(`a=fmtp:${rm[1]} ${BR}`);
+      if (emVideo && l.startsWith('c=') ) out.push('b=AS:10000');
+    }
+    return out.join(nl);
+  }
+  const hd = (d) => ({ type: d.type, sdp: videoAlto(d.sdp.replace(/a=fmtp:111 ([^\r\n]*)/, 'a=fmtp:111 $1;stereo=1;sprop-stereo=1;maxaveragebitrate=256000;useinbandfec=1').replace(/\r?\nb=AS:\d+/g, '')) });
+  // Mesmo ajuste de qualidade de vídeo pra qualquer envio de tela/câmera.
+  function qualidadeVideo(sender) {
+    if (!sender) return;
+    const prm = sender.getParameters();
+    if (tipoVideo === 'tela') prm.degradationPreference = 'maintain-resolution';
+    prm.encodings = [{ ...(prm.encodings && prm.encodings[0]), maxBitrate: tipoVideo === 'tela' ? 10_000_000 : 3_000_000, maxFramerate: tipoVideo === 'tela' ? 60 : 30, scaleResolutionDownBy: 1, priority: 'high', networkPriority: 'high' }];
+    sender.setParameters(prm).catch(() => {});
+  }
 
   const pedir = (ev, dados) => new Promise((res) =>
     sock.timeout(8000).emit(ev, dados, (err, r) => res(err ? { erro: 'Sem resposta do servidor.' } : r || {})));
@@ -89,7 +117,7 @@
     if (iniciar) {
       pc.createOffer()
         .then((o) => pc.setLocalDescription(hd(o)))
-        .then(() => sock.emit('voz:sinal', { para: uid, dados: { sdp: pc.localDescription } }))
+        .then(() => { sock.emit('voz:sinal', { para: uid, dados: { sdp: pc.localDescription } }); qualidadeVideo(par.telaSender); })
         .catch(() => {});
     }
     return par;
@@ -215,7 +243,7 @@
     async alternarTela() {
       if (tela) return pararTela();
       if (!canalId) throw new Error('Entra numa call pra compartilhar a tela.');
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) throw new Error('Seu navegador não compartilha tela.');
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) throw new Error('O celular não deixa compartilhar a tela pelo navegador (limite do Android/iPhone). Pra transmitir, usa o PC.');
       try {
         // audio: som do PC/aba junto (o navegador mostra a caixinha "Compartilhar áudio")
         tela = await navigator.mediaDevices.getDisplayMedia({ video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 60, max: 60 } },
@@ -287,6 +315,7 @@
       aoMudar();
     },
     sair() {
+      try { sessionStorage.removeItem('kali-voz'); } catch (e) {} // saiu de propósito: F5 não volta pra call
       if (!canalId) return;
       sock.emit('voz:sair', {});
       limpar();
