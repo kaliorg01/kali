@@ -434,7 +434,13 @@
     if (c.tipo !== 'texto') {
       const membros = E.voz.get(c.id) || [];
       if (membros.length) frag.push(h('div', { class: 'voz-users' }, membros.map((m) => h('span', { class: 'voz-user' },
-        Object.assign(h('i', { class: 'mini' + (m.falando ? ' falando' : '') }, inicial(m.nome)), { style: `background:${CORES.includes(m.cor) ? m.cor : '#6b7280'}` }),
+        (() => {
+          // usa a foto de perfil se a pessoa tiver (igual ao resto do app)
+          const u = m.usuarioId === E.eu.id ? E.eu : [...E.membros.values()].flat().find((x) => x.id === m.usuarioId);
+          const i = h('i', { class: 'mini' + (m.falando ? ' falando' : '') }, u && u.avatar ? '' : inicial(m.nome));
+          i.style.background = u && u.avatar ? `center/cover no-repeat url("${u.avatar}")` : (CORES.includes(m.cor) ? m.cor : '#6b7280');
+          return i;
+        })(),
         h('span', { class: 'nm' }, m.nome),
         window.Voz && c.id === Voz.estado.canalId && streamDe(m.usuarioId) ? h('span', { class: 'ao-vivo', title: 'Transmitindo — clica pra assistir', onclick: () => { abrirCall(); E.focoTela = m.usuarioId; atualizarCall(); } }, 'AO VIVO') : null,
         h('span', { class: 'icones' }, m.surdo ? '🔇' : m.mudo ? '🎙̸' : '')))));
