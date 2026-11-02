@@ -34,6 +34,8 @@
     desligar: 'M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7 2 2 0 0 1 1.72 2v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.42 19.42 0 0 1-3.33-2.67m-2.67-3.34a19.79 19.79 0 0 1-3.07-8.63A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91M23 1 1 23',
     sinal: 'M2 20h.01M7 20v-4M12 20v-8M17 20V8M22 4v16', grade: 'M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z', convidar: 'M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M8.5 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M20 8v6M23 11h-6',
     balao: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z', check: 'M20 6 9 17l-5-5', loja: 'M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4zM3 6h18M16 10a4 4 0 0 1-8 0',
+    megafone: 'M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1zM15 8a5 5 0 0 1 0 8M18 5a9 9 0 0 1 0 14', relogio: 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20M12 6v6l4 2',
+    cc: 'M3 5h18v14H3zM10 10.5a2 2 0 1 0 0 3M17 10.5a2 2 0 1 0 0 3', mao: 'M18 11V6a2 2 0 0 0-4 0v5M14 10V4a2 2 0 0 0-4 0v6M10 10.5V6a2 2 0 0 0-4 0v8a8 8 0 0 0 16 0v-3a2 2 0 0 0-4 0',
     porta: 'M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9', calendario: 'M3 4h18v18H3zM16 2v4M8 2v4M3 10h18',
   };
   function ic(nome, tam = 20) {
@@ -288,7 +290,7 @@
     if (regexMencao().test(m.texto)) return true;
     const c = acharCanal(m.canalId);
     if (!c || !c.servidorId) return false;
-    if (/@(todos|aqui)(?![a-z0-9_.])/i.test(m.texto) && nivelDe(c.servidorId, m.autor.id) >= 2) return true;
+    if (/@(todos|aqui)(?![a-z0-9_.])/i.test(m.texto) && (nivelDe(c.servidorId, m.autor.id) >= 2 || (E.cargos.get(c.servidorId) || []).some((cg) => (cg.perm & 4) && cg.membros.includes(m.autor.id)))) return true;
     const t = m.texto.toLowerCase();
     return (E.cargos.get(c.servidorId) || []).some((cg) => cg.membros.includes(E.eu.id) && t.includes('@' + cg.nome.toLowerCase()));
   }
@@ -430,7 +432,7 @@
   }
 
   function linhaCanal(c, s) {
-    const icn = c.tipo === 'voz' ? (c.espacial ? '🌌' : ic('voz', 18)) : c.tipo === 'assistir' ? ic('tv', 18) : c.ticket ? '🎫' : c.comSenha ? ic('cadeado', 18) : ic('hash', 18);
+    const icn = c.tipo === 'voz' ? (c.espacial ? '🌌' : c.palco ? ic('mic', 18) : ic('voz', 18)) : c.tipo === 'assistir' ? ic('tv', 18) : c.ticket ? '🎫' : c.comSenha ? ic('cadeado', 18) : c.soStaff ? ic('megafone', 18) : c.forum ? ic('balao', 18) : ic('hash', 18);
     const n = E.naoLidos[c.id] || 0, men = E.mencoes[c.id] || 0;
     const b = h('button', { class: 'canal' + (c.id === E.canalId ? ' ativo' : '') + (n ? ' nao-lido' : ''), onclick: () => abrirCanal(c.id) },
       h('span', { class: 'ic' }, icn), h('span', { class: 'nm' }, c.nome),
@@ -649,6 +651,9 @@
 
     const ta = h('textarea', { rows: 1, maxlength: 2000, placeholder: (c.dm ? 'Conversar com @' + c.dm.outro.usuario : 'Conversar em #' + c.nome) + (c.modoLento ? ` · 🐢 modo lento: ${RLENTO.find((x) => x[0] === c.modoLento)?.[1] || c.modoLento + 's'}` : '') });
     ta.value = E.rascunho.get(c.id) || '';
+    const travado = c.soStaff && c.servidorId && !souStaffEm(c.servidorId);
+    if (travado) { ta.disabled = true; ta.placeholder = '📢 Canal de anúncios: só a staff posta aqui'; }
+    else if (c.forum) ta.placeholder = '💬 Novo post: escreve o título e o texto (cada post ganha uma discussão)';
     let ultimoDigitando = 0;
     const ajustar = () => { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 180) + 'px'; };
     ta.oninput = () => {
@@ -659,6 +664,8 @@
     ta.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); enviar(c.id, ta); } };
     const emoji = h('button', { class: 'icbtn', type: 'button', title: 'Emoji' }, ic('sorriso'));
     const bGif = h('button', { class: 'icbtn bt-gif', type: 'button', title: 'GIFs favoritos' }, 'GIF');
+    const bEnviar = h('button', { class: 'enviar', title: 'Enviar (botão direito ou segurar: agendar)', onclick: () => enviar(c.id, ta) }, ic('enviar', 17));
+    aoSegurar(bEnviar, (x, y) => menuAgendar(c, ta, x, y));
     bGif.onclick = () => menuGifs(bGif, c.id, ta);
     emoji.onclick = () => abrirMenu(emoji, [h('div', { class: 'emojis' }, EMOJIS.map((em) => item(em, () => { ta.value += em; ta.oninput(); ta.focus(); }))),
       E.emojis.size ? [h('div', { class: 'sec-menu' }, 'Emojis dos seus servidores'), h('div', { class: 'emojis emojis-srv' },
@@ -685,7 +692,7 @@
     const compositor = h('div', { class: 'compositor' }, h('div', { class: 'col' },
       h('div', { class: 'digitando', id: 'digitando' }),
       h('div', { class: 'respondendo', id: 'respondendo', hidden: true }),
-      h('div', { class: 'caixa' }, bAnexo, arq, ta, info, bGif, emoji, bGrav, h('button', { class: 'enviar', title: 'Enviar', onclick: () => enviar(c.id, ta) }, ic('enviar', 17))),
+      h('div', { class: 'caixa' }, bAnexo, arq, ta, info, bGif, emoji, bGrav, bEnviar),
       h('div', { class: 'dica' }, '@usuario menciona · /time 5 Valorant · /pomodoro 25 · /confete /fogo /explosao')));
     main.replaceChildren(topo, c.tipo === 'assistir' ? h('section', { class: 'palco', id: 'palco' }) : '', msgs, compositor);
     // Arrastar e soltar arquivos em qualquer lugar do chat.
@@ -835,7 +842,8 @@
     else div.append(avatar(m.autor));
     const corpo = h('div', { class: 'corpo' });
     if (!agrupada) {
-      if (m.sistema || !m.autor) corpo.append(h('b', { class: 'nome-ia' }, 'KALI'), h('span', { class: 'tag' }, 'IA'));
+      if (m.webhook) corpo.append(h('b', { class: 'autor' }, m.webhook), h('span', { class: 'tag' }, 'BOT'));
+      else if (m.sistema || !m.autor) corpo.append(h('b', { class: 'nome-ia' }, 'KALI'), h('span', { class: 'tag' }, 'IA'));
       else {
         const dono = s && s.donoId === m.autor.id, cor = s && !dono ? corCargo(s.id, m.autor.id) : null;
         corpo.append(h('b', { class: 'autor' + (dono && !m.autor.corNome ? ' nome-dono' : ''), style: estiloNome(m.autor.corNome) || (cor ? `color:${cor}` : null) }, m.autor.nome));
@@ -922,6 +930,10 @@
       if (link) corpo.append(cartaoPrevia(link));
     }
     if (m.topico) corpo.append(h('button', { class: 'selo-topico', onclick: () => abrirCanal(m.topico.id) }, '🧵 ', h('b', {}, m.topico.nome), ' · abrir tópico'));
+    else if (c && c.forum && m.texto && !m.sistema) corpo.append(h('button', { class: 'selo-topico', onclick: async () => {
+      try { const t = await api('POST', `/mensagens/${m.id}/topico`, { nome: corta(m.texto.split('\n')[0], 40) }); aoCanalNovo(t); abrirCanal(t.id); } catch (err) { toast(err.message, 'erro'); }
+    } }, '💬 Abrir discussão'));
+    if (c && c.forum && !m.sistema) div.classList.add('post-forum');
     if (m.anexo) {
       const a = m.anexo;
       if (a.tipo && a.tipo.startsWith('image/')) {
@@ -1745,10 +1757,68 @@
     const cat = campoCategoria(s, c.categoria);
     const lento = h('select', {}, RLENTO.map(([v, r]) => h('option', { value: v }, r)));
     lento.value = String(c.modoLento || 0);
-    abrirModal({ titulo: 'Editar canal', sub: (c.tipo === 'texto' ? '# ' : '') + c.nome, corpo: [cat.campo, campo('🐢 Modo lento (cada pessoa espera entre mensagens)', lento)], botao: 'Salvar',
+    const marca = (rot, on) => { const i = h('input', { type: 'checkbox' }); i.checked = !!on; return [i, h('label', { class: 'check-cfg' }, i, ' ', rot)]; };
+    const [cAnun, lAnun] = marca('📢 Canal de anúncios (só a staff posta)', c.soStaff);
+    const [cForum, lForum] = marca('💬 Fórum (cada mensagem vira um post com discussão própria)', c.forum);
+    const [cPalco, lPalco] = marca('🎤 Palco (só fala quem a staff der a vez; plateia levanta a mão)', c.palco);
+    const extras = c.tipo === 'voz' ? [lPalco] : c.tipo === 'texto' ? [lAnun, lForum] : [];
+    abrirModal({ titulo: 'Editar canal', sub: (c.tipo === 'texto' ? '# ' : '') + c.nome, corpo: [cat.campo, campo('🐢 Modo lento (cada pessoa espera entre mensagens)', lento), ...extras,
+      c.tipo === 'texto' ? h('button', { type: 'button', class: 'bt', style: 'margin:6px 0 10px', onclick: () => modalWebhooks(c) }, '🤖 Webhooks (bots e alertas)') : null], botao: 'Salvar',
       acao: async () => {
-        await api('PATCH', `/canais/${c.id}/config`, { categoria: cat.input.value.trim(), modoLento: Number(lento.value) });
+        await api('PATCH', `/canais/${c.id}/config`, { categoria: cat.input.value.trim(), modoLento: Number(lento.value), soStaff: cAnun.checked, forum: cForum.checked, palco: cPalco.checked });
+        Object.assign(c, { soStaff: c.tipo === 'texto' && cAnun.checked, forum: c.tipo === 'texto' && cForum.checked, palco: c.tipo === 'voz' && cPalco.checked });
+        renderSide(); if (c.id === E.canalId) renderMain();
         toast('Canal atualizado ✓', 'ok');
+      } });
+  }
+  // ---------- agendar mensagem ----------
+  async function agendar(c, ta, quando) {
+    const texto = ta.value.trim();
+    if (!texto) return toast('Escreve a mensagem primeiro.', 'erro');
+    const r = await pedir('msg:agendar', { canalId: c.id, texto, enviarEm: quando });
+    if (r.erro) return toast(r.erro, 'erro');
+    ta.value = ''; ta.oninput && ta.oninput();
+    toast('⏰ Agendada pra ' + new Date(quando).toLocaleString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }), 'ok');
+  }
+  function menuAgendar(c, ta, x, y) {
+    const d = new Date(), as = (hh) => { const t = new Date(); t.setHours(hh, 0, 0, 0); if (t <= d) t.setDate(t.getDate() + 1); return t.getTime(); };
+    const amanha9 = new Date(); amanha9.setDate(amanha9.getDate() + 1); amanha9.setHours(9, 0, 0, 0);
+    abrirMenu(pontoEm(x, y), [h('div', { class: 'sec-menu' }, '⏰ Enviar depois'),
+      item('Daqui 1 hora', () => agendar(c, ta, Date.now() + 3600e3)),
+      item('Daqui 3 horas', () => agendar(c, ta, Date.now() + 3 * 3600e3)),
+      item('Às 20h', () => agendar(c, ta, as(20))),
+      item('Amanhã às 9h', () => agendar(c, ta, amanha9.getTime())),
+      item('Escolher dia e hora…', () => {
+        const q = h('input', { type: 'datetime-local' });
+        abrirModal({ titulo: 'Agendar mensagem', corpo: [campo('Quando', q)], botao: 'Agendar', acao: async () => { const t = new Date(q.value).getTime(); if (!t) throw new Error('Escolhe a data e a hora.'); await agendar(c, ta, t); } });
+      }),
+      h('hr'), item('Minhas agendadas', modalAgendadas)]);
+  }
+  async function modalAgendadas() {
+    let l = [];
+    try { l = await api('GET', '/eu/agendadas'); } catch (err) { return toast(err.message, 'erro'); }
+    abrirModal({ titulo: '⏰ Mensagens agendadas', sub: l.length ? 'Saem sozinhas no horário.' : 'Nenhuma agendada. Botão direito (ou segurar) no enviar pra agendar.',
+      corpo: [h('div', { class: 'lista-busca' }, l.map((a) => h('div', { class: 'res-busca' },
+        h('div', { class: 'rb-topo' }, h('b', {}, '#' + a.canal + (a.servidor ? ' · ' + a.servidor : '')), h('small', {}, new Date(a.enviarEm).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }))),
+        h('div', { class: 'rb-txt' }, corta(a.texto, 200)),
+        h('div', {}, h('button', { class: 'bt perigo', type: 'button', onclick: async (e) => { const r = await pedir('msg:desagendar', { id: a.id }); if (r.erro) return toast(r.erro, 'erro'); e.currentTarget.closest('.res-busca').remove(); toast('Agendada cancelada', 'ok'); } }, 'Cancelar')))))] });
+  }
+  async function modalWebhooks(c) {
+    let lista = [];
+    try { lista = await api('GET', `/canais/${c.id}/webhooks`); } catch (err) { return toast(err.message, 'erro'); }
+    const nome = h('input', { maxlength: 32, placeholder: 'ex: Alerta da live' });
+    const saida = h('div', {});
+    abrirModal({ titulo: '🤖 Webhooks de #' + c.nome, sub: 'Programas e sites mandam mensagem neste canal sem estar no app (ex: aviso de live, bot de jogo).',
+      corpo: [h('div', { class: 'lista-busca' }, lista.length ? lista.map((w) => h('div', { class: 'res-busca' }, h('div', { class: 'rb-topo' }, h('b', {}, '🤖 ' + w.nome),
+        h('button', { class: 'bt perigo', type: 'button', onclick: async (e) => { try { await api('DELETE', '/webhooks/' + w.id); e.currentTarget.closest('.res-busca').remove(); } catch (err) { toast(err.message, 'erro'); } } }, 'Apagar'))))
+        : h('p', { class: 'sub' }, 'Nenhum webhook ainda.')), campo('Nome do novo webhook', nome), saida],
+      botao: 'Criar webhook',
+      acao: async () => {
+        const d = await api('POST', `/canais/${c.id}/webhooks`, { nome: nome.value.trim() });
+        const url = location.origin + d.caminho;
+        saida.replaceChildren(h('p', { class: 'sub' }, '✅ Criado! Copia o link agora (ele não aparece de novo). Pra postar: POST nesse link com {"texto":"sua mensagem"}.'),
+          h('div', { class: 'convite convite-link' }, h('code', {}, url), h('button', { class: 'bt prim', type: 'button', onclick: () => navigator.clipboard?.writeText(url).then(() => toast('Link copiado ✓', 'ok')) }, 'Copiar')));
+        throw new Error('Copia o link acima ☝️'); // mantém o modal aberto
       } });
   }
   function modalCanal(tipoInicial, categoriaInicial) {
@@ -1826,6 +1896,7 @@
       item('Perfil', () => { const a = $(`.membro[data-uid="${m.id}"]`); cartaoMembro(a || pontoEm(x, y), m); }),
       !eu && m.usuario ? item('Mandar mensagem', () => abrirDmCom(m.usuario).catch((err) => toast(err.message, 'erro'))) : null,
       !eu && m.usuario ? item('Mencionar', () => { const t = $('.caixa textarea'); if (t) { t.value += (t.value && !t.value.endsWith(' ') ? ' ' : '') + '@' + m.usuario + ' '; t.oninput(); t.focus(); } }) : null,
+      !eu && window.Voz && Voz.estado.canalId ? item('🔔 Chamar pra call', () => chamarPraCall(m)) : null,
       !eu && !amigo && m.usuario ? item('Adicionar amigo', () => adicionarAmigo(m.usuario).catch((err) => toast(err.message, 'erro'))) : null,
       staff ? [h('hr'), item('⏳ Castigar 10 min', async () => { try { await api('POST', `/servidores/${s.id}/membros/${m.id}/castigo`, { minutos: 10 }); toast(m.nome + ' de castigo por 10 min', 'ok'); } catch (err) { toast(err.message, 'erro'); } }),
         item('👢 Expulsar', () => moderar('expulsar', m)), item('⛔ Banir', () => moderar('banir', m), 'perigo')] : null,
@@ -1834,6 +1905,24 @@
       item('Copiar ID #' + m.id, () => copiar('#' + m.id, 'ID copiado ✓')),
       !eu ? item(bloqueado(m.id) ? 'Desbloquear' : 'Bloquear', () => alternarBloqueio(m), bloqueado(m.id) ? '' : 'perigo') : null,
     ].flat().filter(Boolean));
+  }
+  async function chamarPraCall(m) {
+    const r = await pedir('voz:chamar', { usuarioId: m.id });
+    toast(r.erro || `🔔 Chamando ${m.nome}…`, r.erro ? 'erro' : 'ok');
+  }
+  function aoSerChamado(d) {
+    if (E.eu.status === 'foco' || bloqueado(d.de.id)) return;
+    let n = 0; const tocar = () => { if (n++ < 6 && $('#chamada-' + d.de.id)) { tocarSom('zap'); setTimeout(tocar, 1800); } };
+    $('#chamada-' + d.de.id)?.remove();
+    const card = h('div', { class: 'chamada', id: 'chamada-' + d.de.id, role: 'alertdialog' },
+      h('div', { class: 'ch-ic' }, '🔔'),
+      h('div', { class: 'ch-txt' }, h('b', {}, d.de.nome + ' te chamou pra call'), h('small', {}, '🔊 ' + d.canalNome + (d.servidorNome ? ' · ' + d.servidorNome : ''))),
+      h('button', { class: 'bt prim', onclick: async () => { card.remove(); if (d.servidorId && E.servidorId !== d.servidorId) await selecionarServidor(d.servidorId); const c = acharCanal(d.canalId); if (c) entrarVoz(c); } }, 'Entrar'),
+      h('button', { class: 'bt', onclick: () => card.remove() }, 'Agora não'));
+    document.body.append(card);
+    setTimeout(() => card.remove(), 30000);
+    tocar();
+    try { if (window.Notification && Notification.permission === 'granted' && (document.hidden || !document.hasFocus())) new Notification('🔔 ' + d.de.nome + ' te chamou pra call', { body: d.canalNome, icon: '/img/icone.png', tag: 'chamada' }); } catch (e) {}
   }
   function menuCanal(c, s, x, y) {
     const n = E.naoLidos[c.id] || 0;
@@ -2106,6 +2195,15 @@
   }
   // ---------- cargos personalizados ----------
   async function carregarCargos(sid) { E.cargos.set(sid, await api('GET', `/servidores/${sid}/cargos`)); }
+  function modalPermCargo(s, cg) {
+    const caixa = (bit, rot, desc) => { const i = h('input', { type: 'checkbox' }); i.checked = !!(cg.perm & bit); i.dataset.bit = bit; return h('label', { class: 'check-cfg' }, i, ' ', h('span', {}, h('b', {}, rot), h('small', {}, desc))); };
+    const itens = [caixa(1, '🛡 Moderar', 'Apagar mensagens, castigar, expulsar e banir (igual mod).'), caixa(2, '⭐ Administrar', 'Tudo de moderar + configurar o servidor (igual adm). Só o dono dá.'), caixa(4, '📣 Mencionar @todos', 'Pode usar @todos e @aqui.')];
+    abrirModal({ titulo: '⚙ Permissões: ' + cg.nome, sub: 'Quem tiver esse cargo ganha essas permissões.', corpo: itens, botao: 'Salvar',
+      acao: async () => {
+        const perm = itens.reduce((t, l) => t + (l.querySelector('input').checked ? Number(l.querySelector('input').dataset.bit) : 0), 0);
+        await api('PUT', `/cargos/${cg.id}/perm`, { perm }); await carregarCargos(s.id); toast('Permissões salvas ✓', 'ok');
+      } });
+  }
   function modalCargos(s) {
     const lista = E.cargos.get(s.id) || [];
     const nome = h('input', { maxlength: 30, placeholder: 'ex: VIP, Moderador de RP, Squad' });
@@ -2116,6 +2214,7 @@
       h('div', { class: 'acoes-cargo' },
         h('button', { class: 'bt', title: 'Quem tem esse cargo', onclick: () => modalEscolher(s, c, 'membros') }, '👥'),
         h('button', { class: 'bt', title: 'Canais só pra esse cargo', onclick: () => modalEscolher(s, c, 'canais') }, '🔒'),
+        h('button', { class: 'bt', title: 'Permissões do cargo', onclick: () => modalPermCargo(s, c) }, '⚙'),
         h('button', { class: 'bt', title: 'Apagar cargo', onclick: async () => {
           if (!confirm(`Apagar o cargo ${c.nome}?`)) return;
           try { await api('DELETE', `/cargos/${c.id}`); await carregarCargos(s.id); modalCargos(s); } catch (err) { toast(err.message, 'erro'); }
@@ -2283,6 +2382,18 @@
           if (!confirm('Gerar um link novo? O antigo para de funcionar.')) return;
           try { const d = await api('POST', `/servidores/${s.id}/convite/novo`); s.convite = d.convite; toast('Link novo gerado ✓', 'ok'); modalConvite(); } catch (err) { toast(err.message, 'erro'); }
         } }, 'Gerar link novo'))]],
+      ['Atividade', () => {
+        const box = h('div', { class: 'calor' }, h('p', { class: 'sub' }, 'Carregando…'));
+        const DIAS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+        api('GET', `/servidores/${s.id}/atividade`).then((l) => {
+          const g = {}; let max = 1, pico = null;
+          for (const x of l) { g[x.d + ':' + x.h] = x.n; if (x.n > max) { max = x.n; pico = x; } }
+          box.replaceChildren(h('div', { class: 'calor-grade' }, h('span'), Array.from({ length: 24 }, (_, hh) => h('small', { class: 'calor-h' }, hh % 3 ? '' : hh + 'h')),
+            DIAS.map((dn, d) => [h('small', { class: 'calor-d' }, dn), Array.from({ length: 24 }, (_, hh) => { const n = g[d + ':' + hh] || 0; return h('i', { title: `${dn} ${hh}h: ${n} mensagem(ns)`, style: `opacity:${n ? 0.15 + 0.85 * n / max : 0.05}` }); })])),
+            h('p', { class: 'sub', style: 'margin-top:10px' }, pico ? `🔥 Horário mais movimentado: ${DIAS[pico.d]} às ${pico.h}h. Bom horário pra marcar evento!` : 'Ainda sem mensagens nos últimos 30 dias.'));
+        }).catch((err) => box.replaceChildren(h('p', { class: 'sub' }, err.message)));
+        return [h('h3', {}, 'Quando a galera conversa'), h('p', { class: 'sub' }, 'Mensagens por dia e hora nos últimos 30 dias.'), box];
+      }],
       ['Banidos', () => {
         const box = h('div', { class: 'lista-busca' }, h('p', { class: 'sub' }, 'Carregando…'));
         api('GET', `/servidores/${s.id}/banidos`).then((l) => box.replaceChildren(...(l.length ? l.map((b) => h('div', { class: 'linha-amigo' }, avatar(b.usuario),
@@ -2402,7 +2513,8 @@
 
   // ---------- tela da call (estilo Discord): grade de quem está na voz, tela/câmera ao vivo, foco e barra de controles ----------
   function abrirCall() {
-    E.verCall = true; E.focoTela = null;
+    E.verCall = true; E.focoTela = null; E.palco = null;
+    if (palcoAtual()) pedir('voz:palco-estado', {}).then((d) => { if (!d.erro) { E.palco = { canalId: Voz.estado.canalId, maos: d.maos, falantes: d.falantes }; aplicarPalco(); atualizarCall(true); } });
     $('#app').classList.add('chat');
     renderMain(); renderTelas();
   }
@@ -2456,8 +2568,8 @@
     // quem está ao vivo vai pra frente
     membros.sort((a, b) => !!streamDe(b.usuarioId) - !!streamDe(a.usuarioId));
     if (E.focoTela && !streamDe(E.focoTela)) E.focoTela = null;
-    const chave = [E.focoTela, ev.mudo, ev.surdo, ev.camera, ev.compartilhando, Voz.ptt, ...membros.map((m) => [m.usuarioId, m.nome, !!m.mudo, !!m.surdo, streamDe(m.usuarioId) ? streamDe(m.usuarioId).id : ''].join(':'))].join('|');
-    if (palco.dataset.chave === chave) {
+    const chave = [E.focoTela, legendaLigada, JSON.stringify(E.palco || {}), ev.mudo, ev.surdo, ev.camera, ev.compartilhando, Voz.ptt, ...membros.map((m) => [m.usuarioId, m.nome, !!m.mudo, !!m.surdo, streamDe(m.usuarioId) ? streamDe(m.usuarioId).id : ''].join(':'))].join('|');
+    if (palco.dataset.chave === chave && !arguments[0]) {
       for (const m of membros) palco.querySelector(`.tile[data-uid="${m.usuarioId}"]`)?.classList.toggle('falando', !!m.falando);
       return;
     }
@@ -2479,7 +2591,54 @@
       h('button', { class: ev.compartilhando ? 'ligado' : '', title: ev.compartilhando ? 'Parar de transmitir' : 'Compartilhar tela', 'aria-pressed': String(ev.compartilhando), onclick: () => Voz.alternarTela().catch(erro) }, ic('tela', 22)),
       h('button', { class: ev.mudo ? 'desligado' : '', title: ev.mudo ? 'Ativar microfone' : 'Silenciar microfone', 'aria-pressed': String(ev.mudo), onclick: () => Voz.alternarMudo() }, ic(ev.mudo ? 'micOff' : 'mic', 22)),
       h('button', { class: ev.surdo ? 'desligado' : '', title: ev.surdo ? 'Ativar áudio' : 'Desativar áudio', 'aria-pressed': String(ev.surdo), onclick: () => Voz.alternarSurdo() }, ic(ev.surdo ? 'foneOff' : 'fone', 22)),
+      h('button', { class: legendaLigada ? 'ligado' : '', title: legendaLigada ? 'Desligar legenda' : 'Legenda ao vivo (o que você fala vira texto pra galera)', onclick: alternarLegenda }, ic('cc', 22)),
+      palcoAtual() && !souStaffEm(palcoAtual().servidorId) ? h('button', { class: maoLevantada() ? 'ligado' : '', title: maoLevantada() ? 'Baixar a mão' : 'Levantar a mão pra falar', onclick: () => pedir('voz:mao', { levantar: !maoLevantada() }) }, ic('mao', 22)) : null,
       h('button', { class: 'encerrar', title: 'Desconectar', onclick: () => Voz.sair() }, ic('desligar', 22)));
+    desenharPalco();
+  }
+  // Palco: só fala quem a staff deu a vez. Plateia fica muda e levanta a mão.
+  const palcoAtual = () => { const c = window.Voz && Voz.estado.canalId ? acharCanal(Voz.estado.canalId) : null; return c && c.palco ? c : null; };
+  const maoLevantada = () => (E.palco?.maos || []).includes(E.eu.id);
+  const possoFalarNoPalco = () => { const c = palcoAtual(); return !c || souStaffEm(c.servidorId) || (E.palco?.falantes || []).includes(E.eu.id); };
+  function aplicarPalco() { if (palcoAtual() && !possoFalarNoPalco() && !Voz.estado.mudo) Voz.alternarMudo(); }
+  function desenharPalco() {
+    const palco = $('#palco-call'), c = palcoAtual();
+    $('#painel-palco')?.remove();
+    if (!palco || !c) return;
+    const nome = (id) => ((E.voz.get(c.id) || []).find((x) => x.usuarioId === id) || {}).nome || nomeDe(id);
+    const staff = souStaffEm(c.servidorId), P = E.palco || { maos: [], falantes: [] };
+    palco.parentNode.insertBefore(h('div', { class: 'painel-palco', id: 'painel-palco' },
+      h('b', {}, '🎤 Palco'), h('small', {}, possoFalarNoPalco() ? 'Você pode falar.' : 'Você está na plateia (mudo). Levanta a mão ✋ pra pedir a vez.'),
+      P.falantes.length ? h('div', { class: 'pp-linha' }, '🎙 No palco: ', P.falantes.map((id) => h('span', { class: 'pp-chip' }, nome(id), staff ? h('button', { title: 'Tirar a vez', onclick: () => pedir('voz:vez', { usuarioId: id, pode: false }) }, '✕') : null))) : null,
+      P.maos.length ? h('div', { class: 'pp-linha' }, '✋ Mãos levantadas: ', P.maos.map((id) => h('span', { class: 'pp-chip' }, nome(id), staff ? h('button', { title: 'Dar a vez', onclick: () => pedir('voz:vez', { usuarioId: id, pode: true }) }, '✓ dar a vez') : null))) : null), palco);
+  }
+  // Legenda ao vivo (reconhecimento de voz do navegador, pt-BR).
+  let legendaLigada = false, reconhecedor = null;
+  function alternarLegenda() {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) return toast('Seu navegador não tem reconhecimento de voz (usa o Chrome ou o Edge).', 'erro');
+    legendaLigada = !legendaLigada;
+    if (!legendaLigada) { try { reconhecedor && reconhecedor.stop(); } catch (e) {} reconhecedor = null; atualizarCall(true); return; }
+    reconhecedor = new SR(); reconhecedor.lang = 'pt-BR'; reconhecedor.continuous = true; reconhecedor.interimResults = true;
+    reconhecedor.onresult = (e) => {
+      const res = e.results[e.results.length - 1], texto = res[0].transcript.trim();
+      if (!texto || Voz.estado.mudo) return;
+      mostrarLegenda('Você', texto, res.isFinal);
+      pedir('voz:legenda', { texto, final: res.isFinal });
+    };
+    reconhecedor.onend = () => { if (legendaLigada && Voz.estado.canalId) try { reconhecedor.start(); } catch (e) {} };
+    try { reconhecedor.start(); } catch (e) {}
+    toast('🔤 Legenda ligada: o que você fala aparece pra galera da call', 'ok');
+    atualizarCall(true);
+  }
+  const linhasLegenda = new Map();
+  function mostrarLegenda(de, texto, final) {
+    const palco = $('#palco-call'); if (!palco) return;
+    let box = $('#legendas'); if (!box) { box = h('div', { class: 'legendas', id: 'legendas', 'aria-live': 'polite' }); palco.parentNode.insertBefore(box, palco.nextSibling); }
+    let l = linhasLegenda.get(de);
+    if (!l || !document.contains(l)) { l = h('div', { class: 'legenda' }); linhasLegenda.set(de, l); box.append(l); }
+    l.replaceChildren(h('b', {}, de + ': '), texto);
+    clearTimeout(l._t); l._t = setTimeout(() => { l.remove(); linhasLegenda.delete(de); }, final ? 6000 : 9000);
   }
 
   // Telas compartilhadas na call: grade flutuante (1 tela grande, 2+ em grade). Os <video> são reaproveitados pra não piscar.
@@ -2957,6 +3116,7 @@
     let jaConectou = false;
     Voz.init(sock, () => {
       try { if (Voz.estado.canalId) sessionStorage.setItem('kali-voz', String(Voz.estado.canalId)); } catch (e) {}
+      aplicarPalco(); // plateia do palco não abre o microfone
       renderSide(); renderMapa(); renderTelas();
     });
     sock.on('connect', () => { // F5 ou servidor reiniciado: volta sozinho pra call
@@ -3022,6 +3182,9 @@
     });
     sock.on('canal:novo', aoCanalNovo);
     sock.on('canais:ordem', ({ servidorId, ordem }) => aplicarOrdem(servidorId, ordem));
+    sock.on('voz:chamada', aoSerChamado);
+    sock.on('voz:legenda', ({ de, texto, final }) => mostrarLegenda(de, texto, final));
+    sock.on('voz:palco', (d) => { if (d.canalId === Voz.estado.canalId) { E.palco = d; aplicarPalco(); if (E.verCall) atualizarCall(true); } });
     sock.on('membro:atualizado', aoMembroAtualizado);
     sock.on('denuncia:nova', ({ servidorId }) => {
       const s = E.servidores.find((x) => x.id === servidorId);

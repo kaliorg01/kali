@@ -143,6 +143,10 @@ CREATE TABLE IF NOT EXISTS selos (
 
 // Staff e moderação: colunas novas em bancos antigos + tabelas próprias.
 for (const [tabela, coluna, def] of [
+  ['canais', 'so_staff', 'INTEGER NOT NULL DEFAULT 0'],
+  ['canais', 'palco', 'INTEGER NOT NULL DEFAULT 0'],
+  ['canais', 'forum', 'INTEGER NOT NULL DEFAULT 0'],
+  ['mensagens', 'webhook_nome', 'TEXT'],
   ['sessoes', 'ua', 'TEXT'],
   ['sessoes', 'ultimo', 'INTEGER'],
   ['membros', 'cargo', "TEXT NOT NULL DEFAULT 'membro'"],
@@ -414,7 +418,7 @@ CREATE TABLE IF NOT EXISTS canal_cargos (
 `);
 export const cargoPorId = (id) => q('SELECT * FROM cargos WHERE id = ?').get(id) ?? null;
 export const cargosDoCanal = (canalId) => q('SELECT cargo_id FROM canal_cargos WHERE canal_id = ?').all(canalId).map((r) => r.cargo_id);
-export const cargosDoServidor = (sid) => q('SELECT id, nome, cor FROM cargos WHERE servidor_id = ? ORDER BY id').all(sid).map((c) => ({
+export const cargosDoServidor = (sid) => q('SELECT id, nome, cor, perm FROM cargos WHERE servidor_id = ? ORDER BY id').all(sid).map((c) => ({
   ...c,
   membros: q('SELECT usuario_id FROM membro_cargos WHERE cargo_id = ?').all(c.id).map((r) => r.usuario_id),
   canais: q('SELECT canal_id FROM canal_cargos WHERE cargo_id = ?').all(c.id).map((r) => r.canal_id),
@@ -719,12 +723,12 @@ const SELECT_MSG = `SELECT m.*, u.usuario AS a_usuario, u.nome AS a_nome, u.cor 
                     LEFT JOIN membros mb ON mb.servidor_id = cx.servidor_id AND mb.usuario_id = m.autor_id`;
 
 export function inserirMensagem({ canalId, autorId, texto, sistema = false, refCanalId = null,
-  audioDuracao = null, transcricao = null, expiraEm = null, respostaA = null, anexo = null }) {
+  audioDuracao = null, transcricao = null, expiraEm = null, respostaA = null, anexo = null, webhookNome = null }) {
   const r = q(`INSERT INTO mensagens (canal_id, autor_id, texto, criado_em, sistema, ref_canal_id,
-               audio_duracao, transcricao, expira_em, resposta_a, anexo_nome, anexo_tipo, anexo_tamanho)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+               audio_duracao, transcricao, expira_em, resposta_a, anexo_nome, anexo_tipo, anexo_tamanho, webhook_nome)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
     .run(canalId, autorId, texto, Date.now(), sistema ? 1 : 0, refCanalId, audioDuracao, transcricao, expiraEm,
-      respostaA, anexo?.nome ?? null, anexo?.tipo ?? null, anexo?.tamanho ?? null);
+      respostaA, anexo?.nome ?? null, anexo?.tipo ?? null, anexo?.tamanho ?? null, webhookNome);
   return Number(r.lastInsertRowid);
 }
 export const mensagemPorId = (id) => q(`${SELECT_MSG} WHERE m.id = ?`).get(id) || null;
@@ -809,6 +813,7 @@ export function serMensagem(row, reacoes = []) {
     editadoEm: row.editado_em ?? null,
     reacoes,
   };
+  if (row.webhook_nome) m.webhook = row.webhook_nome;
   if (row.sistema) {
     m.sistema = true;
     if (row.ref_canal_id) m.refCanalId = row.ref_canal_id;
@@ -916,6 +921,9 @@ export function serCanal(row) {
     modoLento: row.modo_lento || 0,
     paiCanal: row.pai_canal ?? null,
     paiMsg: row.pai_msg ?? null,
+    soStaff: !!row.so_staff,
+    palco: !!row.palco,
+    forum: !!row.forum,
   };
 }
 export const configurarCanal = (id, categoria, modoLento) =>
@@ -942,7 +950,11 @@ export function nivelCargo(sid, uid) {
                WHERE m.servidor_id = ? AND m.usuario_id = ?`).get(sid, uid);
   if (!r) return 0;
   if (r.dono_id === uid) return 4;
-  return { adm: 3, mod: 2 }[r.cargo] || 1;
+  const base = { adm: 3, mod: 2 }[r.cargo] || 1;
+  if (base >= 3) return base;
+  const p = q(`SELECT COALESCE(MAX(c.perm & 2), 0) AS adm, COALESCE(MAX(c.perm & 1), 0) AS mod FROM membro_cargos mc
+               JOIN cargos c ON c.id = mc.cargo_id WHERE c.servidor_id = ? AND mc.usuario_id = ?`).get(sid, uid);
+  return Math.max(base, p.adm ? 3 : p.mod ? 2 : 1);
 }
 export const ehStaff = (sid, uid) => nivelCargo(sid, uid) >= 2;
 export const definirCargo = (sid, uid, cargo) =>
@@ -1140,3 +1152,62 @@ export function amigosEmComum(a, b) {
   const meus = new Set(amigosDe(a));
   return amigosDe(b).filter((id) => meus.has(id)).map((id) => usuarioPorId(id)).filter(Boolean).map((u) => ({ id: u.id, nome: u.nome, usuario: u.usuario }));
 }
+
+// ---------------------------------------------------------------- canais especiais, permissões, webhooks, agendadas, atividade
+// cargos.perm (a tabela cargos é criada depois da lista de migrações lá de cima)
+if (!db.prepare('PRAGMA table_info(cargos)').all().some((c) => c.name === 'perm')) db.exec('ALTER TABLE cargos ADD COLUMN perm INTEGER NOT NULL DEFAULT 0');
+export const configurarCanalExtra = (id, soStaff, palco, forum) =>
+  q('UPDATE canais SET so_staff = ?, palco = ?, forum = ? WHERE id = ?').run(soStaff ? 1 : 0, palco ? 1 : 0, forum ? 1 : 0, id);
+export const definirPermCargo = (id, perm) => q('UPDATE cargos SET perm = ? WHERE id = ?').run(perm, id);
+/** Pode usar @todos/@aqui: staff ou cargo com a permissão 4. */
+export function podeMencionarTodos(sid, uid) {
+  if (nivelCargo(sid, uid) >= 2) return true;
+  return !!q(`SELECT 1 FROM membro_cargos mc JOIN cargos c ON c.id = mc.cargo_id WHERE c.servidor_id = ? AND mc.usuario_id = ? AND (c.perm & 4) != 0`).get(sid, uid);
+}
+db.exec(`
+CREATE TABLE IF NOT EXISTS webhooks (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  canal_id   INTEGER NOT NULL REFERENCES canais(id) ON DELETE CASCADE,
+  token_hash TEXT NOT NULL,
+  nome       TEXT NOT NULL,
+  criador_id INTEGER REFERENCES usuarios(id) ON DELETE SET NULL,
+  criado_em  INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS agendadas (
+  id        INTEGER PRIMARY KEY AUTOINCREMENT,
+  canal_id  INTEGER NOT NULL REFERENCES canais(id) ON DELETE CASCADE,
+  autor_id  INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+  texto     TEXT NOT NULL,
+  enviar_em INTEGER NOT NULL,
+  criado_em INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_agendadas_quando ON agendadas(enviar_em);
+`);
+const hashToken = (t) => crypto.createHash('sha256').update(String(t)).digest('hex');
+export function criarWebhook(canalId, nome, criador) {
+  const token = crypto.randomBytes(24).toString('hex');
+  const r = q('INSERT INTO webhooks (canal_id, token_hash, nome, criador_id, criado_em) VALUES (?, ?, ?, ?, ?)').run(canalId, hashToken(token), nome, criador, Date.now());
+  return { id: Number(r.lastInsertRowid), token };
+}
+export const webhooksDoCanal = (canalId) => q('SELECT id, nome, criado_em FROM webhooks WHERE canal_id = ? ORDER BY id').all(canalId);
+export const webhookPorId = (id) => q('SELECT * FROM webhooks WHERE id = ?').get(id) || null;
+export const apagarWebhook = (id) => q('DELETE FROM webhooks WHERE id = ?').run(id).changes > 0;
+export function conferirTokenWebhook(wh, token) {
+  const a = Buffer.from(wh.token_hash, 'hex'), b = Buffer.from(hashToken(token), 'hex');
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+export const criarAgendada = (canalId, autor, texto, quando) =>
+  Number(q('INSERT INTO agendadas (canal_id, autor_id, texto, enviar_em, criado_em) VALUES (?, ?, ?, ?, ?)').run(canalId, autor, texto, quando, Date.now()).lastInsertRowid);
+export const agendadasDe = (uid) =>
+  q(`SELECT a.id, a.canal_id, a.texto, a.enviar_em, c.nome AS canal_nome, s.nome AS servidor_nome FROM agendadas a
+     JOIN canais c ON c.id = a.canal_id LEFT JOIN servidores s ON s.id = c.servidor_id WHERE a.autor_id = ? ORDER BY a.enviar_em`).all(uid);
+export const contarAgendadas = (uid) => q('SELECT COUNT(*) AS n FROM agendadas WHERE autor_id = ?').get(uid).n;
+export const apagarAgendada = (id, uid) => q('DELETE FROM agendadas WHERE id = ? AND autor_id = ?').run(id, uid).changes > 0;
+export const agendadasVencidas = (agora) => q('SELECT * FROM agendadas WHERE enviar_em <= ? ORDER BY enviar_em LIMIT 50').all(agora);
+export const tirarAgendada = (id) => q('DELETE FROM agendadas WHERE id = ?').run(id);
+/** Mapa de calor: mensagens por dia da semana (0=dom) e hora, últimos 30 dias. */
+export const atividadeServidor = (sid) =>
+  q(`SELECT CAST(strftime('%w', m.criado_em / 1000, 'unixepoch', 'localtime') AS INTEGER) AS d,
+            CAST(strftime('%H', m.criado_em / 1000, 'unixepoch', 'localtime') AS INTEGER) AS h, COUNT(*) AS n
+     FROM mensagens m JOIN canais c ON c.id = m.canal_id
+     WHERE c.servidor_id = ? AND m.criado_em > ? AND m.autor_id IS NOT NULL GROUP BY d, h`).all(sid, Date.now() - 30 * 86400000);

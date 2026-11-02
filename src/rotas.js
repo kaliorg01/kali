@@ -611,6 +611,73 @@ export function criarRotas() {
     res.json({ servidores: db.servidoresEmComum(uid, alvo), amigos: db.amigosEmComum(uid, alvo) });
   });
 
+  // Permissões de cargo personalizado (1 moderar, 2 administrar, 4 @todos). Administrar só o dono dá.
+  r.put('/cargos/:id/perm', exigirLogin, (req, res) => {
+    const uid = req.usuario.id;
+    const cg = db.cargoPorId(idDe(req.params.id));
+    if (!cg) throw erro(404, 'Cargo não encontrado.');
+    const s = servidorComoStaff(uid, cg.servidor_id);
+    const perm = Number(corpoDe(req).perm);
+    if (!Number.isInteger(perm) || perm < 0 || perm > 7) throw erro(400, 'Permissão inválida.');
+    if ((perm & 2) && s.dono_id !== uid) throw erro(403, 'Só o dono dá a permissão de administrar.');
+    if ((perm & 1) && db.nivelCargo(s.id, uid) < 3) throw erro(403, 'Só adm ou dono dá a permissão de moderar.');
+    db.definirPermCargo(cg.id, perm);
+    db.registrarAuditoria(s.id, uid, 'cargo', cg.nome, 'mudou as permissões');
+    emitir(`s:${s.id}`, 'cargos:atualizado', { servidorId: s.id });
+    res.json({ ok: true });
+  });
+
+  // Webhooks: postar num canal por fora do app (bots, alertas). Gestão pela staff; envio público com token.
+  r.post('/canais/:id/webhooks', exigirLogin, (req, res) => {
+    const uid = req.usuario.id;
+    const canal = db.canalPorId(idDe(req.params.id));
+    if (!canal || !canal.servidor_id || !podeTerMensagens(canal)) throw erro(404, 'Canal de texto não encontrado.');
+    servidorComoStaff(uid, canal.servidor_id);
+    const nome = typeof corpoDe(req).nome === 'string' ? corpoDe(req).nome.trim().slice(0, 32) : '';
+    if (!nome) throw erro(400, 'Dá um nome pro webhook (ex: Avisos da live).');
+    if (db.webhooksDoCanal(canal.id).length >= 10) throw erro(400, 'Máximo de 10 webhooks por canal.');
+    const w = db.criarWebhook(canal.id, nome, uid);
+    db.registrarAuditoria(canal.servidor_id, uid, 'webhook', nome, 'criou um webhook em #' + canal.nome);
+    res.status(201).json({ id: w.id, caminho: `/api/webhooks/${w.id}/${w.token}` });
+  });
+  r.get('/canais/:id/webhooks', exigirLogin, (req, res) => {
+    const canal = db.canalPorId(idDe(req.params.id));
+    if (!canal || !canal.servidor_id) throw erro(404, 'Canal não encontrado.');
+    servidorComoStaff(req.usuario.id, canal.servidor_id);
+    res.json(db.webhooksDoCanal(canal.id).map((w) => ({ id: w.id, nome: w.nome, criadoEm: w.criado_em })));
+  });
+  r.delete('/webhooks/:id', exigirLogin, (req, res) => {
+    const w = db.webhookPorId(idDe(req.params.id));
+    if (!w) throw erro(404, 'Webhook não encontrado.');
+    const canal = db.canalPorId(w.canal_id);
+    servidorComoStaff(req.usuario.id, canal.servidor_id);
+    db.apagarWebhook(w.id);
+    res.json({ ok: true });
+  });
+  const limiteWebhook = criarLimitador({ janela: 60_000, max: 30 });
+  r.post('/webhooks/:id/:token', (req, res) => {
+    const w = db.webhookPorId(idDe(req.params.id));
+    if (!w || !db.conferirTokenWebhook(w, String(req.params.token))) throw erro(401, 'Webhook inválido.');
+    if (!limiteWebhook.tentar(String(w.id))) throw erro(429, 'Muitas mensagens por minuto nesse webhook.');
+    const c = corpoDe(req);
+    const texto = typeof c.texto === 'string' ? c.texto.trim().slice(0, 2000) : typeof c.content === 'string' ? c.content.trim().slice(0, 2000) : '';
+    if (!texto) throw erro(400, 'Mande {"texto": "..."}');
+    if (pareceGolpe(texto)) throw erro(400, 'Bloqueado: parece golpe.');
+    const canal = db.canalPorId(w.canal_id);
+    const nome = typeof c.nome === 'string' && c.nome.trim() ? c.nome.trim().slice(0, 32) : w.nome;
+    const msg = publicarMensagem(canal, { autorId: null, texto, webhookNome: nome });
+    res.json({ ok: true, id: msg?.id });
+  });
+
+  // Agendadas e mapa de calor.
+  r.get('/eu/agendadas', exigirLogin, (req, res) => {
+    res.json(db.agendadasDe(req.usuario.id).map((a) => ({ id: a.id, canalId: a.canal_id, texto: a.texto, enviarEm: a.enviar_em, canal: a.canal_nome, servidor: a.servidor_nome })));
+  });
+  r.get('/servidores/:id/atividade', exigirLogin, (req, res) => {
+    const s = servidorComoMembro(req.usuario.id, idDe(req.params.id));
+    res.json(db.atividadeServidor(s.id));
+  });
+
   // Banidos (ver e desfazer), registro da staff e trocar o link de convite.
   r.get('/servidores/:id/banidos', exigirLogin, (req, res) => {
     const s = servidorComoStaff(req.usuario.id, idDe(req.params.id));
@@ -1063,6 +1130,9 @@ export function criarRotas() {
     const modoLento = c.modoLento === undefined ? canal.modo_lento : c.modoLento;
     if (!MODO_LENTO.includes(modoLento)) throw erro(400, 'Tempo de modo lento inválido.');
     db.configurarCanal(canal.id, categoria, modoLento);
+    if (c.soStaff !== undefined || c.palco !== undefined || c.forum !== undefined) {
+      db.configurarCanalExtra(canal.id, c.soStaff === undefined ? canal.so_staff : !!c.soStaff, c.palco === undefined ? canal.palco : !!c.palco && canal.tipo === 'voz', c.forum === undefined ? canal.forum : !!c.forum && canal.tipo === 'texto');
+    }
     emitir(`s:${canal.servidor_id}`, 'cargos:atualizado', { servidorId: canal.servidor_id });
     res.json(db.serCanal(db.canalPorId(canal.id)));
   });

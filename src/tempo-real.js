@@ -196,6 +196,7 @@ function agendarExpiracao(id, expiraEm) {
 }
 
 /** Insere a mensagem, emite msg:nova para a sala certa e agenda expiração. */
+const ultimaChamada = new Map(), ultimaLegenda = new Map(), palcos = new Map();
 export function publicarMensagem(canal, dados) {
   const id = db.inserirMensagem({ canalId: canal.id, ...dados });
   return anunciarMensagem(canal, id);
@@ -234,6 +235,15 @@ export function apagarArquivosAnexo(ids) {
 function varrer() {
   try {
     const agora = Date.now();
+    for (const a of db.agendadasVencidas(agora)) {
+      db.tirarAgendada(a.id);
+      try {
+        const canal = db.acessarCanal(a.autor_id, a.canal_id);
+        db.exigirSemCastigo(canal, a.autor_id);
+        if (canal.so_staff && canal.servidor_id && db.nivelCargo(canal.servidor_id, a.autor_id) < 2) continue;
+        publicarMensagem(canal, { autorId: a.autor_id, texto: a.texto });
+      } catch (e) { /* perdeu acesso: descarta */ }
+    }
     for (const row of db.mensagensExpiradas(agora)) removerMensagem(row);
     for (const id of db.lfgExpiradas(agora)) {
       const row = db.lfgPorId(id);
@@ -621,6 +631,7 @@ function aoConectar(socket) {
       if (outro && db.bloqueioEntre(uid, outro)) throw erro(403, '🚫 Não dá pra mandar mensagem: existe um bloqueio entre vocês.');
     }
     exigirModoLento(canal, uid);
+    if (canal.so_staff && canal.servidor_id && db.nivelCargo(canal.servidor_id, uid) < 2) throw erro(403, '📢 Canal de anúncios: só a staff posta aqui.');
     const respostaA = respostaValida(d.respostaA, canal.id);
     checarLimiteMensagens(uid);
     const msg = publicarMensagem(canal, { autorId: uid, texto, expiraEm, respostaA });
@@ -799,6 +810,82 @@ function aoConectar(socket) {
   });
 
   // Soundboard: toca um som curto pra todo mundo da call (no máximo 1 a cada 1,5 s por pessoa).
+  // Mensagem agendada (1 min a 30 dias; até 50 por pessoa).
+  ouvir(socket, 'msg:agendar', (d) => {
+    exigirObjeto(d);
+    const canal = db.acessarCanal(uid, exigirId(d.canalId, 'Canal'));
+    if (!podeTerMensagens(canal)) throw erro(400, 'Esse canal não aceita mensagens.');
+    const texto = validarTexto(d.texto);
+    const quando = Number(d.enviarEm);
+    if (!Number.isFinite(quando) || quando < Date.now() + 50_000 || quando > Date.now() + 30 * 86400000) throw erro(400, 'Escolha um horário entre 1 minuto e 30 dias pra frente.');
+    if (db.contarAgendadas(uid) >= 50) throw erro(400, 'Máximo de 50 mensagens agendadas.');
+    return { ok: true, id: db.criarAgendada(canal.id, uid, texto, Math.round(quando)) };
+  });
+  ouvir(socket, 'msg:desagendar', (d) => {
+    exigirObjeto(d);
+    if (!db.apagarAgendada(exigirId(d.id, 'Agendada'), uid)) throw erro(404, 'Agendada não encontrada.');
+    return { ok: true };
+  });
+  // Campainha: chama alguém pra sua call (toca no app dele). 1 chamada a cada 2 min por pessoa.
+  ouvir(socket, 'voz:chamar', (d) => {
+    exigirObjeto(d);
+    const { canalId } = minhaVoz();
+    const alvo = exigirId(d.usuarioId, 'Usuário');
+    if (alvo === uid) throw erro(400, 'Você já está aqui 😄');
+    const canal = db.canalPorId(canalId);
+    try { db.acessarCanal(alvo, canalId); } catch { throw erro(403, 'Essa pessoa não tem acesso a esse canal de voz.'); }
+    if (db.bloqueioEntre(uid, alvo)) throw erro(403, 'Não dá pra chamar essa pessoa.');
+    const chave = uid + ':' + alvo, agora = Date.now();
+    if (agora - (ultimaChamada.get(chave) || 0) < 120_000) throw erro(429, 'Você já chamou essa pessoa agora há pouco. Espera 2 minutos.');
+    ultimaChamada.set(chave, agora);
+    if (ultimaChamada.size > 5000) ultimaChamada.clear();
+    const eu = db.usuarioPorId(uid), srv = db.servidorPorId(canal.servidor_id);
+    io.to(`u:${alvo}`).emit('voz:chamada', { de: { id: uid, nome: eu.nome }, canalId, canalNome: canal.nome, servidorId: canal.servidor_id, servidorNome: srv ? srv.nome : '' });
+    return { ok: true };
+  });
+  // Legenda ao vivo: repassa o texto reconhecido pra quem está na mesma call.
+  ouvir(socket, 'voz:legenda', (d) => {
+    exigirObjeto(d);
+    const { canalId } = minhaVoz();
+    const texto = typeof d.texto === 'string' ? d.texto.trim().slice(0, 300) : '';
+    if (!texto) return { ok: true };
+    const agora = Date.now(), ult = ultimaLegenda.get(uid) || 0;
+    if (agora - ult < 200) return { ok: true };
+    ultimaLegenda.set(uid, agora);
+    const de = db.usuarioPorId(uid)?.nome || '';
+    for (const m of voz.get(canalId)?.values() || []) if (m.socketId !== socket.id) io.to(m.socketId).emit('voz:legenda', { de, usuarioId: uid, texto, final: !!d.final });
+    return { ok: true };
+  });
+  // Palco: plateia levanta a mão; staff dá (ou tira) a vez de falar.
+  const estadoPalco = (canalId) => { let e = palcos.get(canalId); if (!e) { e = { maos: new Set(), falantes: new Set() }; palcos.set(canalId, e); } return e; };
+  const avisarPalco = (canalId) => {
+    const e = estadoPalco(canalId), dados = { canalId, maos: [...e.maos], falantes: [...e.falantes] };
+    for (const m of voz.get(canalId)?.values() || []) io.to(m.socketId).emit('voz:palco', dados);
+  };
+  ouvir(socket, 'voz:palco-estado', () => {
+    const { canalId } = minhaVoz();
+    const e = estadoPalco(canalId);
+    return { ok: true, maos: [...e.maos], falantes: [...e.falantes] };
+  });
+  ouvir(socket, 'voz:mao', (d) => {
+    exigirObjeto(d);
+    const { canalId } = minhaVoz();
+    const e = estadoPalco(canalId);
+    if (d.levantar) e.maos.add(uid); else e.maos.delete(uid);
+    avisarPalco(canalId);
+    return { ok: true };
+  });
+  ouvir(socket, 'voz:vez', (d) => {
+    exigirObjeto(d);
+    const { canalId } = minhaVoz();
+    const canal = db.canalPorId(canalId);
+    if (!canal.servidor_id || db.nivelCargo(canal.servidor_id, uid) < 2) throw erro(403, 'Só a staff controla o palco.');
+    const alvo = exigirId(d.usuarioId, 'Usuário');
+    const e = estadoPalco(canalId);
+    if (d.pode) { e.falantes.add(alvo); e.maos.delete(alvo); } else e.falantes.delete(alvo);
+    avisarPalco(canalId);
+    return { ok: true };
+  });
   ouvir(socket, 'voz:som', (d) => {
     exigirObjeto(d);
     if (!SONS_BOARD.includes(d.som)) throw erro(400, 'Som inválido.');
