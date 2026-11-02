@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import * as db from './db.js';
 import { erro, ErroKali } from './db.js';
-import { autenticarSocket } from './auth.js';
+import { autenticarSocket, criarLimitador } from './auth.js';
 
 let io = null;
 
@@ -19,6 +19,7 @@ const assistir = new Map();
 const envios = new Map(); // limite de mensagens: usuarioId → [timestamps]
 const ultimoXpMensagem = new Map(); // `${uid}:${sid}` → timestamp
 const reacoesPremiadas = new Set(); // `${msgId}:${quemReagiu}`
+const limiteReacoes = criarLimitador({ janela: 5000, max: 10 }); // 10 reações a cada 5 s por pessoa
 const timersExpiracao = new Map(); // msgId → timeout
 const timersFoco = new Map(); // usuarioId → timeout
 const SONS_BOARD = ['buzina', 'tambor', 'vitoria', 'erro', 'grilo', 'palmas', 'sirene', 'uau'];
@@ -226,6 +227,9 @@ export function removerMensagem(row) {
 export function apagarArquivosAudio(ids) {
   for (const id of ids) apagarArquivoAudio(id);
 }
+export function apagarArquivosAnexo(ids) {
+  for (const id of ids) fs.rm(caminhoAnexo(id), { force: true }, () => {});
+}
 
 function varrer() {
   try {
@@ -396,8 +400,19 @@ function payloadVoz(canalId) {
   }
   return { canalId, membros };
 }
-function emitirVozMembros(canalId, servidorId) {
-  emitir(`s:${servidorId}`, 'voz:membros', payloadVoz(canalId));
+/** Quem está na call só é mostrado pra quem enxerga o canal (canal privado/por cargo não vaza). */
+function emitirVozMembros(canalId) {
+  const canal = db.canalPorId(canalId);
+  if (canal) emitir(salaDoCanal(canal), 'voz:membros', payloadVoz(canalId));
+}
+/** Mesmo teste do acessarCanal, mas devolve boolean. */
+function podeVerCanal(uid, canalId) {
+  try {
+    db.acessarCanal(uid, canalId);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function sairDaVoz(uid) {
@@ -409,8 +424,7 @@ function sairDaVoz(uid) {
   mapa.delete(uid);
   for (const e of mapa.values()) io?.to(e.socketId).emit('voz:par-saiu', { usuarioId: uid });
   if (mapa.size === 0) voz.delete(canalId);
-  const canal = db.canalPorId(canalId);
-  if (canal) emitirVozMembros(canalId, canal.servidor_id);
+  emitirVozMembros(canalId);
 }
 
 // ------------------------------------------------------------------ Assistir Junto
@@ -582,7 +596,7 @@ function aoConectar(socket) {
   const meusServidores = new Set(servidores.map((s) => s.id));
   for (const canalId of voz.keys()) {
     const canal = db.canalPorId(canalId);
-    if (canal && meusServidores.has(canal.servidor_id)) socket.emit('voz:membros', payloadVoz(canalId));
+    if (canal && meusServidores.has(canal.servidor_id) && podeVerCanal(uid, canalId)) socket.emit('voz:membros', payloadVoz(canalId));
   }
 
   let ultimoDigitando = 0;
@@ -602,6 +616,10 @@ function aoConectar(socket) {
     const canal = db.acessarCanal(uid, canalId);
     if (!podeTerMensagens(canal)) throw erro(400, 'Esse canal não aceita mensagens de texto.');
     db.exigirSemCastigo(canal, uid);
+    if (canal.tipo === 'dm' && canal.nome === 'dm') {
+      const outro = db.outroDaDm(canal.id, uid);
+      if (outro && db.bloqueioEntre(uid, outro)) throw erro(403, '🚫 Não dá pra mandar mensagem: existe um bloqueio entre vocês.');
+    }
     exigirModoLento(canal, uid);
     const respostaA = respostaValida(d.respostaA, canal.id);
     checarLimiteMensagens(uid);
@@ -640,8 +658,13 @@ function aoConectar(socket) {
     const row = db.mensagemPorId(id);
     if (!row) throw erro(404, 'Mensagem não encontrada.');
     const canal = db.acessarCanal(uid, row.canal_id);
-    const ehDono = canal.servidor_id != null && canal.dono_id === uid;
-    if (row.autor_id !== uid && !ehDono) throw erro(403, 'Você não pode apagar essa mensagem.');
+    if (row.autor_id !== uid) {
+      // Staff (dono/adm/mod) apaga mensagem dos outros; mensagem de outra pessoa da staff, só o dono.
+      const meu = canal.servidor_id != null ? db.nivelCargo(canal.servidor_id, uid) : 0;
+      const dele = row.autor_id != null && canal.servidor_id != null ? db.nivelCargo(canal.servidor_id, row.autor_id) : 0;
+      const pode = meu === 4 || (meu >= 2 && dele < 2);
+      if (!pode) throw erro(403, 'Você não pode apagar essa mensagem.');
+    }
     removerMensagem(row);
     return { ok: true };
   });
@@ -653,13 +676,18 @@ function aoConectar(socket) {
     const row = db.mensagemPorId(id);
     if (!row) throw erro(404, 'Mensagem não encontrada.');
     const canal = db.acessarCanal(uid, row.canal_id);
+    db.exigirSemCastigo(canal, uid);
+    if (!limiteReacoes.tentar(uid)) throw erro(429, 'Calma! Muitas reações.');
     const adicionou = db.alternarReacao(id, uid, emoji);
     const reacoes = db.reacoesDe([id]).get(id) || [];
     emitir(salaDoCanal(canal), 'msg:reacoes', { id, canalId: canal.id, reacoes });
     if (adicionou && canal.servidor_id != null && row.autor_id && row.autor_id !== uid) {
       const chave = `${id}:${uid}`;
       if (!reacoesPremiadas.has(chave)) {
-        if (reacoesPremiadas.size > 100_000) reacoesPremiadas.clear();
+        if (reacoesPremiadas.size > 100_000) { // limpeza parcial: tira a metade mais antiga
+          let n = 50_000;
+          for (const k of reacoesPremiadas) { if (n-- <= 0) break; reacoesPremiadas.delete(k); }
+        }
         reacoesPremiadas.add(chave);
         ganharXp(row.autor_id, canal.servidor_id, 2, 'reacoes');
       }
@@ -692,9 +720,10 @@ function aoConectar(socket) {
   ouvir(socket, 'voz:entrar', (d) => {
     exigirObjeto(d);
     const canalId = exigirId(d.canalId, 'Canal');
-    const canal = db.canalPorId(canalId);
-    if (!canal || canal.tipo !== 'voz') throw erro(404, 'Canal de voz não encontrado.');
-    if (!db.ehMembro(canal.servidor_id, uid)) throw erro(403, 'Você não tem acesso a este canal.');
+    const existe = db.canalPorId(canalId);
+    if (!existe || existe.tipo !== 'voz') throw erro(404, 'Canal de voz não encontrado.');
+    const canal = db.acessarCanal(uid, canalId); // membro + canal privado/por cargo
+    db.exigirSemCastigo(canal, uid);
     const atual = vozDoUsuario.get(uid);
     if (atual) {
       const anterior = voz.get(atual)?.get(uid);
@@ -714,7 +743,7 @@ function aoConectar(socket) {
       socketId: socket.id,
     });
     vozDoUsuario.set(uid, canalId);
-    emitirVozMembros(canalId, canal.servidor_id);
+    emitirVozMembros(canalId);
     return { ok: true, pares };
   });
 
@@ -794,7 +823,7 @@ function aoConectar(socket) {
         mudou = true;
       }
     }
-    if (mudou) emitirVozMembros(canalId, db.canalPorId(canalId)?.servidor_id);
+    if (mudou) emitirVozMembros(canalId);
     return { ok: true };
   });
 
@@ -807,16 +836,15 @@ function aoConectar(socket) {
     if (!canal?.espacial) throw erro(400, 'Esse canal não é uma Sala 3D.');
     e.x = Math.round(d.x * 1000) / 1000;
     e.y = Math.round(d.y * 1000) / 1000;
-    emitirVozMembros(canalId, canal.servidor_id);
+    emitirVozMembros(canalId);
     return { ok: true };
   });
 
   // ---------------- Assistir Junto
   const canalAssistir = (canalId) => {
-    const canal = db.canalPorId(canalId);
-    if (!canal || canal.tipo !== 'assistir') throw erro(404, 'Canal de Assistir Junto não encontrado.');
-    if (!db.ehMembro(canal.servidor_id, uid)) throw erro(403, 'Você não tem acesso a este canal.');
-    return canal;
+    const existe = db.canalPorId(canalId);
+    if (!existe || existe.tipo !== 'assistir') throw erro(404, 'Canal de Assistir Junto não encontrado.');
+    return db.acessarCanal(uid, canalId); // membro + canal privado/por cargo
   };
   const exigirEspectador = (canalId) => {
     const canal = canalAssistir(canalId);

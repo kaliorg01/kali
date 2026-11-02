@@ -5,10 +5,11 @@ import express from 'express';
 import * as db from './db.js';
 import { erro } from './db.js';
 import {
-  conferirSenha, conferirSenhaOuFingir, definirCookieSessao, exigirLogin, gerarHash, limparCookieSessao,
-  limparFalhasLogin, loginBloqueado, registrarFalhaLogin, tokenDaRequisicao,
+  conferirSenha, conferirSenhaOuFingir, criarLimitador, definirCookieSessao, exigirLogin, gerarHash, ipDaRequisicao,
+  limparCookieSessao, limparFalhasLogin, loginBloqueado, registrarFalhaLogin, tokenDaRequisicao,
 } from './auth.js';
 import { publicarMensagem, caminhoAnexo, pareceGolpe, respostaValida, quantosOnline, exigirModoLento,
+  sairSala, apagarArquivosAnexo,
   BONUS_MISSAO, MISSOES, anunciarMensagem, aoApagarCanal, aoApagarServidor, aoAtualizarPerfil, aoSairDoServidor,
   apagarArquivosAudio, caminhoAudio, checarLimiteMensagens, desconectarSessao, emitir, entrarSala,
   membroPublico, nivelDe, origemPermitida, salaDoCanal, semanaAtual, usuarioPublico, xpParaNivel,
@@ -186,11 +187,14 @@ export function criarRotas() {
       throw erro(400, 'Informe usuário e senha.');
     }
     const usuario = c.usuario.trim().toLowerCase();
-    if (loginBloqueado(usuario)) throw erro(429, 'Muitas tentativas. Espere alguns minutos e tente de novo.');
-    const row = RE_USUARIO.test(usuario) ? db.usuarioPorNome(usuario) : null;
+    // Nome fora do formato nunca existe: responde direto, sem ocupar o limitador.
+    if (!RE_USUARIO.test(usuario)) throw erro(401, 'Usuário ou senha incorretos.');
+    const ip = ipDaRequisicao(req);
+    if (loginBloqueado(usuario, ip)) throw erro(429, 'Muitas tentativas. Espere alguns minutos e tente de novo.');
+    const row = db.usuarioPorNome(usuario);
     const ok = await conferirSenhaOuFingir(c.senha, row);
     if (!ok || !row) {
-      registrarFalhaLogin(usuario);
+      registrarFalhaLogin(usuario, ip);
       throw erro(401, 'Usuário ou senha incorretos.');
     }
     limparFalhasLogin(usuario);
@@ -272,9 +276,9 @@ export function criarRotas() {
     const nome = textoOpcional(corpoDe(req).nome, 'Nome');
     if (!nome || nome.length < 2 || nome.length > 40) throw erro(400, 'O nome do servidor precisa ter de 2 a 40 caracteres.');
     db.renomearServidor(s.id, nome);
-    const servidor = db.serServidor(db.servidorPorId(s.id));
-    emitir(`s:${s.id}`, 'servidor:atualizado', servidor);
-    res.json(servidor);
+    // Pra sala inteira vai só o que todos podem ver (sem canais: privados e tickets não vazam).
+    emitir(`s:${s.id}`, 'servidor:atualizado', { id: s.id, nome, sigla: db.sigla(nome) });
+    res.json(servidorCompleto(db.servidorPorId(s.id), uid));
   });
 
   r.delete('/servidores/:id', exigirLogin, (req, res) => {
@@ -282,8 +286,10 @@ export function criarRotas() {
     const s = servidorComoDono(uid, idDe(req.params.id));
     const canais = db.canaisDoServidor(s.id);
     const audios = db.idsAudiosDoServidor(s.id);
+    const anexos = db.idsAnexosDoServidor(s.id);
     db.apagarServidor(s.id);
     apagarArquivosAudio(audios);
+    apagarArquivosAnexo(anexos);
     aoApagarServidor(s.id, canais);
     res.json({ ok: true });
   });
@@ -339,12 +345,13 @@ export function criarRotas() {
       throw erro(400, 'A senha do canal precisa ter de 4 a 64 caracteres (só canal de texto).');
     }
     if (db.contarCanais(s.id) >= 100) throw erro(400, 'Esse servidor já tem canais demais.');
-    const id = db.criarCanal(s.id, nome, c.tipo, c.tipo === 'voz' && c.espacial === true);
-    if (typeof c.categoria === 'string' && c.categoria.trim()) db.configurarCanal(id, c.categoria.trim().slice(0, 30), 0);
-    if (c.senha !== undefined) {
-      const { hash, salt } = await gerarHash(c.senha);
-      db.tornarPrivado(id, hash, salt, null);
-    }
+    // Hash antes do INSERT: o canal já nasce privado (nunca existe um instante aberto sem senha).
+    const senha = c.senha !== undefined ? await gerarHash(c.senha) : null;
+    const id = db.criarCanal(s.id, nome, c.tipo, c.tipo === 'voz' && c.espacial === true, {
+      categoria: typeof c.categoria === 'string' && c.categoria.trim() ? c.categoria.trim().slice(0, 30) : null,
+      senhaHash: senha?.hash ?? null,
+      senhaSalt: senha?.salt ?? null,
+    });
     const canal = db.serCanal(db.canalPorId(id));
     emitir(`s:${s.id}`, 'canal:novo', canal);
     res.status(201).json(canal);
@@ -390,14 +397,22 @@ export function criarRotas() {
     res.json({ ok: true });
   });
 
+  // Senha de canal: 5 tentativas erradas a cada 15 min por pessoa e canal.
+  const tentativasSenhaCanal = criarLimitador({ janela: 15 * 60 * 1000, max: 5 });
   r.post('/canais/:id/desbloquear', exigirLogin, async (req, res) => {
     const uid = req.usuario.id;
     const canal = db.canalPorId(idDe(req.params.id));
     if (!canal || canal.servidor_id == null) throw erro(404, 'Canal não encontrado.');
     servidorComoMembro(uid, canal.servidor_id);
     if (!canal.senha_hash) throw erro(400, 'Esse canal não tem senha.');
+    const chave = `${uid}:${canal.id}`;
+    if (tentativasSenhaCanal.bloqueado(chave)) throw erro(429, 'Muitas tentativas erradas. Espere 15 minutos e tente de novo.');
     const senha = corpoDe(req).senha;
-    if (typeof senha !== 'string' || !(await conferirSenha(senha, canal.senha_hash, canal.senha_salt))) throw erro(403, 'Senha errada.');
+    if (typeof senha !== 'string' || senha.length > 200 || !(await conferirSenha(senha, canal.senha_hash, canal.senha_salt))) {
+      tentativasSenhaCanal.registrar(chave);
+      throw erro(403, 'Senha errada.');
+    }
+    tentativasSenhaCanal.limpar(chave);
     db.darAcessoCanal(canal.id, uid);
     res.json(db.serCanal(canal));
   });
@@ -408,9 +423,11 @@ export function criarRotas() {
     const assunto = typeof corpoDe(req).assunto === 'string' ? corpoDe(req).assunto.trim().slice(0, 200) : '';
     if (!assunto) throw erro(400, 'Conta rapidinho o assunto do ticket.');
     if (db.contarCanais(s.id) >= 100) throw erro(400, 'Esse servidor já tem canais demais.');
-    const id = db.criarCanal(s.id, `ticket-${db.contarTickets(s.id) + 1}`, 'texto', false);
-    db.tornarPrivado(id, null, null, uid);
-    db.darAcessoCanal(id, uid);
+    const id = db.transacao(() => {
+      const novo = db.criarCanal(s.id, `ticket-${db.contarTickets(s.id) + 1}`, 'texto', false, { ticketDe: uid });
+      db.darAcessoCanal(novo, uid);
+      return novo;
+    });
     const row = db.canalPorId(id);
     const canal = db.serCanal(row);
     emitir(salaDoCanal(row), 'canal:novo', canal);
@@ -465,9 +482,14 @@ export function criarRotas() {
     // ticket pode ser fechado pela staff ou por quem abriu; o resto só o dono apaga
     if (canal.ticket_de != null && (canal.ticket_de === uid || db.ehStaff(canal.servidor_id, uid))) servidorComoMembro(uid, canal.servidor_id);
     else servidorComoDono(uid, canal.servidor_id);
+    // Tópicos vão junto: pega tudo antes de apagar pra limpar a tela e os arquivos.
+    const topicos = db.topicosDoCanal(canal.id);
     const audios = db.idsAudiosDoCanal(canal.id);
+    const anexos = db.idsAnexosDoCanal(canal.id);
     db.apagarCanal(canal.id);
     apagarArquivosAudio(audios);
+    apagarArquivosAnexo(anexos);
+    for (const t of topicos) aoApagarCanal(t);
     aoApagarCanal(canal);
     res.json({ ok: true });
   });
@@ -512,6 +534,8 @@ export function criarRotas() {
   const exigirCanalDeAudio = (req, res, next) => {
     const canal = db.acessarCanal(req.usuario.id, idDe(req.params.id));
     if (!podeTerMensagens(canal)) throw erro(400, 'Esse canal não aceita mensagens.');
+    db.exigirSemCastigo(canal, req.usuario.id);
+    exigirModoLento(canal, req.usuario.id);
     if (!req.is('audio/webm')) throw erro(415, 'Envie o áudio no formato audio/webm.');
     req.canal = canal;
     next();
@@ -527,6 +551,7 @@ export function criarRotas() {
     if (req.query.transcricao !== undefined) {
       if (typeof req.query.transcricao !== 'string') throw erro(400, 'Transcrição inválida.');
       transcricao = req.query.transcricao.trim().slice(0, 2000) || null;
+      if (transcricao && pareceGolpe(transcricao)) throw erro(400, '🛡️ Bloqueado: esse link parece golpe (nitro/skin grátis, site falso).');
     }
     const uid = req.usuario.id;
     checarLimiteMensagens(uid);
@@ -603,6 +628,7 @@ export function criarRotas() {
     const alvo = db.usuarioPorNome(c.usuario.trim().toLowerCase().replace(/^@/, ''));
     if (!alvo) throw erro(404, 'Usuário não encontrado.');
     if (alvo.id === uid) throw erro(400, 'Você não pode abrir uma conversa com você mesmo.');
+    if (db.bloqueioEntre(uid, alvo.id)) throw erro(403, '🚫 Não dá pra conversar com essa pessoa (bloqueio).');
     const { id, nova } = db.criarDm(uid, alvo.id);
     entrarSala(uid, `c:${id}`);
     entrarSala(alvo.id, `c:${id}`);
@@ -618,6 +644,7 @@ export function criarRotas() {
     for (const n of c.usuarios.slice(0, 20)) {
       const u = typeof n === 'string' ? db.usuarioPorNome(n.trim().toLowerCase().replace(/^@/, '')) : null;
       if (!u) throw erro(404, `Usuário "${n}" não encontrado.`);
+      if (u.id !== uid && db.bloqueioEntre(uid, u.id)) throw erro(403, `🚫 Não dá pra pôr ${u.nome} no grupo (bloqueio).`);
       ids.add(u.id);
     }
     if (ids.size < 3) throw erro(400, 'Um grupo precisa de pelo menos 2 pessoas além de você.');
@@ -637,6 +664,14 @@ export function criarRotas() {
     const canal = db.acessarCanal(uid, idDe(req.params.id));
     if (canal.tipo !== 'dm' || canal.nome === 'dm') throw erro(400, 'Só dá pra sair de grupos.');
     db.sairDoGrupoDm(canal.id, uid);
+    sairSala(uid, `c:${canal.id}`); // não recebe mais nada do grupo
+    const participantes = db.participantesDm(canal.id);
+    const dados = { canalId: canal.id, participantes, saiu: uid };
+    emitir(`c:${canal.id}`, 'dm:atualizada', dados);
+    emitir(`u:${uid}`, 'dm:atualizada', dados); // outras abas de quem saiu tiram o grupo da lista
+    if (participantes.length) {
+      publicarMensagem(canal, { autorId: null, texto: `👋 ${req.usuario.nome} saiu do grupo.`, sistema: true });
+    }
     res.json({ ok: true });
   });
 
@@ -992,6 +1027,7 @@ export function criarRotas() {
     const alvo = db.usuarioPorNome(c.usuario.trim().toLowerCase().replace(/^@/, ''));
     if (!alvo) throw erro(404, 'Usuário não encontrado.');
     if (alvo.id === uid) throw erro(400, 'Você não pode se adicionar.');
+    if (db.bloqueioEntre(uid, alvo.id)) throw erro(403, '🚫 Não dá pra adicionar essa pessoa (bloqueio).');
     const a = db.amizadeEntre(uid, alvo.id);
     if (a?.status === 'aceita') throw erro(400, 'Vocês já são amigos.');
     if (a && a.de === uid) throw erro(400, 'Pedido já enviado. Agora é com a outra pessoa.');
@@ -1016,6 +1052,26 @@ export function criarRotas() {
     const outro = idDe(req.params.id);
     if (!db.removerAmizade(uid, outro)) throw erro(404, 'Amizade não encontrada.');
     avisarAmigos(uid, outro);
+    res.json({ ok: true });
+  });
+
+  // ------------------------------------------------------------ bloqueios (valem em qualquer aparelho)
+  r.get('/bloqueios', exigirLogin, (req, res) => {
+    res.json(db.bloqueadosPor(req.usuario.id).map((u) => usuarioPublico(u)));
+  });
+  r.post('/bloqueios', exigirLogin, (req, res) => {
+    const uid = req.usuario.id;
+    const c = corpoDe(req);
+    if (!Number.isSafeInteger(c.usuarioId) || c.usuarioId <= 0) throw erro(400, 'Usuário inválido.');
+    if (c.usuarioId === uid) throw erro(400, 'Você não pode se bloquear.');
+    const alvo = db.usuarioPorId(c.usuarioId);
+    if (!alvo) throw erro(404, 'Usuário não encontrado.');
+    db.bloquear(uid, alvo.id); // também desfaz amizade e recusa pedidos pendentes
+    avisarAmigos(uid, alvo.id);
+    res.status(201).json(usuarioPublico(alvo));
+  });
+  r.delete('/bloqueios/:id', exigirLogin, (req, res) => {
+    if (!db.desbloquear(req.usuario.id, idDe(req.params.id))) throw erro(404, 'Esse usuário não está bloqueado.');
     res.json({ ok: true });
   });
 

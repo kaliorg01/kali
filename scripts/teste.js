@@ -707,7 +707,8 @@ async function testes() {
   r = await lia.req('PATCH', `/servidores/${srv.id}`, { nome: 'Galera Gamer Brasil' });
   evr = await ev;
   check('dono renomeia → Servidor', r.status === 200 && r.json?.nome === 'Galera Gamer Brasil', r);
-  check('servidor:atualizado chega com o Servidor', evr?.nome === 'Galera Gamer Brasil' && evr?.sigla === 'GG' && Array.isArray(evr?.canais), evr);
+  check('servidor:atualizado chega só com {id, nome, sigla} (sem canais)', evr?.nome === 'Galera Gamer Brasil' && evr?.sigla === 'GG' && !('canais' in (evr || {})) && !('convite' in (evr || {})), evr);
+  check('resposta REST do dono traz os canais', Array.isArray(r.json?.canais) && r.json.canais.length > 0, r.json);
 
   const srv2 = (await lia.req('POST', '/servidores', { nome: 'Estúdio Dev' })).json;
   check('sigla com acento', srv2?.sigla === 'ED', srv2?.sigla);

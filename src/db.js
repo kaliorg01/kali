@@ -361,10 +361,28 @@ export const itensDoUsuario = (uid) =>
 export const tirarItem = (uid, itemId) => q('DELETE FROM inventario WHERE usuario_id = ? AND item_id = ?').run(uid, itemId).changes > 0;
 
 // ---------------------------------------------------------------- castigo (timeout)
-export const castigar = (sid, uid, ate) => q('UPDATE membros SET castigo_ate = ? WHERE servidor_id = ? AND usuario_id = ?').run(ate, sid, uid);
+// Tabela própria (não depende de ser membro): sair e voltar pelo convite não limpa o castigo.
+db.exec(`
+CREATE TABLE IF NOT EXISTS castigos (
+  servidor_id INTEGER NOT NULL REFERENCES servidores(id) ON DELETE CASCADE,
+  usuario_id  INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+  ate         INTEGER NOT NULL,
+  PRIMARY KEY (servidor_id, usuario_id)
+);
+`);
+// Migração única e idempotente: o castigo antigo (membros.castigo_ate) que ainda vale passa pra tabela nova.
+transacao(() => {
+  db.prepare(`INSERT OR IGNORE INTO castigos (servidor_id, usuario_id, ate)
+              SELECT servidor_id, usuario_id, castigo_ate FROM membros WHERE castigo_ate IS NOT NULL AND castigo_ate > ?`).run(Date.now());
+  db.exec('UPDATE membros SET castigo_ate = NULL WHERE castigo_ate IS NOT NULL');
+});
+export function castigar(sid, uid, ate) {
+  if (ate) q('INSERT OR REPLACE INTO castigos (servidor_id, usuario_id, ate) VALUES (?, ?, ?)').run(sid, uid, ate);
+  else q('DELETE FROM castigos WHERE servidor_id = ? AND usuario_id = ?').run(sid, uid);
+}
 export function exigirSemCastigo(canal, uid) {
   if (canal.servidor_id == null) return;
-  const ate = q('SELECT castigo_ate FROM membros WHERE servidor_id = ? AND usuario_id = ?').get(canal.servidor_id, uid)?.castigo_ate;
+  const ate = q('SELECT ate FROM castigos WHERE servidor_id = ? AND usuario_id = ?').get(canal.servidor_id, uid)?.ate;
   if (ate && ate > Date.now()) {
     const h = new Date(ate).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
     throw erro(403, `⏳ Você está de castigo neste servidor até ${h}.`);
@@ -461,6 +479,32 @@ export const amizadesDoUsuario = (uid) =>
      JOIN usuarios u ON u.id = CASE WHEN a.de = ? THEN a.para ELSE a.de END
      WHERE a.de = ? OR a.para = ? ORDER BY u.nome COLLATE NOCASE`).all(uid, uid, uid);
 
+// ---------------------------------------------------------------- bloqueios (usuario_id bloqueou alvo_id)
+db.exec(`
+CREATE TABLE IF NOT EXISTS bloqueios (
+  usuario_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+  alvo_id    INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+  criado_em  INTEGER NOT NULL,
+  PRIMARY KEY (usuario_id, alvo_id)
+);
+CREATE INDEX IF NOT EXISTS idx_bloqueios_alvo ON bloqueios(alvo_id);
+`);
+/** Bloqueia e, junto, desfaz a amizade e recusa pedidos pendentes nos dois sentidos. */
+export function bloquear(uid, alvo) {
+  transacao(() => {
+    q('INSERT OR IGNORE INTO bloqueios (usuario_id, alvo_id, criado_em) VALUES (?, ?, ?)').run(uid, alvo, Date.now());
+    removerAmizade(uid, alvo);
+  });
+}
+export const desbloquear = (uid, alvo) =>
+  q('DELETE FROM bloqueios WHERE usuario_id = ? AND alvo_id = ?').run(uid, alvo).changes > 0;
+/** true se um dos dois bloqueou o outro. */
+export const bloqueioEntre = (a, b) =>
+  !!q('SELECT 1 FROM bloqueios WHERE (usuario_id = ? AND alvo_id = ?) OR (usuario_id = ? AND alvo_id = ?)').get(a, b, b, a);
+export const bloqueadosPor = (uid) =>
+  q(`SELECT u.* FROM bloqueios b JOIN usuarios u ON u.id = b.alvo_id
+     WHERE b.usuario_id = ? ORDER BY b.criado_em DESC`).all(uid);
+
 // ---------------------------------------------------------------- usuários
 export function criarUsuario({ usuario, nome, hash, salt, cor }) {
   const r = q(`INSERT INTO usuarios (usuario, nome, senha_hash, senha_salt, cor, criado_em)
@@ -553,8 +597,14 @@ export function adicionarMembro(sid, uid) {
       .run(uid, sid);
   });
 }
-export const removerMembro = (sid, uid) =>
-  q('DELETE FROM membros WHERE servidor_id = ? AND usuario_id = ?').run(sid, uid);
+/** Tira do servidor e limpa cargos e acessos a canais (quem volta pelo convite começa do zero; castigo continua). */
+export function removerMembro(sid, uid) {
+  transacao(() => {
+    q('DELETE FROM membros WHERE servidor_id = ? AND usuario_id = ?').run(sid, uid);
+    q('DELETE FROM membro_cargos WHERE usuario_id = ? AND cargo_id IN (SELECT id FROM cargos WHERE servidor_id = ?)').run(uid, sid);
+    q('DELETE FROM canal_acesso WHERE usuario_id = ? AND canal_id IN (SELECT id FROM canais WHERE servidor_id = ?)').run(uid, sid);
+  });
+}
 export const membrosDoServidor = (sid) =>
   q(`SELECT u.*, m.cargo AS cargo, m.apelido AS apelido, COALESCE(x.nivel, 1) AS nivel, COALESCE(x.xp, 0) AS xp_total
      FROM membros m JOIN usuarios u ON u.id = m.usuario_id
@@ -570,13 +620,18 @@ export const canalPorId = (id) =>
   q(`SELECT c.*, s.dono_id AS dono_id FROM canais c LEFT JOIN servidores s ON s.id = c.servidor_id
      WHERE c.id = ?`).get(id) || null;
 export const contarCanais = (sid) => q('SELECT COUNT(*) AS n FROM canais WHERE servidor_id = ?').get(sid).n;
-export function criarCanal(sid, nome, tipo, espacial) {
+/** Cria o canal num INSERT só (senha/ticket já gravados: o canal nunca existe aberto por um instante). */
+export function criarCanal(sid, nome, tipo, espacial, { categoria = null, senhaHash = null, senhaSalt = null, ticketDe = null } = {}) {
   const pos = q('SELECT COALESCE(MAX(posicao), -1) + 1 AS p FROM canais WHERE servidor_id = ?').get(sid).p;
-  const r = q('INSERT INTO canais (servidor_id, nome, tipo, posicao, espacial, criado_em) VALUES (?, ?, ?, ?, ?, ?)')
-    .run(sid, nome, tipo, pos, espacial ? 1 : 0, Date.now());
+  const privado = senhaHash != null || ticketDe != null ? 1 : 0;
+  const r = q(`INSERT INTO canais (servidor_id, nome, tipo, posicao, espacial, categoria, privado, senha_hash, senha_salt, ticket_de, criado_em)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(sid, nome, tipo, pos, espacial ? 1 : 0, categoria, privado, senhaHash, senhaSalt, ticketDe, Date.now());
   return Number(r.lastInsertRowid);
 }
 export const apagarCanal = (id) => q('DELETE FROM canais WHERE id = ? OR pai_canal = ?').run(id, id); // leva os tópicos junto
+export const topicosDoCanal = (id) =>
+  q('SELECT c.*, s.dono_id AS dono_id FROM canais c LEFT JOIN servidores s ON s.id = c.servidor_id WHERE c.pai_canal = ?').all(id);
 export const topicoDaMensagem = (msgId) => q('SELECT id, nome FROM canais WHERE pai_msg = ?').get(msgId) ?? null;
 export function criarTopico(sid, paiCanal, paiMsg, nome) {
   const id = criarCanal(sid, nome, 'texto', false); // tópico = canal de texto com canal-pai
@@ -690,11 +745,18 @@ export const editarMensagem = (id, texto) =>
 export const apagarMensagem = (id) => q('DELETE FROM mensagens WHERE id = ?').run(id).changes > 0;
 export const mensagensExpiradas = (agora) =>
   q(`${SELECT_MSG} WHERE m.expira_em IS NOT NULL AND m.expira_em <= ?`).all(agora);
+// Arquivos (áudio/anexo) de um canal e dos tópicos dele, ou de um servidor inteiro: pra apagar do disco junto.
+const DO_CANAL_E_TOPICOS = 'canal_id IN (SELECT id FROM canais WHERE id = ? OR pai_canal = ?)';
 export const idsAudiosDoCanal = (canalId) =>
-  q('SELECT id FROM mensagens WHERE canal_id = ? AND audio_duracao IS NOT NULL').all(canalId).map((r) => r.id);
+  q(`SELECT id FROM mensagens WHERE ${DO_CANAL_E_TOPICOS} AND audio_duracao IS NOT NULL`).all(canalId, canalId).map((r) => r.id);
+export const idsAnexosDoCanal = (canalId) =>
+  q(`SELECT id FROM mensagens WHERE ${DO_CANAL_E_TOPICOS} AND anexo_nome IS NOT NULL`).all(canalId, canalId).map((r) => r.id);
 export const idsAudiosDoServidor = (sid) =>
   q(`SELECT m.id FROM mensagens m JOIN canais c ON c.id = m.canal_id
      WHERE c.servidor_id = ? AND m.audio_duracao IS NOT NULL`).all(sid).map((r) => r.id);
+export const idsAnexosDoServidor = (sid) =>
+  q(`SELECT m.id FROM mensagens m JOIN canais c ON c.id = m.canal_id
+     WHERE c.servidor_id = ? AND m.anexo_nome IS NOT NULL`).all(sid).map((r) => r.id);
 
 export function reacoesDe(ids) {
   const mapa = new Map(ids.map((id) => [id, []]));

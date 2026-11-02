@@ -92,24 +92,84 @@ export function autenticarSocket(socket, next) {
   }
 }
 
-// Limite simples de tentativas de login erradas por nome de usuário.
-const tentativas = new Map();
-const JANELA_TENTATIVAS = 15 * 60 * 1000;
-const MAX_TENTATIVAS = 10;
-export function loginBloqueado(usuario) {
-  const t = tentativas.get(usuario);
-  if (!t) return false;
-  if (Date.now() - t.desde > JANELA_TENTATIVAS) {
-    tentativas.delete(usuario);
-    return false;
+/**
+ * Limitador genérico por chave (janela fixa a partir da 1ª ocorrência).
+ * Guarda no máximo `maxChaves` entradas: quando passa disso, tira primeiro as vencidas,
+ * depois as que ainda não bloquearam (mais antigas primeiro) e só por último as bloqueadas.
+ * Assim, encher o Map com chaves novas não "solta" quem já está bloqueado.
+ */
+export function criarLimitador({ janela, max, maxChaves = 10_000 }) {
+  const mapa = new Map(); // chave → {n, desde}
+  const vencida = (t, agora) => agora - t.desde > janela;
+  function podar(agora) {
+    if (mapa.size <= maxChaves) return;
+    for (const [k, t] of mapa) if (vencida(t, agora)) mapa.delete(k);
+    if (mapa.size <= maxChaves) return;
+    for (const [k, t] of mapa) {
+      if (mapa.size <= maxChaves) return;
+      if (t.n < max) mapa.delete(k);
+    }
+    for (const k of mapa.keys()) {
+      if (mapa.size <= maxChaves) return;
+      mapa.delete(k);
+    }
   }
-  return t.falhas >= MAX_TENTATIVAS;
+  const lim = {
+    /** true se a chave estourou o limite dentro da janela. */
+    bloqueado(chave) {
+      const t = mapa.get(chave);
+      if (!t) return false;
+      if (vencida(t, Date.now())) {
+        mapa.delete(chave);
+        return false;
+      }
+      return t.n >= max;
+    },
+    /** Conta uma ocorrência (falha, envio…) para a chave. */
+    registrar(chave) {
+      const agora = Date.now();
+      const t = mapa.get(chave);
+      if (!t || vencida(t, agora)) {
+        mapa.delete(chave); // reinsere no fim (ordem de inserção = idade)
+        mapa.set(chave, { n: 1, desde: agora });
+        podar(agora);
+      } else {
+        t.n++;
+      }
+    },
+    /** Checa e conta de uma vez: false se já estava no limite (não conta). */
+    tentar(chave) {
+      if (lim.bloqueado(chave)) return false;
+      lim.registrar(chave);
+      return true;
+    },
+    limpar: (chave) => mapa.delete(chave),
+    get tamanho() { return mapa.size; },
+  };
+  return lim;
 }
-export function registrarFalhaLogin(usuario) {
-  const agora = Date.now();
-  const t = tentativas.get(usuario);
-  if (!t || agora - t.desde > JANELA_TENTATIVAS) tentativas.set(usuario, { falhas: 1, desde: agora });
-  else t.falhas++;
-  if (tentativas.size > 10_000) tentativas.clear();
+
+// Login: limite por nome de usuário (10 falhas / 15 min) e por IP (30 falhas / 15 min).
+const QUINZE_MIN = 15 * 60 * 1000;
+const MAX_CHAVES_LOGIN = Number(process.env.KALI_LOGIN_MAX_CHAVES) || 10_000;
+const falhasPorUsuario = criarLimitador({ janela: QUINZE_MIN, max: 10, maxChaves: MAX_CHAVES_LOGIN });
+const falhasPorIp = criarLimitador({ janela: QUINZE_MIN, max: 30, maxChaves: MAX_CHAVES_LOGIN });
+const RE_LOOPBACK = /^(127\.\d+\.\d+\.\d+|::1|::ffff:127\.\d+\.\d+\.\d+)$/;
+/**
+ * IP de quem fez a requisição. Só confia em CF-Connecting-IP / X-Forwarded-For quando a conexão
+ * vem da própria máquina (túnel/proxy local); de fora, vale o endereço do socket.
+ */
+export function ipDaRequisicao(req) {
+  const direto = req.socket?.remoteAddress || req.ip || 'desconhecido';
+  if (RE_LOOPBACK.test(direto)) {
+    const cab = req.headers['cf-connecting-ip'] || req.headers['x-forwarded-for'];
+    if (typeof cab === 'string' && cab.trim()) return cab.split(',')[0].trim().slice(0, 64);
+  }
+  return direto;
 }
-export const limparFalhasLogin = (usuario) => tentativas.delete(usuario);
+export const loginBloqueado = (usuario, ip) => falhasPorUsuario.bloqueado(usuario) || (ip != null && falhasPorIp.bloqueado(ip));
+export function registrarFalhaLogin(usuario, ip) {
+  if (usuario != null) falhasPorUsuario.registrar(usuario);
+  if (ip != null) falhasPorIp.registrar(ip);
+}
+export const limparFalhasLogin = (usuario) => falhasPorUsuario.limpar(usuario);
