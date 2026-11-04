@@ -219,6 +219,10 @@
     } catch (e) { /* par com problema: ignora */ }
   }
 
+  let analisador = null, fonteMic = null;
+  let micId = '';
+  try { micId = localStorage.getItem('kali-mic') || ''; } catch (e) {}
+  const restricoesMic = () => ({ audio: { ...(micId ? { deviceId: { exact: micId } } : {}), echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 2, sampleRate: 48000 } });
   function detector() {
     try {
       ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -226,7 +230,8 @@
       ctx.resume().catch(() => {});
       const an = ctx.createAnalyser();
       an.fftSize = 512;
-      ctx.createMediaStreamSource(local).connect(an);
+      analisador = an;
+      fonteMic = ctx.createMediaStreamSource(local); fonteMic.connect(an);
       const buf = new Uint8Array(an.fftSize);
       timer = setInterval(() => {
         an.getByteTimeDomainData(buf);
@@ -263,6 +268,27 @@
       aplicarVolume(uid);
     },
     get ptt() { return ptt; },
+    get micId() { return micId; },
+    async microfones() {
+      try { return (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'audioinput'); } catch (e) { return []; }
+    },
+    // Troca o microfone no meio da call sem renegociar (replaceTrack).
+    async trocarMic(id) {
+      micId = id || '';
+      try { localStorage.setItem('kali-mic', micId); } catch (e) {}
+      if (!local) return;
+      const novo = await navigator.mediaDevices.getUserMedia(restricoesMic());
+      const t = novo.getAudioTracks()[0];
+      const velho = local.getAudioTracks()[0];
+      for (const p of pares.values()) {
+        const snd = p.pc.getSenders().find((x) => x.track === velho);
+        if (snd) await snd.replaceTrack(t).catch(() => {});
+      }
+      if (velho) { local.removeTrack(velho); velho.stop(); }
+      local.addTrack(t);
+      if (ctx && analisador) { try { fonteMic && fonteMic.disconnect(); fonteMic = ctx.createMediaStreamSource(local); fonteMic.connect(analisador); } catch (e) {} }
+      aplicarTrack();
+    },
     definirPTT(on) { ptt = !!on; apertando = false; try { localStorage.setItem('kali-ptt', ptt ? '1' : ''); } catch (e) {} aplicarTrack(); aoMudar(); },
     apertar(b) { if (!ptt || apertando === !!b) return; apertando = !!b; aplicarTrack(); aoMudar(); },
     get minhaTela() { return tela; },
@@ -336,7 +362,8 @@
       posicoes.clear();
       if (canalId) this.sair();
       try {
-        local = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 2, sampleRate: 48000 } });
+        try { local = await navigator.mediaDevices.getUserMedia(restricoesMic()); }
+        catch (e1) { if (!micId) throw e1; micId = ''; local = await navigator.mediaDevices.getUserMedia(restricoesMic()); } // mic salvo sumiu: usa o padrão
       } catch (e) {
         throw new Error('Não consegui acessar seu microfone. Libera a permissão no navegador.');
       }

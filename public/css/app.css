@@ -1074,3 +1074,14 @@ button.editado:hover{color:var(--texto)}
 .calor-grade{display:grid;grid-template-columns:34px repeat(24,1fr);gap:3px;align-items:center}
 .calor-grade i{display:block;aspect-ratio:1;border-radius:4px;background:#2fd0ff}
 .calor-h,.calor-d{color:var(--fraco);font-size:10px;text-align:center}
+
+/* Cor de destaque (Configurações → Aparência). Rosa/roxo seguem a referência: painel escuro + destaque magenta. */
+:root[data-acento="rosa"]{--roxo:#e0359b;--roxo-suave:rgba(224,53,155,.14);--mencao:rgba(224,53,155,.1);--mencao-borda:#ff4fb8;--grad:linear-gradient(135deg,#b0177a 0%,#d62f93 55%,#8b2fd6 100%)}
+:root[data-acento="roxo"]{--roxo:#8b5cf6;--roxo-suave:rgba(139,92,246,.15);--mencao:rgba(139,92,246,.1);--mencao-borda:#a78bfa;--grad:linear-gradient(135deg,#5b21b6 0%,#7c3aed 55%,#a21caf 100%)}
+:root[data-acento="verde"]{--roxo:#10b981;--roxo-suave:rgba(16,185,129,.14);--mencao:rgba(16,185,129,.1);--mencao-borda:#34d399;--grad:linear-gradient(135deg,#047857 0%,#059669 55%,#0e7490 100%)}
+:root[data-theme="dark"][data-acento="rosa"]{--roxo:#ff4fb8}
+:root[data-theme="dark"][data-acento="roxo"]{--roxo:#a78bfa}
+:root[data-theme="dark"][data-acento="verde"]{--roxo:#34d399}
+:root[data-theme="dark"][data-acento] .n1{background:var(--roxo)}
+.campo-sel{min-width:200px;max-width:100%;padding:8px 10px;border-radius:10px;border:1px solid var(--chip-borda);background:var(--chip);color:var(--texto)}
+.campo-sel option{background:var(--card);color:var(--texto)}

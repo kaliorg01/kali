@@ -341,7 +341,7 @@
   const TEMAS = [['#1f5fd6', '#2563eb', '#0e7490'], ['#1e40af', '#2563eb', '#0369a1'], ['#0e7490', '#0284c7', '#1d4ed8'], ['#1d4ed8', '#0369a1', '#0f766e'], ['#0b5fb8', '#1d4ed8', '#155e75']];
   function aplicarTemaServidor(id) {
     const st = document.documentElement.style;
-    if (!id) { st.removeProperty('--grad'); st.removeProperty('--roxo'); return; }
+    if (!id || document.documentElement.dataset.acento) { st.removeProperty('--grad'); st.removeProperty('--roxo'); return; } // cor de destaque escolhida vence o degradê do servidor
     const [a, b, c] = TEMAS[(id - 1) % TEMAS.length];
     st.setProperty('--grad', `linear-gradient(135deg,${a} 0%,${b} 55%,${c} 100%)`);
   }
@@ -1858,6 +1858,17 @@
     if (!confirm(`Apagar o canal "${c.nome}"? Todas as mensagens somem.`)) return;
     try { await api('DELETE', '/canais/' + c.id); aoCanalApagado({ id: c.id, servidorId: c.servidorId }); } catch (err) { toast(err.message, 'erro'); }
   }
+  async function modalAutomod(s) {
+    let lista = [];
+    try { lista = (await api('GET', `/servidores/${s.id}/automod`)).palavras; } catch (err) { return toast(err.message, 'erro'); }
+    const ta = h('textarea', { class: 'campo', rows: 8, placeholder: 'uma palavra ou frase por linha', style: 'width:100%;resize:vertical' });
+    ta.value = lista.join('\n');
+    abrirModal({ titulo: '🛡️ AutoMod', sub: 'Mensagens com essas palavras são barradas antes de chegar no chat (acento e maiúscula não importam). A staff não é filtrada.',
+      corpo: ta, botao: 'Salvar', acao: async () => {
+        const r = await api('PUT', `/servidores/${s.id}/automod`, { palavras: ta.value.split('\n') });
+        toast(`🛡️ AutoMod: ${r.palavras.length} bloqueada(s)`, 'ok');
+      } });
+  }
   function menuServidor(ancora) {
     const s = servidorAtual();
     if (!s) return;
@@ -1871,7 +1882,7 @@
       item(srvMudo ? '🔔 Reativar avisos do servidor' : '🔕 Silenciar servidor', () => { const on = alternarLocal('kali-srv-silenciados', s.id); toast(on ? 'Servidor silenciado: sem som nem aviso (menções também)' : 'Avisos do servidor reativados', 'ok'); }), ...extras];
     if (souStaffEm(s.id)) itens.push(item('Configurações do servidor', () => configServidor(s)));
     if (souDono(s)) itens.push(item('Criar canal', () => modalCanal('texto')));
-    if (souStaffEm(s.id)) itens.push(item('Criar evento', () => modalCriarEvento(s)));
+    if (souStaffEm(s.id)) itens.push(item('Criar evento', () => modalCriarEvento(s)), item('🛡️ AutoMod (palavras bloqueadas)', () => modalAutomod(s)));
     itens.push(item('Abrir ticket com a staff', modalTicket));
     const atual = canalAtual();
     if (atual && atual.ticket && (atual.ticket === E.eu.id || souStaffEm(s.id))) itens.push(item('Fechar este ticket', () => apagarCanal(atual)));
@@ -2325,6 +2336,8 @@
       ['Aparência', (re) => [
         linhaCfg('Tema', null, ...['dark', 'light'].map((t) => h('button', { type: 'button', class: 'bt' + (document.documentElement.dataset.theme === t ? ' prim' : ''),
           onclick: () => { if (document.documentElement.dataset.theme !== t) alternarTema(); re(); } }, t === 'dark' ? 'Escuro' : 'Claro'))),
+        linhaCfg('Cor de destaque', 'Muda botões, seleção e brilhos do app inteiro.', ...[['', 'Azul'], ['rosa', 'Rosa'], ['roxo', 'Roxo'], ['verde', 'Verde']].map(([v, t]) => h('button', { type: 'button', class: 'bt' + ((document.documentElement.dataset.acento || '') === v ? ' prim' : ''),
+          onclick: () => { if (v) document.documentElement.dataset.acento = v; else delete document.documentElement.dataset.acento; salvar('kali-acento', v); aplicarTemaServidor(E.modo === 'servidor' ? E.servidorId : null); re(); } }, t))),
         linhaCfg('Modo compacto', 'Mensagens mais juntinhas.', chave(cls('compacto'), () => { alternarAcess('compacto', 'Modo compacto'); re(); })),
       ]],
       ['Acessibilidade', (re) => [
@@ -2351,6 +2364,12 @@
         };
         return [
           linhaCfg('Apertar para falar', Voz.ptt ? 'Ligado: o microfone só abre segurando a tecla.' : 'Desligado: detecta a voz sozinho.', chave(Voz.ptt, () => { Voz.definirPTT(!Voz.ptt); re(); })),
+          (() => {
+            const sel = h('select', { class: 'campo-sel', 'aria-label': 'Microfone' }, h('option', { value: '' }, 'Padrão do sistema'));
+            Voz.microfones().then((ms) => { ms.forEach((m, i) => sel.append(h('option', { value: m.deviceId }, m.label || 'Microfone ' + (i + 1)))); sel.value = Voz.micId; });
+            sel.onchange = async () => { try { await Voz.trocarMic(sel.value); toast('🎙️ Microfone trocado', 'ok'); } catch (err) { toast('Não consegui usar esse microfone.', 'erro'); } };
+            return linhaCfg('Microfone', 'Troca na hora, até no meio da call. (Os nomes aparecem depois de liberar o mic uma vez.)', sel);
+          })(),
           linhaCfg('Tecla de falar', 'Clica e aperta a tecla que você quer usar.', tecla),
           linhaCfg('Volume de cada pessoa', 'Na call, passa o mouse (ou toca) no quadro da pessoa e ajusta o volume dela só pra você.'),
         ];
@@ -2961,7 +2980,7 @@
     e.preventDefault();
   });
   const modalAtalhos = () => abrirModal({ titulo: '⌨️ Atalhos', sub: 'Funcionam com a KALI aberta e em foco.', corpo: h('ul', { class: 'novidades' },
-    [['Ctrl + Shift + M', 'Mutar / desmutar microfone'], ['Ctrl + Shift + D', 'Ensurdecer'], ['Ctrl + Shift + L', 'Sair da call'], ['Enter', 'Enviar mensagem'], ['Esc', 'Fechar janelas e menus']]
+    [['Ctrl + K', 'Pular pra qualquer canal ou conversa'], ['Alt + ↑ / ↓', 'Canal anterior / próximo'], ['Ctrl + Shift + M', 'Mutar / desmutar microfone'], ['Ctrl + Shift + D', 'Ensurdecer'], ['Ctrl + Shift + L', 'Sair da call'], ['Enter', 'Enviar mensagem'], ['Esc', 'Fechar janelas e menus']]
       .map(([t, d]) => h('li', {}, h('div', {}, h('b', {}, t), h('small', {}, d))))) });
 
   // ---------- AFK inteligente: 10 min sem mexer → ausente + mic mudo; voltou → online ----------

@@ -626,6 +626,7 @@ function aoConectar(socket) {
     const canal = db.acessarCanal(uid, canalId);
     if (!podeTerMensagens(canal)) throw erro(400, 'Esse canal não aceita mensagens de texto.');
     db.exigirSemCastigo(canal, uid);
+    db.exigirAutomod(canal, uid, texto);
     if (canal.tipo === 'dm' && canal.nome === 'dm') {
       const outro = db.outroDaDm(canal.id, uid);
       if (outro && db.bloqueioEntre(uid, outro)) throw erro(403, '🚫 Não dá pra mandar mensagem: existe um bloqueio entre vocês.');
@@ -658,6 +659,7 @@ function aoConectar(socket) {
     const canal = db.acessarCanal(uid, row.canal_id);
     if (row.autor_id !== uid) throw erro(403, 'Só o autor pode editar a mensagem.');
     if (row.sistema || row.audio_duracao != null) throw erro(400, 'Essa mensagem não pode ser editada.');
+    db.exigirAutomod(canal, uid, texto);
     db.editarMensagem(id, texto);
     emitir(salaDoCanal(canal), 'msg:editada', db.mensagemCompleta(id));
     return { ok: true };

@@ -1151,6 +1151,22 @@ export function criarRotas() {
     res.json({ ok: true, apelido: apelido || null });
   });
 
+  // ------------------------------------------------------------ AutoMod (palavras bloqueadas)
+  r.get('/servidores/:id/automod', exigirLogin, (req, res) => {
+    const s = servidorComoStaff(req.usuario.id, idDe(req.params.id));
+    res.json({ palavras: db.automodDe(s.id) });
+  });
+  r.put('/servidores/:id/automod', exigirLogin, (req, res) => {
+    const uid = req.usuario.id;
+    const s = servidorComoStaff(uid, idDe(req.params.id));
+    const lista = corpoDe(req).palavras;
+    if (!Array.isArray(lista) || lista.length > 200 || lista.some((p) => typeof p !== 'string' || p.length > 60)) throw erro(400, 'Lista inválida (até 200 palavras, 60 letras cada).');
+    const palavras = [...new Set(lista.map((p) => p.replace(/\s+/g, ' ').trim()).filter(Boolean))];
+    db.definirAutomod(s.id, palavras);
+    db.registrarAuditoria(s.id, uid, 'automod', null, palavras.length + ' palavras bloqueadas');
+    res.json({ ok: true, palavras });
+  });
+
   // ------------------------------------------------------------ castigo (timeout): 0 tira
   r.post('/servidores/:id/membros/:uid/castigo', exigirLogin, (req, res) => {
     const uid = req.usuario.id;

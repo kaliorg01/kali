@@ -178,6 +178,7 @@ for (const [tabela, coluna, def] of [
   ['usuarios', 'aniversario', 'TEXT'],
   ['usuarios', 'jogos', 'TEXT'],
   ['usuarios', 'aniv_ano', 'INTEGER'],
+  ['servidores', 'automod', 'TEXT'],
 ]) {
   if (!db.prepare(`PRAGMA table_info(${tabela})`).all().some((c) => c.name === coluna)) {
     db.exec(`ALTER TABLE ${tabela} ADD COLUMN ${coluna} ${def}`);
@@ -385,6 +386,24 @@ transacao(() => {
 export function castigar(sid, uid, ate) {
   if (ate) q('INSERT OR REPLACE INTO castigos (servidor_id, usuario_id, ate) VALUES (?, ?, ?)').run(sid, uid, ate);
   else q('DELETE FROM castigos WHERE servidor_id = ? AND usuario_id = ?').run(sid, uid);
+}
+// AutoMod: lista de palavras proibidas por servidor (uma por linha). Staff não é filtrada.
+const normal = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+export function automodDe(sid) {
+  const t = q('SELECT automod FROM servidores WHERE id = ?').get(sid)?.automod;
+  return t ? t.split('\n').map((x) => x.trim()).filter(Boolean) : [];
+}
+export function definirAutomod(sid, palavras) {
+  q('UPDATE servidores SET automod = ? WHERE id = ?').run(palavras.length ? palavras.join('\n') : null, sid);
+}
+export function exigirAutomod(canal, uid, texto) {
+  if (canal.servidor_id == null || !texto || nivelCargo(canal.servidor_id, uid) >= 2) return;
+  const n = normal(texto);
+  const achou = automodDe(canal.servidor_id).find((p) => {
+    const w = normal(p).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return w && new RegExp('(^|[^a-z0-9])' + w + '($|[^a-z0-9])').test(n);
+  });
+  if (achou) throw erro(400, '🛡️ AutoMod: essa mensagem tem uma palavra bloqueada neste servidor.');
 }
 export function exigirSemCastigo(canal, uid) {
   if (canal.servidor_id == null) return;
