@@ -37,6 +37,10 @@
     megafone: 'M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1zM15 8a5 5 0 0 1 0 8M18 5a9 9 0 0 1 0 14', relogio: 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20M12 6v6l4 2',
     cc: 'M3 5h18v14H3zM10 10.5a2 2 0 1 0 0 3M17 10.5a2 2 0 1 0 0 3', mao: 'M18 11V6a2 2 0 0 0-4 0v5M14 10V4a2 2 0 0 0-4 0v6M10 10.5V6a2 2 0 0 0-4 0v8a8 8 0 0 0 16 0v-3a2 2 0 0 0-4 0',
     porta: 'M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9', calendario: 'M3 4h18v18H3zM16 2v4M8 2v4M3 10h18',
+    trofeu: 'M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0V4zM17 5h3v2a3 3 0 0 1-3 3M7 5H4v2a3 3 0 0 0 3 3',
+    dado: 'M4 4h16v16H4zM8.5 8.5h.01M15.5 8.5h.01M12 12h.01M8.5 15.5h.01M15.5 15.5h.01',
+    pontos: 'M5 12h.01M12 12h.01M19 12h.01', teclado: 'M2 6h20v12H2zM6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10',
+    painel: 'M3 3h7v9H3zM14 3h7v5h-7zM14 12h7v9h-7zM3 16h7v5H3z',
   };
   function ic(nome, tam = 20) {
     const NS = 'http://www.w3.org/2000/svg', sv = document.createElementNS(NS, 'svg'), p = document.createElementNS(NS, 'path');
@@ -427,10 +431,8 @@
     const nav = (ic, rot, fn, ativo, n) => h('button', { class: 'nav-painel' + (ativo ? ' ativo' : ''), onclick: fn },
       h('span', { class: 'ic' }, ic), h('span', { class: 'nm' }, rot), n ? h('span', { class: 'n' }, n > 99 ? '99+' : n) : null);
     void nDm;
-    return [h('div', { class: 'side-corpo' },
-        h('div', { class: 'rot' }, 'Geral'),
-        nav('⌨️', 'Atalhos', modalAtalhos),
-        nav('⚙️', 'Configurações', () => configUsuario()))];
+    void nav; // Atalhos e Configurações ficam no "Mais" da lateral
+    return [h('div', { class: 'side-corpo' })];
   }
   // Menu fixo do topo da lateral (substitui o trilho de bolinhas do Discord): ícone + nome, item ativo com barrinha.
   function aplicarMini() { $('#app').classList.toggle('lateral-mini', ler('kali-lateral-mini') === '1' && innerWidth > 760); renderSide(); }
@@ -439,7 +441,7 @@
     const nDm = E.dms.reduce((t, d) => t + (E.naoLidos[d.canalId] || 0), 0);
     const nav = (ic, rot, fn, ativo, n, cls) => h('button', { class: 'nav-painel' + (ativo ? ' ativo' : '') + (cls ? ' ' + cls : ''), onclick: fn, title: rot },
       ic, h('span', { class: 'nm' }, rot), n ? h('span', { class: 'n' }, n > 99 ? '99+' : n) : null);
-    const ic = (t) => h('span', { class: 'ic' }, t);
+    const icn = (n) => h('span', { class: 'ic' }, ic(n, 18));
     const srvs = servidoresOrdenados().map((sv) => {
       const b = nav(h('span', { class: 'ic ic-srv' }, sv.icone ? h('img', { src: sv.icone, alt: '' }) : (sv.sigla || inicial(sv.nome)).slice(0, 2)), sv.nome,
         () => selecionarServidor(sv.id), E.modo === 'servidor' && sv.id === E.servidorId, naoLidosServidor(sv));
@@ -450,15 +452,24 @@
     return h('nav', { class: 'nav-lateral', 'aria-label': 'Navegação' },
       h('div', { class: 'marca' }, logo(), h('b', {}, 'KALI'),
         h('button', { class: 'recolher', title: mini ? 'Abrir menu' : 'Recolher menu', 'aria-label': mini ? 'Abrir menu' : 'Recolher menu', onclick: () => { salvar('kali-lateral-mini', mini ? '' : '1'); aplicarMini(); } }, mini ? '»' : '«')),
-      nav(ic('▦'), 'Painel', abrirPainel, E.modo === 'painel'),
-      nav(ic('💬'), 'Mensagens', abrirDms, E.modo === 'dm' && !E.telaAmigos, nDm),
-      nav(ic('👋'), 'Amigos', abrirAmigos, E.modo === 'dm' && E.telaAmigos, E.amigos.recebidos.length),
-      nav(ic('🔖'), 'Mensagens salvas', modalSalvas),
-      nav(ic('🎲'), 'Apostas 1x1', () => abrirApostas(E.servidorId), E.modo === 'servidor' && E.verApostas),
-      nav(ic('🏆'), 'Visão geral e ranking', () => abrirVisao(E.servidorId), E.modo === 'servidor' && E.verVisao),
+      nav(icn('painel'), 'Painel', abrirPainel, E.modo === 'painel'),
+      nav(icn('balao'), 'Mensagens', abrirDms, E.modo === 'dm' && !E.telaAmigos, nDm),
+      nav(icn('pessoas'), 'Amigos', abrirAmigos, E.modo === 'dm' && E.telaAmigos, E.amigos.recebidos.length),
+      E.servidores.length ? nav(icn('dado'), 'Apostas 1x1', () => abrirApostas(E.servidorId || servidoresOrdenados()[0].id), E.modo === 'servidor' && E.verApostas) : null,
+      nav(icn('pontos'), 'Mais', (e) => menuMais(e.currentTarget), E.modo === 'servidor' && E.verVisao),
       h('button', { class: 'rot rot-btn', 'aria-expanded': String(!fechado), onclick: () => { salvar('kali-srv-recolhido', fechado ? '' : '1'); renderSide(); } }, h('span', {}, (fechado ? '▸ ' : '▾ ') + 'Servidores'), h('small', {}, String(E.servidores.length))),
       fechado ? null : h('div', { class: 'lista-srv' }, srvs),
-      nav(ic('＋'), 'Criar ou entrar', modalServidor, false, 0, 'nav-add'));
+      nav(icn('mais'), 'Criar ou entrar', modalServidor, false, 0, 'nav-add'));
+  }
+  // Menu "Mais": o que é usado de vez em quando sai da lateral.
+  function menuMais(ancora) {
+    const temSrv = E.servidores.length > 0;
+    abrirMenu(ancora, [h('div', { class: 'sec-menu' }, 'Mais'),
+      temSrv ? item([ic('trofeu', 16), ' Ranking, missão e visão geral'], () => abrirVisao(E.servidorId || servidoresOrdenados()[0].id)) : null,
+      item([ic('relogio', 16), ' Meus lembretes'], () => modalLembretes()),
+      item([ic('teclado', 16), ' Atalhos do teclado'], modalAtalhos),
+      item([ic('engrenagem', 16), ' Configurações'], () => configUsuario()),
+      item([ic('lupa', 16), ' Rever o tour'], () => { salvar('kali-tour', ''); tourInicial(); })].filter(Boolean));
   }
   function renderPainel(main) {
     const filtro = E.filtroPainel || 'todos', termo = (E.buscaPainel || '').toLowerCase();
@@ -568,6 +579,7 @@
       h('div', { class: 'nums-visao' }, num(membros.length, 'membros', '👥'), num(online, 'online agora', '🟢'), num(naCall, 'na call', '🔊'), num(s.canais.length, 'canais', '#')),
       h('div', { class: 'mascote-visao', id: 'mascote-visao' }, h('small', {}, 'Carregando mascote…')),
       h('div', { class: 'grade-visao' },
+        h('div', { class: 'card-srv bloco-visao bloco-missao' }, h('div', { class: 'info' }, cartaoMissao(s.id) || h('small', {}, 'Carregando missão da semana…'))),
         h('div', { class: 'card-srv bloco-visao' }, h('div', { class: 'info' }, h('div', { class: 'linha-topo' }, h('b', {}, '🏆 Ranking'), h('span', { class: 'selos' }, h('span', { class: 'pilula' }, 'XP'))), rank)),
         h('div', { class: 'card-srv bloco-visao' }, h('div', { class: 'info' }, h('div', { class: 'linha-topo' }, h('b', {}, '⚡ Atalhos')),
           h('div', { class: 'atalhos-visao' },
@@ -841,48 +853,7 @@
     abrirMenu(ancora, [h('div', { class: 'sec-menu' }, 'Atividades na call'),
       item('❌⭕ Jogo da velha', () => (velha ? abrirVelha() : novoVelha())),
       item('⚡ Duelo de reflexo', novoDuelo),
-      item('🫧 Bolha flutuante (quem tá falando)', bolhaCall),
       item('😂 Emote gigante', () => menuEmote(ancora))]);
-  }
-
-  // ---------- bolha flutuante da call (Picture-in-Picture de documento) ----------
-  async function bolhaCall() {
-    if (!window.documentPictureInPicture) return toast('Seu navegador não tem janela flutuante (funciona no Chrome/Edge do PC).', 'erro');
-    if (!Voz.estado.canalId) return toast('Entra numa call primeiro.', 'erro');
-    const w = await documentPictureInPicture.requestWindow({ width: 240, height: 300 });
-    w.document.body.style.cssText = 'margin:0;font-family:Segoe UI,system-ui,sans-serif;background:#0b0b0d;color:#f2f4f8;padding:10px';
-    const desenhar = () => {
-      if (w.closed) return clearInterval(t);
-      const ms = E.voz.get(Voz.estado.canalId) || [];
-      w.document.body.innerHTML = '';
-      const titulo = w.document.createElement('div'); titulo.textContent = '🔊 ' + ((acharCanal(Voz.estado.canalId) || {}).nome || 'Call'); titulo.style.cssText = 'font-size:12px;font-weight:700;margin-bottom:8px;opacity:.8';
-      w.document.body.append(titulo);
-      for (const m of ms) {
-        const l = w.document.createElement('div');
-        l.style.cssText = `display:flex;align-items:center;gap:8px;padding:6px 8px;margin-bottom:4px;border-radius:8px;background:${m.falando ? 'rgba(62,230,168,.18)' : '#151518'};box-shadow:${m.falando ? 'inset 0 0 0 2px #3ee6a8' : 'none'}`;
-        l.textContent = (m.falando ? '🟢 ' : m.mudo ? '🔇 ' : '⚪ ') + m.nome;
-        w.document.body.append(l);
-      }
-      const bt = w.document.createElement('button'); bt.textContent = Voz.estado.mudo ? '🎙️ Desmutar' : '🔇 Mutar';
-      bt.style.cssText = 'margin-top:6px;width:100%;padding:8px;border:0;border-radius:8px;background:#e0359b;color:#fff;font-weight:600;cursor:pointer';
-      bt.onclick = () => { Voz.alternarMudo(); desenhar(); };
-      w.document.body.append(bt);
-    };
-    const t = setInterval(desenhar, 400); desenhar();
-  }
-
-  // ---------- mensagens salvas ----------
-  const salvas = () => { try { return JSON.parse(ler('kali-salvas') || '[]'); } catch (e) { return []; } };
-  function alternarSalva(m) {
-    let l = salvas();
-    if (l.some((x) => x.id === m.id)) { l = l.filter((x) => x.id !== m.id); toast('Tirada das salvas', 'ok'); }
-    else { l.unshift({ id: m.id, canalId: m.canalId, texto: (m.texto || (m.anexo ? '📎 ' + (m.anexo.nome || 'anexo') : '')).slice(0, 300), autor: m.autor ? m.autor.nome : 'KALI', criadoEm: m.criadoEm }); toast('🔖 Mensagem salva', 'ok'); }
-    salvar('kali-salvas', JSON.stringify(l.slice(0, 200)));
-  }
-  function modalSalvas() {
-    const l = salvas();
-    abrirModal({ titulo: '🔖 Mensagens salvas', sub: l.length ? 'Clica pra ir até a mensagem.' : 'Nada salvo ainda. Passa o mouse numa mensagem → ⋯ → Salvar.', corpo: h('div', { class: 'lista-busca' }, l.map((m) =>
-      h('button', { type: 'button', class: 'res-busca', onclick: () => { fecharModal(); irPara(m.id, m.canalId); } }, h('div', { class: 'rb-topo' }, h('b', {}, m.autor), h('small', {}, new Date(m.criadoEm).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }))), h('div', { class: 'rb-txt' }, m.texto)))) });
   }
 
   // ---------- traduzir mensagem ----------
@@ -1223,6 +1194,7 @@
 
   // ---------- telas de resultado ----------
   function telaVitoria(d) {
+    if (d.euVenci && window.KaliCinema) return KaliCinema.vitoria('Você venceu!', `Sala #${d.id} · levou R$ ${d.premio}`); // versão cinema
     const t = h('div', { class: 'tela-vitoria' + (d.euVenci ? '' : ' derrota') },
       h('div', { class: 'tv-caixa' }, h('div', { class: 'tv-trofeu' }, d.euVenci ? '🏆' : '💀'),
         h('h2', {}, d.euVenci ? 'VITÓRIA!' : 'Não foi dessa vez'), h('p', {}, d.euVenci ? `Você levou R$ ${d.premio}` : `${d.vencedor} venceu a sala #${d.id}`),
@@ -1517,7 +1489,9 @@
       avatar(E.eu, '', true), h('span', { class: 'txt' }, h('b', {}, E.eu.nome), h('small', {}, rotStatus(E.eu))));
     eu.querySelector('.av').style.cssText += ';width:34px;height:34px';
     const sv = servidorAtual();
-    const destaque = ler('kali-destaque-fechado') === '1' ? null : h('div', { class: 'card-destaque' },
+    let primeiraVez = true;
+    try { if (!ler('kali-destaque-visto')) salvar('kali-destaque-visto', '1'), sessionStorage.setItem('kali-destaque-sessao', '1'); primeiraVez = sessionStorage.getItem('kali-destaque-sessao') === '1'; } catch (e) {}
+    const destaque = ler('kali-destaque-fechado') === '1' || !primeiraVez ? null : h('div', { class: 'card-destaque' },
       h('button', { class: 'fechar', title: 'Esconder', onclick: () => { salvar('kali-destaque-fechado', '1'); renderSide(); } }, '✕'),
       h('b', {}, sv ? '🚀 Chama a galera' : '📱 KALI no celular'),
       h('small', {}, sv ? 'Manda o convite de ' + sv.nome + ' pros amigos.' : 'Baixa o app e transmite a tela do celular.'),
@@ -1917,7 +1891,6 @@
         }) : null,
         item('Encaminhar', () => bEnc.click()),
         item('Me lembra disso', () => bLembrar.click()),
-        item(salvas().some((x) => x.id === m.id) ? '🔖 Tirar das salvas' : '🔖 Salvar mensagem', () => alternarSalva(m)),
         m.texto ? item('🌐 Traduzir', () => traduzir(m, document.querySelector(`.msg[data-id="${m.id}"] .texto`) || document.querySelector(`.msg[data-id="${m.id}"]`))) : null,
         m.anexo && /^image\//.test(m.anexo.tipo || '') ? item(gifsFav().some((g) => g.url === m.anexo.url) ? '⭐ Tirar dos favoritos' : '⭐ Salvar nos favoritos (GIF/imagem)', () => alternarFav(m.anexo)) : null,
         m.texto ? item('Copiar texto', () => { navigator.clipboard?.writeText(m.texto).then(() => toast('Texto copiado ✓', 'ok')).catch(() => {}); }) : null,
@@ -2168,7 +2141,7 @@
       else if (cg) grupos[cg.nome].push(m);
       else (x === 'ausente' ? grupos.Ausente : grupos.Online).push(m);
     }
-    const partes = [fechar, cartaoMissao(s.id)].filter(Boolean);
+    const partes = [fechar].filter(Boolean);
     for (const [nome, membros] of Object.entries(grupos)) {
       if (!membros.length) continue;
       membros.sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
@@ -3739,6 +3712,14 @@
     if (window.Notification && Notification.permission === 'default') Notification.requestPermission().catch(() => {});
     toast(`⏰ Combinado! Te lembro em ${rotulo.toLowerCase()}.`, 'ok');
   }
+  function modalLembretes() {
+    const l = lerLembretes().sort((a, b) => a.quando - b.quando);
+    abrirModal({ titulo: '⏰ Meus lembretes', sub: l.length ? 'Clica pra ir até a mensagem. O ✕ cancela.' : 'Nenhum lembrete. Passa o mouse numa mensagem → ⏰ pra criar.', corpo: h('div', { class: 'lista-busca' }, l.map((x) =>
+      h('div', { class: 'res-busca', style: 'display:flex;gap:8px;align-items:center' },
+        h('button', { type: 'button', style: 'flex:1;text-align:left', onclick: () => { fecharModal(); irPara(x.msgId, x.canalId); } },
+          h('div', { class: 'rb-topo' }, h('b', {}, x.autor), h('small', {}, new Date(x.quando).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }))), h('div', { class: 'rb-txt' }, x.texto)),
+        h('button', { type: 'button', class: 'icbtn', title: 'Cancelar lembrete', onclick: () => { salvar('kali-lembretes', JSON.stringify(lerLembretes().filter((y) => !(y.msgId === x.msgId && y.quando === x.quando)))); modalLembretes(); } }, '✕')))) });
+  }
   setInterval(() => {
     const lista = lerLembretes(), agora = Date.now();
     const vencidos = lista.filter((l) => l.quando <= agora);
@@ -3933,7 +3914,7 @@
     const jaTem = new Set(itens.filter((i) => i.tipo === 'dm' || i.tipo === 'amigo').map((i) => i.nome));
     for (const s of E.servidores) for (const m of E.membros.get(s.id) || []) if (m.id !== E.eu.id && !jaTem.has(m.nome)) { jaTem.add(m.nome); itens.push({ tipo: 'pessoa', nome: m.nome, sub: '@' + m.usuario + ' · ' + s.nome, ir: () => abrirDmCom(m.usuario).catch((e) => toast(e.message, 'erro')) }); }
     for (const [nome, sub, ir] of [['Painel', 'Ir pro painel', abrirPainel], ['Mutar / desmutar', 'Microfone na call', () => Voz.alternarMudo()], ['Ensurdecer', 'Áudio da call', () => Voz.alternarSurdo()], ['Sair da call', 'Desconectar', () => Voz.sair()],
-      ['Configurações', 'Abrir configurações', () => configUsuario()], ['Criar ou entrar em servidor', 'Novo servidor', modalServidor], ['Trocar tema claro/escuro', 'Aparência', alternarTema], ['Status de jogo', 'Jogando…', definirJogo], ['Atalhos', 'Ver atalhos do teclado', modalAtalhos], ['Ativar notificações', 'Push no celular/PC', () => ativarPush().then(() => toast('🔔 Notificações ligadas', 'ok')).catch((e) => toast(e.message, 'erro'))], ['Apostas 1x1', 'Fila de apostas do servidor', () => abrirApostas(E.servidorId)], ['Mensagens salvas', 'Suas salvas', modalSalvas], ['Novo story', 'Postar story de 24h', modalNovoStory], ['Meu perfil completo', 'Conquistas e números', () => perfilCompleto(E.eu)], ['Tour rápido', 'Rever o tour', () => { salvar('kali-tour', ''); tourInicial(); }]])
+      ['Configurações', 'Abrir configurações', () => configUsuario()], ['Criar ou entrar em servidor', 'Novo servidor', modalServidor], ['Trocar tema claro/escuro', 'Aparência', alternarTema], ['Status de jogo', 'Jogando…', definirJogo], ['Atalhos', 'Ver atalhos do teclado', modalAtalhos], ['Ativar notificações', 'Push no celular/PC', () => ativarPush().then(() => toast('🔔 Notificações ligadas', 'ok')).catch((e) => toast(e.message, 'erro'))], ['Apostas 1x1', 'Fila de apostas do servidor', () => abrirApostas(E.servidorId)], ['Novo story', 'Postar story de 24h', modalNovoStory], ['Meu perfil completo', 'Conquistas e números', () => perfilCompleto(E.eu)], ['Tour rápido', 'Rever o tour', () => { salvar('kali-tour', ''); tourInicial(); }]])
       itens.push({ tipo: 'cmd', nome, sub, ir });
     const ICS = { canal: '#', voz: '🔊', dm: '@', amigo: '@', pessoa: '@', servidor: '★', cmd: '>' };
     const inp = h('input', { placeholder: 'Pra onde? (# canal, @ pessoa, * servidor, > comando)', 'aria-label': 'Troca rápida' });

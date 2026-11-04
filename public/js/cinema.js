@@ -38,7 +38,9 @@
   // ---------- 1) intro de abertura (1x por sessão) ----------
   function intro() {
     if (calmo || desligado()) return;
-    try { if (sessionStorage.getItem('kali-intro')) return; sessionStorage.setItem('kali-intro', '1'); } catch (e) {}
+    // uma vez por dia (não cansa)
+    const hoje = new Date().toDateString();
+    try { if (localStorage.getItem('kali-intro-dia') === hoje) return; localStorage.setItem('kali-intro-dia', hoje); } catch (e) {}
     const tela = el('div', 'cine-intro');
     const cacos = Array.from({ length: 14 }, (_, i) => `<i style="--i:${i};--a:${(i * 360) / 14}deg"></i>`).join('');
     tela.innerHTML = `<div class="cine-barra cima"></div><div class="cine-barra baixo"></div>
@@ -142,9 +144,10 @@
     }).observe(document.body, { childList: true });
   }
 
-  window.KaliCinema = { vitoria, transicao, tocar, intro: () => { try { sessionStorage.removeItem('kali-intro'); } catch (e) {} intro(); } };
+  window.KaliCinema = { vitoria, transicao, tocar, intro: () => { try { localStorage.removeItem('kali-intro-dia'); } catch (e) {} intro(); } };
   intro();
   let iniciado = false;
-  const iniciar = () => { if (iniciado) return; iniciado = true; vigiarTitulo(); vigiarVitorias(); tilt(); vigiarModais(); };
+  // a vitória das apostas vem pelo evento 'aposta:fim' do app (telaVitoria chama KaliCinema.vitoria); não lê mais o chat
+  const iniciar = () => { if (iniciado) return; iniciado = true; vigiarTitulo(); tilt(); vigiarModais(); void vigiarVitorias; };
   if (document.readyState === 'loading') addEventListener('DOMContentLoaded', iniciar); else iniciar();
 })();
