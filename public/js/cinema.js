@@ -32,7 +32,8 @@
     vitoria() { [523, 659, 784, 1047].forEach((f, i) => tom(f, f * 1.01, 0.5, 0.06, 'triangle', i * 0.11)); tom(55, 40, 1.2, 0.18, 'sine'); },
   };
   const somLigado = () => ler('kali-som') !== 'desligado';
-  const tocar = (n) => { if (somLigado() && !desligado()) try { SOM[n](); } catch (e) {} };
+  // Animações são mudas (pedido do dono). Pra religar: localStorage 'kali-cinema-som' = '1'.
+  const tocar = (n) => { if (ler('kali-cinema-som') === '1' && somLigado() && !desligado()) try { SOM[n](); } catch (e) {} };
 
   // ---------- 1) intro de abertura (1x por sessão) ----------
   function intro() {

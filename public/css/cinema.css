@@ -114,3 +114,4 @@
 
 @media (prefers-reduced-motion:reduce){.cine-intro,.cine-trans{display:none}.cv-raios,.cv-faiscas,.grade-painel>*,.painel h1 span{animation:none!important}}
 .cine-nucleo img{mix-blend-mode:screen;border-radius:12px}
+.cine-vitoria{background:radial-gradient(circle at center,rgba(40,20,0,.94),rgba(0,0,0,.97) 65%)}
