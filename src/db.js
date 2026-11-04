@@ -179,6 +179,8 @@ for (const [tabela, coluna, def] of [
   ['usuarios', 'jogos', 'TEXT'],
   ['usuarios', 'aniv_ano', 'INTEGER'],
   ['servidores', 'automod', 'TEXT'],
+  ['servidores', 'automod_cfg', 'TEXT'],
+  ['servidores', 'boas_vindas', 'TEXT'],
 ]) {
   if (!db.prepare(`PRAGMA table_info(${tabela})`).all().some((c) => c.name === coluna)) {
     db.exec(`ALTER TABLE ${tabela} ADD COLUMN ${coluna} ${def}`);
@@ -404,6 +406,40 @@ export function exigirAutomod(canal, uid, texto) {
     return w && new RegExp('(^|[^a-z0-9])' + w + '($|[^a-z0-9])').test(n);
   });
   if (achou) throw erro(400, '🛡️ AutoMod: essa mensagem tem uma palavra bloqueada neste servidor.');
+  checarExtras(canal.servidor_id, uid, texto);
+}
+// AutoMod extra: bloquear links e segurar spam (mesma mensagem repetida). Guardado em servidores.automod_cfg (JSON).
+export function automodCfg(sid) {
+  try { return { links: false, spam: false, ...JSON.parse(q('SELECT automod_cfg FROM servidores WHERE id = ?').get(sid)?.automod_cfg || '{}') }; } catch { return { links: false, spam: false }; }
+}
+export function definirAutomodCfg(sid, cfg) {
+  q('UPDATE servidores SET automod_cfg = ? WHERE id = ?').run(JSON.stringify({ links: !!cfg.links, spam: !!cfg.spam }), sid);
+}
+const recentes = new Map(); // `${sid}:${uid}` → [{t, n}]
+function checarExtras(sid, uid, texto) {
+  const cfg = automodCfg(sid);
+  if (cfg.links && /(https?:\/\/|www\.|discord\.gg\/)/i.test(texto)) throw erro(400, '🛡️ AutoMod: links estão bloqueados neste servidor.');
+  if (cfg.spam) {
+    const k = sid + ':' + uid, agora = Date.now(), n = normal(texto).replace(/\s+/g, ' ').trim();
+    const lista = (recentes.get(k) || []).filter((x) => agora - x.t < 30000);
+    if (lista.filter((x) => x.n === n).length >= 2 || lista.length >= 8) throw erro(429, '🛡️ AutoMod: calma aí, parece spam. Espera uns segundos.');
+    lista.push({ t: agora, n });
+    recentes.set(k, lista);
+  }
+}
+
+// Boas-vindas: texto, regras e cargos que o próprio membro pode pegar. servidores.boas_vindas (JSON).
+export function boasVindas(sid) {
+  try { return { texto: '', regras: '', cargos: [], ...JSON.parse(q('SELECT boas_vindas FROM servidores WHERE id = ?').get(sid)?.boas_vindas || '{}') }; } catch { return { texto: '', regras: '', cargos: [] }; }
+}
+export function definirBoasVindas(sid, bv) {
+  q('UPDATE servidores SET boas_vindas = ? WHERE id = ?').run(JSON.stringify(bv), sid);
+}
+export const temCargo = (cargoId, uid) => !!q('SELECT 1 FROM membro_cargos WHERE cargo_id = ? AND usuario_id = ?').get(cargoId, uid);
+export function alternarCargoProprio(cargoId, uid) {
+  if (temCargo(cargoId, uid)) { q('DELETE FROM membro_cargos WHERE cargo_id = ? AND usuario_id = ?').run(cargoId, uid); return false; }
+  q('INSERT OR IGNORE INTO membro_cargos (cargo_id, usuario_id) VALUES (?, ?)').run(cargoId, uid);
+  return true;
 }
 export function exigirSemCastigo(canal, uid) {
   if (canal.servidor_id == null) return;

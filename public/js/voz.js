@@ -219,10 +219,23 @@
     } catch (e) { /* par com problema: ignora */ }
   }
 
-  let analisador = null, fonteMic = null;
+  let analisador = null, fonteMic = null, copiaMic = null;
+  // O detector escuta uma cópia da faixa que fica sempre ligada: assim percebe fala mesmo no mudo (pro aviso "você está mudo").
+  function ligarFonte() {
+    if (copiaMic) copiaMic.stop();
+    const t = local && local.getAudioTracks()[0];
+    copiaMic = t ? t.clone() : null;
+    if (copiaMic) copiaMic.enabled = true;
+    fonteMic = ctx.createMediaStreamSource(copiaMic ? new MediaStream([copiaMic]) : local);
+    fonteMic.connect(analisador);
+  }
   let micId = '';
   try { micId = localStorage.getItem('kali-mic') || ''; } catch (e) {}
-  const restricoesMic = () => ({ audio: { ...(micId ? { deviceId: { exact: micId } } : {}), echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 2, sampleRate: 48000 } });
+  let ruidoForte = false;
+  try { ruidoForte = localStorage.getItem('kali-ruido-forte') === '1'; } catch (e) {}
+  // Redução forte: isolamento de voz do navegador (Chrome/Edge) + mono, que corta teclado/ventilador melhor.
+  const restricoesMic = () => ({ audio: { ...(micId ? { deviceId: { exact: micId } } : {}), echoCancellation: true, noiseSuppression: true, autoGainControl: true, ...(ruidoForte ? { voiceIsolation: true, channelCount: 1 } : { channelCount: 2 }), sampleRate: 48000 } });
+  let aoFalarMudo = null, ultimoAvisoMudo = 0;
   function detector() {
     try {
       ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -231,13 +244,15 @@
       const an = ctx.createAnalyser();
       an.fftSize = 512;
       analisador = an;
-      fonteMic = ctx.createMediaStreamSource(local); fonteMic.connect(an);
+      ligarFonte();
       const buf = new Uint8Array(an.fftSize);
       timer = setInterval(() => {
         an.getByteTimeDomainData(buf);
         let s = 0;
         for (const v of buf) s += ((v - 128) / 128) ** 2;
-        const agora = !mudo && Math.sqrt(s / buf.length) > 0.04;
+        const nivel = Math.sqrt(s / buf.length);
+        if (mudo && !surdo && nivel > 0.06 && aoFalarMudo && Date.now() - ultimoAvisoMudo > 15000) { ultimoAvisoMudo = Date.now(); aoFalarMudo(); }
+        const agora = !mudo && nivel > 0.04;
         if (agora !== falando) { falando = agora; emitirEstado(); aoMudar(); }
       }, 150);
     } catch (e) {}
@@ -250,6 +265,7 @@
     if (local) local.getTracks().forEach((t) => t.stop());
     if (ctx) ctx.close().catch(() => {});
     clearInterval(timer);
+    if (copiaMic) { copiaMic.stop(); copiaMic = null; }
     local = null; ctx = null; timer = null; canalId = null; falando = false;
     aoMudar();
   }
@@ -269,6 +285,9 @@
     },
     get ptt() { return ptt; },
     get micId() { return micId; },
+    get ruidoForte() { return ruidoForte; },
+    definirRuidoForte(on) { ruidoForte = !!on; try { localStorage.setItem('kali-ruido-forte', on ? '1' : ''); } catch (e) {} return this.trocarMic(micId); },
+    set aoFalarMudo(fn) { aoFalarMudo = fn; },
     async microfones() {
       try { return (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'audioinput'); } catch (e) { return []; }
     },
@@ -286,7 +305,7 @@
       }
       if (velho) { local.removeTrack(velho); velho.stop(); }
       local.addTrack(t);
-      if (ctx && analisador) { try { fonteMic && fonteMic.disconnect(); fonteMic = ctx.createMediaStreamSource(local); fonteMic.connect(analisador); } catch (e) {} }
+      if (ctx && analisador) { try { fonteMic && fonteMic.disconnect(); ligarFonte(); } catch (e) {} }
       aplicarTrack();
     },
     definirPTT(on) { ptt = !!on; apertando = false; try { localStorage.setItem('kali-ptt', ptt ? '1' : ''); } catch (e) {} aplicarTrack(); aoMudar(); },

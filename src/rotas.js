@@ -1154,7 +1154,7 @@ export function criarRotas() {
   // ------------------------------------------------------------ AutoMod (palavras bloqueadas)
   r.get('/servidores/:id/automod', exigirLogin, (req, res) => {
     const s = servidorComoStaff(req.usuario.id, idDe(req.params.id));
-    res.json({ palavras: db.automodDe(s.id) });
+    res.json({ palavras: db.automodDe(s.id), ...db.automodCfg(s.id) });
   });
   r.put('/servidores/:id/automod', exigirLogin, (req, res) => {
     const uid = req.usuario.id;
@@ -1163,8 +1163,44 @@ export function criarRotas() {
     if (!Array.isArray(lista) || lista.length > 200 || lista.some((p) => typeof p !== 'string' || p.length > 60)) throw erro(400, 'Lista inválida (até 200 palavras, 60 letras cada).');
     const palavras = [...new Set(lista.map((p) => p.replace(/\s+/g, ' ').trim()).filter(Boolean))];
     db.definirAutomod(s.id, palavras);
+    const corpo = corpoDe(req);
+    if ('links' in corpo || 'spam' in corpo) db.definirAutomodCfg(s.id, { ...db.automodCfg(s.id), ...('links' in corpo ? { links: !!corpo.links } : {}), ...('spam' in corpo ? { spam: !!corpo.spam } : {}) });
     db.registrarAuditoria(s.id, uid, 'automod', null, palavras.length + ' palavras bloqueadas');
     res.json({ ok: true, palavras });
+  });
+
+  // ------------------------------------------------------------ boas-vindas + cargos por escolha
+  const bvPublico = (sid, uid) => {
+    const bv = db.boasVindas(sid);
+    const todos = db.cargosDoServidor(sid);
+    return { texto: bv.texto, regras: bv.regras,
+      cargos: bv.cargos.map((id) => todos.find((c) => c.id === id)).filter(Boolean).map((c) => ({ id: c.id, nome: c.nome, cor: c.cor, tenho: db.temCargo(c.id, uid) })) };
+  };
+  r.get('/servidores/:id/boas-vindas', exigirLogin, (req, res) => {
+    const s = servidorComoMembro(req.usuario.id, idDe(req.params.id));
+    res.json(bvPublico(s.id, req.usuario.id));
+  });
+  r.put('/servidores/:id/boas-vindas', exigirLogin, (req, res) => {
+    const uid = req.usuario.id;
+    const s = servidorComoStaff(uid, idDe(req.params.id));
+    const c = corpoDe(req);
+    const texto = typeof c.texto === 'string' ? c.texto.trim().slice(0, 600) : '';
+    const regras = typeof c.regras === 'string' ? c.regras.trim().slice(0, 2000) : '';
+    const ids = listaDeIds(c.cargos || []);
+    const validos = new Set(db.cargosDoServidor(s.id).map((x) => x.id));
+    if (ids.some((id) => !validos.has(id))) throw erro(400, 'Cargo inválido.');
+    db.definirBoasVindas(s.id, { texto, regras, cargos: ids.slice(0, 20) });
+    db.registrarAuditoria(s.id, uid, 'boas-vindas', null, ids.length + ' cargos por escolha');
+    res.json({ ok: true });
+  });
+  r.post('/servidores/:id/boas-vindas/cargo/:cid', exigirLogin, (req, res) => {
+    const uid = req.usuario.id;
+    const s = servidorComoMembro(uid, idDe(req.params.id));
+    const cid = idDe(req.params.cid);
+    if (!db.boasVindas(s.id).cargos.includes(cid)) throw erro(403, 'Esse cargo não está liberado pra escolher.');
+    const tem = db.alternarCargoProprio(cid, uid);
+    avisarCargos(s.id);
+    res.json({ ok: true, tem });
   });
 
   // ------------------------------------------------------------ castigo (timeout): 0 tira

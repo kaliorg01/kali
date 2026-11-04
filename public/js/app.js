@@ -347,6 +347,7 @@
   }
   async function selecionarServidor(id) {
     sairAssistir();
+    E.verVisao = false;
     aplicarTemaServidor(id);
     E.modo = 'servidor';
     E.servidorId = id;
@@ -362,6 +363,7 @@
     E.canalId = null;
     $('#app').classList.remove('chat');
     if (alvo) await abrirCanal(alvo.id, true); else render();
+    if (ler('kali-bv-' + id) !== '1' && !souDono(s)) modalBoasVindas(s, true);
   }
   async function abrirDms() {
     sairAssistir();
@@ -378,6 +380,7 @@
     render();
   }
   async function abrirCanal(id, semMobile) {
+    E.verVisao = false;
     const c = acharCanal(id);
     if (!c) return;
     if (c.tipo === 'voz') {
@@ -436,10 +439,11 @@
     const nav = (ic, rot, fn, ativo, n, cls) => h('button', { class: 'nav-painel' + (ativo ? ' ativo' : '') + (cls ? ' ' + cls : ''), onclick: fn, title: rot },
       ic, h('span', { class: 'nm' }, rot), n ? h('span', { class: 'n' }, n > 99 ? '99+' : n) : null);
     const ic = (t) => h('span', { class: 'ic' }, t);
-    const srvs = E.servidores.map((sv) => {
+    const srvs = servidoresOrdenados().map((sv) => {
       const b = nav(h('span', { class: 'ic ic-srv' }, sv.icone ? h('img', { src: sv.icone, alt: '' }) : (sv.sigla || inicial(sv.nome)).slice(0, 2)), sv.nome,
         () => selecionarServidor(sv.id), E.modo === 'servidor' && sv.id === E.servidorId, naoLidosServidor(sv));
       aoSegurar(b, (x, y) => menuServidorEm(sv, x, y));
+      arrastarSrv(b, sv);
       return b;
     });
     return h('nav', { class: 'nav-lateral', 'aria-label': 'Navegação' },
@@ -448,6 +452,7 @@
       nav(ic('▦'), 'Painel', abrirPainel, E.modo === 'painel'),
       nav(ic('💬'), 'Mensagens', abrirDms, E.modo === 'dm' && !E.telaAmigos, nDm),
       nav(ic('👋'), 'Amigos', abrirAmigos, E.modo === 'dm' && E.telaAmigos, E.amigos.recebidos.length),
+      nav(ic('🏆'), 'Visão geral e ranking', () => abrirVisao(E.servidorId), E.modo === 'servidor' && E.verVisao),
       h('button', { class: 'rot rot-btn', 'aria-expanded': String(!fechado), onclick: () => { salvar('kali-srv-recolhido', fechado ? '' : '1'); renderSide(); } }, h('span', {}, (fechado ? '▸ ' : '▾ ') + 'Servidores'), h('small', {}, String(E.servidores.length))),
       fechado ? null : h('div', { class: 'lista-srv' }, srvs),
       nav(ic('＋'), 'Criar ou entrar', modalServidor, false, 0, 'nav-add'));
@@ -496,6 +501,102 @@
               h('div', { class: 'stats' }, h('span', {}, h('b', {}, String(ms.length)), ' na call'),
                 h('button', { class: 'bt prim', onclick: async () => { await selecionarServidor(s.id); abrirCanal(c.id); } }, 'Entrar'))));
         })))] : null));
+  }
+
+  // ---------- boas-vindas (regras + cargos por escolha) ----------
+  async function modalBoasVindas(s, auto) {
+    let bv;
+    try { bv = await api('GET', `/servidores/${s.id}/boas-vindas`); } catch (err) { if (!auto) toast(err.message, 'erro'); return; }
+    if (auto && !bv.texto && !bv.regras && !bv.cargos.length) return;
+    salvar('kali-bv-' + s.id, '1');
+    const botoes = h('div', { class: 'cargos-escolha' }, bv.cargos.map((c) => {
+      const b = h('button', { type: 'button', class: 'cargo-escolha' + (c.tenho ? ' tenho' : ''), style: '--c:' + c.cor }, h('i', {}), c.nome);
+      b.onclick = async () => {
+        try { const r = await api('POST', `/servidores/${s.id}/boas-vindas/cargo/${c.id}`); b.classList.toggle('tenho', r.tem); toast(r.tem ? `Cargo ${c.nome} pego ✓` : `Cargo ${c.nome} removido`, 'ok'); } catch (err) { toast(err.message, 'erro'); }
+      };
+      return b;
+    }));
+    abrirModal({ titulo: '👋 Bem-vindo a ' + s.nome, sub: bv.texto || null, corpo: [
+      bv.regras ? [h('div', { class: 'sec-menu' }, '📜 Regras'), h('div', { class: 'regras-bv' }, bv.regras.split('\n').filter(Boolean).map((l) => h('p', {}, l)))] : null,
+      bv.cargos.length ? [h('div', { class: 'sec-menu' }, '🎭 Escolhe seus cargos'), botoes] : null].flat().filter(Boolean),
+      botao: 'Bora!', acao: async () => {} });
+  }
+  async function configBoasVindas(s) {
+    let bv, cargos;
+    try { [bv, cargos] = await Promise.all([api('GET', `/servidores/${s.id}/boas-vindas`), api('GET', `/servidores/${s.id}/cargos`)]); } catch (err) { return toast(err.message, 'erro'); }
+    const marcados = new Set(bv.cargos.map((c) => c.id));
+    const texto = h('textarea', { rows: 2, placeholder: 'Mensagem de boas-vindas (ex.: Chega mais, aqui é a resenha!)', style: 'width:100%' }); texto.value = bv.texto;
+    const regras = h('textarea', { rows: 5, placeholder: 'Uma regra por linha', style: 'width:100%' }); regras.value = bv.regras;
+    const lista = h('div', { class: 'lista-check' }, cargos.length ? cargos.map((c) => {
+      const cb = h('input', { type: 'checkbox', checked: marcados.has(c.id) || null });
+      cb.onchange = () => { if (cb.checked) marcados.add(c.id); else marcados.delete(c.id); };
+      return h('label', { class: 'check-amigo' }, cb, h('span', { style: 'color:' + c.cor }, '● '), c.nome);
+    }) : h('small', {}, 'Crie cargos em Configurações do servidor → Cargos pra liberar aqui.'));
+    abrirModal({ titulo: '👋 Boas-vindas', sub: 'Aparece pra quem abre o servidor pela primeira vez. Os cargos marcados qualquer membro pode pegar sozinho.',
+      corpo: [h('div', { class: 'sec-menu' }, 'Mensagem'), texto, h('div', { class: 'sec-menu' }, 'Regras'), regras, h('div', { class: 'sec-menu' }, 'Cargos por escolha'), lista],
+      botao: 'Salvar', acao: async () => { await api('PUT', `/servidores/${s.id}/boas-vindas`, { texto: texto.value, regras: regras.value, cargos: [...marcados] }); toast('👋 Boas-vindas salvas', 'ok'); } });
+  }
+
+  // ---------- visão geral do servidor (banner, números, ranking, calls) ----------
+  async function abrirVisao(sid) {
+    const s = E.servidores.find((x) => x.id === sid) || servidorAtual() || E.servidores[0];
+    if (!s) return modalServidor();
+    if (E.modo !== 'servidor' || E.servidorId !== s.id) await selecionarServidor(s.id);
+    E.verVisao = true; E.verCall = false;
+    $('#app').classList.add('chat');
+    renderMain(); renderSide();
+  }
+  async function renderVisao(main) {
+    const s = servidorAtual();
+    if (!s) { E.verVisao = false; return renderMain(); }
+    const membros = E.membros.get(s.id) || [];
+    const online = membros.filter((m) => st(m.id)[0] !== 'off').length;
+    const naCall = s.canais.filter((c) => c.tipo === 'voz').reduce((t, c) => t + (E.voz.get(c.id) || []).length, 0);
+    const num = (n, rot, ic) => h('div', { class: 'num-visao' }, h('span', {}, ic), h('b', {}, String(n)), h('small', {}, rot));
+    const rank = h('ol', { class: 'ranking rank-visao' }, h('li', {}, h('small', {}, 'Carregando ranking…')));
+    main.replaceChildren(h('div', { class: 'painel visao' },
+      h('div', { class: 'capa-visao', style: s.bannerImg ? `background-image:url("${s.bannerImg}")` : '' },
+        h('div', { class: 'capa-info' }, h('div', { class: 'ic-visao' }, s.icone ? h('img', { src: s.icone, alt: '' }) : s.sigla || inicial(s.nome)),
+          h('div', {}, h('h1', {}, s.nome), h('small', {}, (souDono(s) ? 'Você é o dono' : souStaffEm(s.id) ? 'Você é da staff' : 'Membro') + ' · convite ' + (s.convite || ''))),
+          h('button', { class: 'bt', style: 'margin-left:auto', onclick: () => { E.verVisao = false; renderMain(); renderSide(); } }, 'Abrir chat'))),
+      h('div', { class: 'nums-visao' }, num(membros.length, 'membros', '👥'), num(online, 'online agora', '🟢'), num(naCall, 'na call', '🔊'), num(s.canais.length, 'canais', '#')),
+      h('div', { class: 'grade-visao' },
+        h('div', { class: 'card-srv bloco-visao' }, h('div', { class: 'info' }, h('div', { class: 'linha-topo' }, h('b', {}, '🏆 Ranking'), h('span', { class: 'selos' }, h('span', { class: 'pilula' }, 'XP'))), rank)),
+        h('div', { class: 'card-srv bloco-visao' }, h('div', { class: 'info' }, h('div', { class: 'linha-topo' }, h('b', {}, '⚡ Atalhos')),
+          h('div', { class: 'atalhos-visao' },
+            h('button', { class: 'bt', onclick: modalConvite }, '🔗 Convidar'),
+            h('button', { class: 'bt', onclick: () => modalBoasVindas(s) }, '👋 Regras e cargos'),
+            souStaffEm(s.id) ? h('button', { class: 'bt', onclick: () => configBoasVindas(s) }, '⚙️ Editar boas-vindas') : null,
+            souStaffEm(s.id) ? h('button', { class: 'bt', onclick: () => modalAutomod(s) }, '🛡️ AutoMod') : null))))));
+    try {
+      const lista = await api('GET', `/servidores/${s.id}/ranking`);
+      rank.replaceChildren(...(lista.length ? lista.slice(0, 8).map((x, i) => h('li', {}, h('span', {}, ['🥇', '🥈', '🥉'][i] || i + 1 + 'º'), avatar(x.usuario), h('b', {}, x.usuario.nome), h('small', { style: 'margin-left:auto' }, `nv ${x.nivel} · ${x.xp} XP`)))
+        : [h('li', {}, h('small', {}, 'Ninguém pontuou ainda. Manda mensagem pra ganhar XP!'))]));
+    } catch (err) { rank.replaceChildren(h('li', {}, h('small', {}, 'Ranking indisponível.'))); }
+  }
+
+  // Ordem dos servidores na lateral (arrastar e soltar), salva neste navegador.
+  function servidoresOrdenados() {
+    let ordem = [];
+    try { ordem = JSON.parse(ler('kali-ordem-srv') || '[]'); } catch (e) {}
+    const pos = (id) => { const i = ordem.indexOf(id); return i < 0 ? 1e9 + id : i; };
+    return [...E.servidores].sort((a, b) => pos(a.id) - pos(b.id));
+  }
+  let srvArrastado = null;
+  function arrastarSrv(b, sv) {
+    b.draggable = true;
+    b.ondragstart = (e) => { srvArrastado = sv.id; b.classList.add('arrastando'); try { e.dataTransfer.setData('text/plain', 'srv'); } catch (er) {} };
+    b.ondragend = () => { srvArrastado = null; b.classList.remove('arrastando'); };
+    b.ondragover = (e) => { if (srvArrastado && srvArrastado !== sv.id) { e.preventDefault(); b.classList.add('alvo-cima'); } };
+    b.ondragleave = () => b.classList.remove('alvo-cima');
+    b.ondrop = (e) => {
+      e.preventDefault(); b.classList.remove('alvo-cima');
+      if (!srvArrastado || srvArrastado === sv.id) return;
+      const ids = servidoresOrdenados().map((x) => x.id).filter((id) => id !== srvArrastado);
+      ids.splice(ids.indexOf(sv.id), 0, srvArrastado);
+      salvar('kali-ordem-srv', JSON.stringify(ids));
+      renderSide();
+    };
   }
 
   // ---------- render geral ----------
@@ -708,6 +809,7 @@
   function renderMain() {
     const main = $('#main');
     if (E.modo === 'painel') return renderPainel(main);
+    if (E.modo === 'servidor' && E.verVisao) return renderVisao(main);
     if (E.modo === 'dm' && E.telaAmigos) return renderAmigos(main);
     if (E.verCall && window.Voz && Voz.estado.canalId) return renderCall(main);
     const c = canalAtual();
@@ -1299,6 +1401,7 @@
     const mapa = E.digitando.get(E.canalId);
     const agora = Date.now();
     const nomes = mapa ? [...mapa.values()].filter((x) => x.ate > agora).map((x) => x.nome) : [];
+    el.classList.toggle('ativo', nomes.length > 0);
     el.textContent = !nomes.length ? '' : nomes.length === 1 ? `${nomes[0]} está digitando…`
       : nomes.length <= 3 ? `${nomes.slice(0, -1).join(', ')} e ${nomes[nomes.length - 1]} estão digitando…` : 'Várias pessoas estão digitando…';
   }
@@ -1964,9 +2067,11 @@
     try { lista = (await api('GET', `/servidores/${s.id}/automod`)).palavras; } catch (err) { return toast(err.message, 'erro'); }
     const ta = h('textarea', { class: 'campo', rows: 8, placeholder: 'uma palavra ou frase por linha', style: 'width:100%;resize:vertical' });
     ta.value = lista.join('\n');
+    const cfg = await api('GET', `/servidores/${s.id}/automod`).catch(() => ({}));
+    const ckLinks = h('input', { type: 'checkbox', checked: cfg.links || null }), ckSpam = h('input', { type: 'checkbox', checked: cfg.spam || null });
     abrirModal({ titulo: '🛡️ AutoMod', sub: 'Mensagens com essas palavras são barradas antes de chegar no chat (acento e maiúscula não importam). A staff não é filtrada.',
-      corpo: ta, botao: 'Salvar', acao: async () => {
-        const r = await api('PUT', `/servidores/${s.id}/automod`, { palavras: ta.value.split('\n') });
+      corpo: [h('label', { class: 'check-amigo' }, ckLinks, ' 🔗 Bloquear links (staff pode)'), h('label', { class: 'check-amigo' }, ckSpam, ' 🚫 Segurar spam (mensagem repetida ou rajada)'), h('div', { class: 'sec-menu' }, 'Palavras bloqueadas'), ta], botao: 'Salvar', acao: async () => {
+        const r = await api('PUT', `/servidores/${s.id}/automod`, { palavras: ta.value.split('\n'), links: ckLinks.checked, spam: ckSpam.checked });
         toast(`🛡️ AutoMod: ${r.palavras.length} bloqueada(s)`, 'ok');
       } });
   }
@@ -1983,7 +2088,8 @@
       item(srvMudo ? '🔔 Reativar avisos do servidor' : '🔕 Silenciar servidor', () => { const on = alternarLocal('kali-srv-silenciados', s.id); toast(on ? 'Servidor silenciado: sem som nem aviso (menções também)' : 'Avisos do servidor reativados', 'ok'); }), ...extras];
     if (souStaffEm(s.id)) itens.push(item('Configurações do servidor', () => configServidor(s)));
     if (souDono(s)) itens.push(item('Criar canal', () => modalCanal('texto')));
-    if (souStaffEm(s.id)) itens.push(item('Criar evento', () => modalCriarEvento(s)), item('🛡️ AutoMod (palavras bloqueadas)', () => modalAutomod(s)));
+    if (souStaffEm(s.id)) itens.push(item('Criar evento', () => modalCriarEvento(s)), item('🛡️ AutoMod', () => modalAutomod(s)), item('👋 Boas-vindas e cargos', () => configBoasVindas(s)));
+    itens.push(item('📊 Visão geral', () => abrirVisao(s.id)), item('🎭 Regras e meus cargos', () => modalBoasVindas(s)));
     itens.push(item('Abrir ticket com a staff', modalTicket));
     const atual = canalAtual();
     if (atual && atual.ticket && (atual.ticket === E.eu.id || souStaffEm(s.id))) itens.push(item('Fechar este ticket', () => apagarCanal(atual)));
@@ -2471,6 +2577,7 @@
             sel.onchange = async () => { try { await Voz.trocarMic(sel.value); toast('🎙️ Microfone trocado', 'ok'); } catch (err) { toast('Não consegui usar esse microfone.', 'erro'); } };
             return linhaCfg('Microfone', 'Troca na hora, até no meio da call. (Os nomes aparecem depois de liberar o mic uma vez.)', sel);
           })(),
+          linhaCfg('Redução de ruído forte', Voz.ruidoForte ? 'Ligada: corta teclado, ventilador e barulho de fundo (voz em mono).' : 'Desligada: redução normal do navegador.', chave(Voz.ruidoForte, async () => { try { await Voz.definirRuidoForte(!Voz.ruidoForte); } catch (e) { toast('Seu navegador não deixou mudar o microfone.', 'erro'); } re(); })),
           linhaCfg('Tecla de falar', 'Clica e aperta a tecla que você quer usar.', tecla),
           linhaCfg('Volume de cada pessoa', 'Na call, passa o mouse (ou toca) no quadro da pessoa e ajusta o volume dela só pra você.'),
         ];
@@ -2988,7 +3095,7 @@
     if (nome === 'desligado') return;
     try {
       ctxSom = ctxSom || new (window.AudioContext || window.webkitAudioContext)();
-      const notas = { plim: [[880, 0], [1320, 0.12]], zap: [[660, 0], [990, 0.09], [660, 0.18], [990, 0.27]], tambor: [[110, 0], [90, 0.15], [140, 0.3]], vinheta: [[523, 0], [659, 0.1], [784, 0.2], [1047, 0.3]] }[nome] || [];
+      const notas = { plim: [[880, 0], [1320, 0.12]], zap: [[660, 0], [990, 0.09], [660, 0.18], [990, 0.27]], tambor: [[110, 0], [90, 0.15], [140, 0.3]], vinheta: [[523, 0], [659, 0.1], [784, 0.2], [1047, 0.3]], entrou: [[523, 0], [784, 0.09]], saiu: [[784, 0], [494, 0.09]] }[nome] || [];
       for (const [f, t] of notas) {
         const o = ctxSom.createOscillator(), g = ctxSom.createGain(), t0 = ctxSom.currentTime + t;
         o.type = nome === 'tambor' ? 'triangle' : 'sine';
@@ -3347,9 +3454,15 @@
       E.presenca.set(d.outro.id, d.outro.status);
       renderRail(); if (E.modo === 'dm') renderSide();
     });
+    Voz.aoFalarMudo = () => toast('🎙️ Você está mudo! Aperta Ctrl+Shift+M ou o microfone pra falar.', 'erro');
     sock.on('voz:membros', ({ canalId, membros }) => {
       const antes = new Set((E.voz.get(canalId) || []).map((m) => m.usuarioId));
-      if (canalId === Voz.estado.canalId && antes.size && (membros || []).some((m) => !antes.has(m.usuarioId) && m.usuarioId !== E.eu.id)) tocarSom('vinheta');
+      if (canalId === Voz.estado.canalId) {
+        const agora = new Set((membros || []).map((m) => m.usuarioId));
+        if (!antes.has(E.eu.id) && agora.has(E.eu.id)) tocarSom('entrou');
+        else if (antes.size && [...agora].some((id) => !antes.has(id) && id !== E.eu.id)) tocarSom('entrou');
+        else if ([...antes].some((id) => !agora.has(id) && id !== E.eu.id)) tocarSom('saiu');
+      }
       if (membros && membros.length) E.voz.set(canalId, membros); else E.voz.delete(canalId);
       if (canalId === Voz.estado.canalId) { Voz.posicoes(membros, E.eu.id); renderMapa(); if (E.verCall) atualizarCall(); }
       renderSide();
