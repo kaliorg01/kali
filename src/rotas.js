@@ -1238,7 +1238,7 @@ export function criarRotas() {
   // ------------------------------------------------------------ apostas 1x1 (Pix direto pro adm; desligado por padrão)
   const nomeDe = (id) => { const u = id && db.usuarioPorId(id); return u ? { id: u.id, nome: u.nome, usuario: u.usuario } : null; };
   const apostaPublica = (a, uid) => ({ id: a.id, valor: a.valor, jogo: a.jogo, status: a.status, criadoEm: a.criado_em,
-    p1: nomeDe(a.p1), p2: nomeDe(a.p2), adm: nomeDe(a.adm), vencedor: a.vencedor,
+    p1: nomeDe(a.p1), p2: nomeDe(a.p2), adm: nomeDe(a.adm), vencedor: a.vencedor, pago1: !!a.pago1, pago2: !!a.pago2, taxa: a.taxa || 0,
     canalId: [a.p1, a.p2, a.adm].includes(uid) ? a.canal_id : null });
   // Regras padrão por jogo (aparecem na sala; o adm pode combinar outras).
   const REGRAS_JOGO = {
@@ -1253,7 +1253,63 @@ export function criarRotas() {
     const s = servidorComoMembro(uid, idDe(req.params.id));
     const staff = db.ehStaff(s.id, uid);
     res.json({ ligado: db.apostasLigadas(s.id), staff, dono: s.dono_id === uid, minhaChave: staff ? db.pixDoAdm(s.id, uid) : null,
-      admsComPix: db.admsComPix(s.id).length, salas: db.apostasDoServidor(s.id, uid).map((a) => apostaPublica(a, uid)) });
+      admsComPix: db.admsComPix(s.id).length, admsDisponiveis: db.admsDisponiveis(s.id).length, minhaEscala: staff ? db.escalaDoAdm(s.id, uid) : null,
+      taxa: db.taxaApostas(s.id), aoVivo: db.resumoAoVivo(s.id), admStats: staff ? db.statsDoAdm(s.id, uid) : null, bloqueado: !!db.naBlacklist(s.id, uid),
+      salas: db.apostasDoServidor(s.id, uid).map((a) => apostaPublica(a, uid)) });
+  });
+  r.get('/servidores/:id/apostas/ranking', exigirLogin, (req, res) => {
+    const s = servidorComoMembro(req.usuario.id, idDe(req.params.id));
+    const desde = req.query.periodo === 'semana' ? Date.now() - 7 * 86400000 : 0;
+    res.json(db.rankingApostas(s.id, desde).map((x) => ({ ...x, usuario: nomeDe(x.id), pct: x.v + x.d ? Math.round((x.v / (x.v + x.d)) * 100) : 0 })));
+  });
+  r.get('/servidores/:id/apostas/blacklist', exigirLogin, (req, res) => {
+    const s = servidorComoMembro(req.usuario.id, idDe(req.params.id));
+    res.json(db.blacklistDoServidor(s.id));
+  });
+  r.put('/servidores/:id/apostas/blacklist', exigirLogin, (req, res) => {
+    const uid = req.usuario.id;
+    const s = servidorComoStaff(uid, idDe(req.params.id));
+    const c = corpoDe(req);
+    const alvo = db.usuarioPorNome(String(c.usuario || '').replace(/^@/, '').toLowerCase());
+    if (!alvo) throw erro(404, 'Usuário não encontrado (usa o @ dele).');
+    const tirar = c.tirar === true;
+    const motivo = tirar ? null : (typeof c.motivo === 'string' && c.motivo.trim() ? c.motivo.trim().slice(0, 200) : 'Sem motivo informado');
+    db.definirBlacklist(s.id, alvo.id, motivo, uid);
+    db.registrarAuditoria(s.id, uid, tirar ? 'blacklist-tirar' : 'blacklist', alvo.nome, motivo);
+    const canal = db.canalPorNome(s.id, 'blacklist');
+    if (canal && !tirar) publicarMensagem(canal, { autorId: null, sistema: true, texto: `⛔ BLACKLIST — ${alvo.nome} (@${alvo.usuario})\nMotivo: ${motivo}\nNão pode entrar em fila de aposta neste servidor.` });
+    avisarApostas(s.id);
+    res.json({ ok: true });
+  });
+  r.put('/servidores/:id/apostas/escala', exigirLogin, (req, res) => {
+    const uid = req.usuario.id;
+    const s = servidorComoStaff(uid, idDe(req.params.id));
+    const e = corpoDe(req).escala;
+    if (!['disponivel', 'ocupado', 'off'].includes(e)) throw erro(400, 'Escala inválida.');
+    if (!db.pixDoAdm(s.id, uid)) throw erro(400, 'Cadastra sua chave Pix antes.');
+    db.definirEscala(s.id, uid, e);
+    avisarApostas(s.id);
+    res.json({ ok: true });
+  });
+  r.post('/apostas/:id/paguei', exigirLogin, (req, res) => {
+    const uid = req.usuario.id;
+    const a = db.apostaPorId(idDe(req.params.id));
+    if (!a || a.status !== 'andamento') throw erro(404, 'Sala não encontrada ou encerrada.');
+    if (uid !== a.p1 && uid !== a.p2) throw erro(403, 'Só os jogadores marcam pagamento.');
+    db.atualizarAposta(a.id, uid === a.p1 ? { pago1: 1 } : { pago2: 1 });
+    const b = db.apostaPorId(a.id);
+    const c = db.canalPorId(a.canal_id);
+    if (c) publicarMensagem(c, { autorId: null, sistema: true, texto: `✅ ${db.usuarioPorId(uid).nome} marcou que pagou.` + (b.pago1 && b.pago2 ? '\n🟢 Os dois pagaram! Adm, confere os comprovantes e libera a partida.' : '') });
+    avisarApostas(a.servidor_id);
+    res.json({ ok: true });
+  });
+  r.put('/servidores/:id/apostas/taxa', exigirLogin, (req, res) => {
+    const s = servidorComoDono(req.usuario.id, idDe(req.params.id));
+    const t = Number(corpoDe(req).taxa);
+    if (!Number.isInteger(t) || t < 0 || t > 30) throw erro(400, 'Taxa de 0% a 30%.');
+    db.definirTaxaApostas(s.id, t);
+    avisarApostas(s.id);
+    res.json({ ok: true });
   });
   r.put('/servidores/:id/apostas/config', exigirLogin, (req, res) => {
     const uid = req.usuario.id;
@@ -1279,6 +1335,7 @@ export function criarRotas() {
     const valor = Number(c.valor);
     if (!Number.isInteger(valor) || valor < 1 || valor > 10000) throw erro(400, 'Valor da sala: de R$ 1 a R$ 10.000 (inteiro).');
     const jogo = typeof c.jogo === 'string' ? c.jogo.trim().slice(0, 60) : '';
+    if (db.naBlacklist(s.id, uid)) throw erro(403, '⛔ Você está na blacklist de apostas deste servidor.');
     if (db.apostaAbertaDe(s.id, uid)) throw erro(400, 'Você já está numa sala de aposta neste servidor.');
     if (!db.admsComPix(s.id).length) throw erro(400, 'Nenhum adm cadastrou chave Pix ainda.');
     const id = db.criarAposta(s.id, uid, valor, jogo);
@@ -1292,21 +1349,25 @@ export function criarRotas() {
     servidorComoMembro(uid, a.servidor_id);
     if (a.status !== 'aberta') throw erro(400, 'Essa sala já fechou.');
     if (a.p1 === uid) throw erro(400, 'Você criou essa sala, espera alguém entrar.');
+    if (db.naBlacklist(a.servidor_id, uid)) throw erro(403, '⛔ Você está na blacklist de apostas deste servidor.');
     if (db.apostaAbertaDe(a.servidor_id, uid)) throw erro(400, 'Você já está em outra sala de aposta.');
     // adm livre: staff com Pix, fora da partida; online primeiro, depois quem tem menos salas rolando
-    const cands = db.admsComPix(a.servidor_id).filter((id) => id !== a.p1 && id !== uid && db.ehStaff(a.servidor_id, id));
-    if (!cands.length) throw erro(400, 'Nenhum adm livre com Pix cadastrado agora.');
+    const cands = db.admsDisponiveis(a.servidor_id).filter((id) => id !== a.p1 && id !== uid && db.ehStaff(a.servidor_id, id));
+    if (!cands.length) throw erro(400, 'Nenhum adm disponível agora. Tenta de novo em instantes.');
     cands.sort((x, y) => estaOnline(y) - estaOnline(x) || db.apostasAtivasDoAdm(a.servidor_id, x) - db.apostasAtivasDoAdm(a.servidor_id, y));
     const adm = cands[0];
     const ids = [a.p1, uid, adm];
     const canalId = db.criarGrupoDm(ids, `🎲 Aposta R$ ${a.valor} #${a.id}`);
-    db.atualizarAposta(a.id, { p2: uid, adm, canal_id: canalId, status: 'andamento' });
+    const taxa = db.taxaApostas(a.servidor_id);
+    db.atualizarAposta(a.id, { p2: uid, adm, canal_id: canalId, status: 'andamento', taxa });
     const n1 = db.usuarioPorId(a.p1).nome, n2 = db.usuarioPorId(uid).nome, na = db.usuarioPorId(adm).nome;
     for (const p of ids) { entrarSala(p, `c:${canalId}`); emitir(`u:${p}`, 'dm:nova', dmPublica(canalId, p)); }
     const canal = db.canalPorId(canalId);
     publicarMensagem(canal, { autorId: null, sistema: true, texto:
-      `🎲 SALA DE APOSTA #${a.id} — R$ ${a.valor} cada${a.jogo ? ' · ' + a.jogo : ''}\n⚔️ ${n1} x ${n2}\n🛡️ Adm da sala: ${na}\n\n💸 Cada um paga R$ ${a.valor} no Pix do adm:\n🔑 \`${db.pixDoAdm(a.servidor_id, adm)}\`\n\nMandem o comprovante aqui. O adm confirma, vocês jogam e ele declara o vencedor.${regrasDe(a.jogo)}` });
+      `🎲 SALA DE APOSTA #${a.id} — R$ ${a.valor} cada${a.jogo ? ' · ' + a.jogo : ''}\n⚔️ ${n1} x ${n2}\n🛡️ Adm da sala: ${na}\n\n💸 Cada um paga R$ ${a.valor} no Pix do adm:\n🔑 \`${db.pixDoAdm(a.servidor_id, adm)}\`\n\n💰 Pote: R$ ${a.valor * 2}${taxa ? ` · taxa da org ${taxa}% · prêmio R$ ${Math.round(a.valor * 2 * (100 - taxa)) / 100}` : ''}\nMandem o comprovante aqui e apertem ✅ Paguei. O adm confirma, vocês jogam e ele declara o vencedor.${regrasDe(a.jogo)}` });
     emitir(`u:${adm}`, 'aposta:chamado', { id: a.id, valor: a.valor, canalId, p1: n1, p2: n2 });
+    for (const p of [a.p1, uid]) emitir(`u:${p}`, 'aposta:fechou', { id: a.id, valor: a.valor, canalId, adversario: p === a.p1 ? n2 : n1 });
+    push.enviarPush(a.p1, { titulo: '⚔️ Achou adversário!', corpo: `${n2} entrou na sua fila de R$ ${a.valor}. Paga o adm e bora.`, url: '/' }).catch(() => {});
     push.enviarPush(adm, { titulo: '🎲 Você foi chamado pra uma aposta', corpo: `${n1} x ${n2} · R$ ${a.valor}`, url: '/' }).catch(() => {});
     avisarApostas(a.servidor_id);
     res.json(apostaPublica(db.apostaPorId(a.id), uid));
@@ -1333,6 +1394,14 @@ export function criarRotas() {
     const c = db.canalPorId(a.canal_id);
     if (c) publicarMensagem(c, { autorId: null, sistema: true, texto: `🏆 ${db.usuarioPorId(v).nome} venceu a aposta #${a.id} (R$ ${a.valor * 2} no pote). O adm faz o Pix do prêmio.` });
     db.registrarAuditoria(a.servidor_id, uid, 'aposta', db.usuarioPorId(v).nome, `venceu a sala #${a.id} de R$ ${a.valor}`);
+    const perdedor = v === a.p1 ? a.p2 : a.p1;
+    const nv = db.usuarioPorId(v).nome, np = db.usuarioPorId(perdedor)?.nome || '?';
+    const premio = Math.round(a.valor * 2 * (100 - (a.taxa || 0))) / 100;
+    const hall = db.canalPorNome(a.servidor_id, 'hall-da-gloria');
+    if (hall) publicarMensagem(hall, { autorId: null, sistema: true, texto: `🏆 ${nv} amassou ${np}${a.jogo ? ' no ' + a.jogo : ''} e levou R$ ${premio}!` });
+    const pag = db.canalPorNome(a.servidor_id, 'pagamentos');
+    if (pag) publicarMensagem(pag, { autorId: null, sistema: true, texto: `💸 Sala #${a.id} · ${a.jogo || 'aposta'} · pote R$ ${a.valor * 2}${a.taxa ? ` · taxa ${a.taxa}%` : ''} · prêmio R$ ${premio} → ${nv} · adm ${db.usuarioPorId(a.adm)?.nome || '?'}` });
+    for (const p of [a.p1, a.p2]) emitir(`u:${p}`, 'aposta:fim', { id: a.id, vencedor: nv, euVenci: p === v, premio });
     avisarApostas(a.servidor_id);
     res.json({ ok: true });
   });

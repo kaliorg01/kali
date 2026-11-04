@@ -1044,7 +1044,7 @@
     valor.value = ler('kali-aposta-valor') || '10';
     // Jogo → modos → formato. Vira um texto tipo "Free Fire · X1 · MD3", que é o que casa a fila.
     const JOGOS_APOSTA = {
-      'Free Fire': { ic: '🔥', modos: ['X1 dos Crias', 'X2', 'X3', 'X4 (Squad)', 'Contra Squad (CS)', 'Gel infinito X1'], formatos: ['MD1', 'MD3', 'MD5'] },
+      'Free Fire': { ic: '🔥', modos: ['1x1', '2x2', '3x3', '4x4', 'Contra Squad (CS)', 'X1 dos Crias'], formatos: ['Mobile', 'Mobilador', 'Emulador', 'Misto'] },
       'Valorant': { ic: '🎯', modos: ['1v1 (Mata-mata até 13)', '1v1 (primeiro a 20 kills)', '2v2', '5v5 personalizada'], formatos: ['MD1', 'MD3'] },
       'GTA RP': { ic: '🚗', modos: ['Racha de carro', 'PvP X1 (arma)', 'PvP X1 (soco)', 'Fuga / perseguição', 'PvP em grupo'], formatos: ['1 rodada', 'MD3', 'MD5'] },
       'Outro': { ic: '🎮', modos: ['X1', 'X2', '5v5'], formatos: ['MD1', 'MD3'] },
@@ -1074,6 +1074,8 @@
       if (a.status === 'aberta' && a.p1.id !== E.eu.id) acoes.push(h('button', { class: 'bt prim', onclick: async () => { if (!confirmou18()) return; try { const r = await api('POST', `/apostas/${a.id}/entrar`); if (r.canalId) abrirSalaAposta(r.canalId); } catch (err) { toast(err.message, 'erro'); } } }, '⚔️ Entrar R$ ' + a.valor));
       if (a.status === 'aberta' && a.p1.id === E.eu.id) acoes.push(h('button', { class: 'bt', onclick: async () => { await api('POST', `/apostas/${a.id}/cancelar`).catch((e) => toast(e.message, 'erro')); re(); } }, 'Sair da fila'));
       if (a.canalId && a.status !== 'aberta') acoes.push(h('button', { class: 'bt prim', onclick: () => abrirSalaAposta(a.canalId) }, '💬 Abrir sala'));
+      const pagoEu = a.p1?.id === E.eu.id ? a.pago1 : a.p2?.id === E.eu.id ? a.pago2 : null;
+      if (a.status === 'andamento' && souJog && !pagoEu) acoes.push(h('button', { class: 'bt', onclick: async () => { await api('POST', `/apostas/${a.id}/paguei`).catch((e) => toast(e.message, 'erro')); re(); } }, '✅ Paguei'));
       if (a.status === 'andamento' && (souAdm || d.staff)) {
         acoes.push(h('button', { class: 'bt', onclick: async () => { if (!confirm(`${a.p1.nome} venceu?`)) return; await api('POST', `/apostas/${a.id}/vencedor`, { usuarioId: a.p1.id }).catch((e) => toast(e.message, 'erro')); re(); } }, '🏆 ' + a.p1.nome),
           h('button', { class: 'bt', onclick: async () => { if (!confirm(`${a.p2.nome} venceu?`)) return; await api('POST', `/apostas/${a.id}/vencedor`, { usuarioId: a.p2.id }).catch((e) => toast(e.message, 'erro')); re(); } }, '🏆 ' + a.p2.nome),
@@ -1086,18 +1088,26 @@
           h('div', { class: 'linha-topo' }, h('b', {}, `SALA #${a.id}${a.jogo ? ' · ' + a.jogo : ''}`), h('span', { class: 'selos' }, souAdm ? pil('Você é o adm', 'destaque') : null, pil(st1, st2))),
           h('div', { class: 'versus' }, h('span', {}, a.p1.nome), h('i', {}, 'VS'), h('span', { class: a.p2 ? '' : 'esperando' }, a.p2 ? a.p2.nome : 'esperando…')),
           h('div', { class: 'stats' }, h('span', {}, '🛡️ ', h('b', {}, a.adm ? a.adm.nome : 'adm é chamado quando fechar')), h('span', {}, '💰 pote ', h('b', {}, 'R$ ' + a.valor * 2)),
-            a.vencedor ? h('span', {}, '🏆 ', h('b', {}, [a.p1, a.p2].find((p) => p && p.id === a.vencedor)?.nome || '')) : null),
+            a.vencedor ? h('span', {}, '🏆 ', h('b', {}, [a.p1, a.p2].find((p) => p && p.id === a.vencedor)?.nome || '')) : null,
+            a.status === 'andamento' ? h('span', { class: 'pagos' }, (a.pago1 ? '✅' : '⏳') + ' ' + a.p1.nome.split(' ')[0] + '  ' + (a.pago2 ? '✅' : '⏳') + ' ' + a.p2.nome.split(' ')[0]) : null,
+            a.taxa ? h('span', {}, `💼 ${a.taxa}% · prêmio `, h('b', {}, 'R$ ' + Math.round(a.valor * 2 * (100 - a.taxa)) / 100)) : null),
           acoes.length ? h('div', { class: 'acoes-aposta' }, acoes) : null));
     };
     const abertas = d.salas.filter((a) => a.status === 'aberta'), minhas = d.salas.filter((a) => a.status !== 'aberta');
     const chave = h('input', { class: 'busca-painel', placeholder: 'Sua chave Pix (CPF, e-mail, celular ou aleatória)', maxlength: 120, value: d.minhaChave || '' });
     main.replaceChildren(h('div', { class: 'painel apostas' },
       h('h1', {}, 'Apostas ', h('span', {}, '1x1')),
+      h('div', { class: 'ao-vivo-apostas' }, h('span', {}, '🔥 ', h('b', {}, String(d.aoVivo.salas)), ' salas rolando agora'), h('span', {}, '💰 ', h('b', {}, 'R$ ' + d.aoVivo.emJogo), ' em jogo'), h('span', {}, '🛡️ ', h('b', {}, String(d.admsDisponiveis)), ' adm(s) disponível(is)'),
+        h('button', { class: 'bt', onclick: () => modalRankingApostas(s) }, '👑 Ranking'), h('button', { class: 'bt', onclick: () => modalBlacklist(s, d.staff) }, '⛔ Blacklist')),
       h('p', { class: 'sub' }, 'Entra na fila do valor, quando aparecer adversário a sala fecha e um adm livre é chamado. O Pix vai direto pra chave do adm, que confirma, apita e paga o vencedor.'),
       d.dono ? h('div', { class: 'aviso-aposta' }, h('div', {}, h('b', {}, d.ligado ? '🟢 Apostas ligadas neste servidor' : '🔴 Apostas desligadas'), h('small', {}, 'Dinheiro de verdade: confira as leis da sua região. O app não guarda nem processa pagamento.')),
         h('button', { class: 'bt' + (d.ligado ? '' : ' prim'), onclick: async () => { if (!d.ligado && !confirm('Ligar apostas valendo dinheiro neste servidor? Você e seus adms se responsabilizam pelos pagamentos.')) return; await api('PUT', `/servidores/${s.id}/apostas/config`, { ligado: !d.ligado }).catch((e) => toast(e.message, 'erro')); re(); } }, d.ligado ? 'Desligar' : 'Ligar apostas')) : null,
       d.staff ? h('div', { class: 'aviso-aposta' }, h('div', { style: 'flex:1' }, h('b', {}, '🔑 Sua chave Pix de adm'), h('small', {}, d.minhaChave ? 'Cadastrada: quando você for chamado pra uma sala, os jogadores pagam nela.' : 'Cadastre pra entrar na escala de adms das apostas.'), chave),
         h('button', { class: 'bt prim', onclick: async () => { try { await api('PUT', `/servidores/${s.id}/apostas/pix`, { chave: chave.value }); toast(chave.value.trim() ? '🔑 Chave salva: você já pode ser chamado' : 'Chave removida', 'ok'); re(); } catch (e) { toast(e.message, 'erro'); } } }, 'Salvar')) : null,
+      d.staff && d.minhaChave ? h('div', { class: 'aviso-aposta' }, h('div', {}, h('b', {}, '🛡️ Sua escala'), h('small', {}, `Você apitou ${d.admStats.apitadas} sala(s) · R$ ${d.admStats.volume} passaram pela sua chave.`)),
+        h('div', { class: 'abas-painel' }, [['disponivel', '🟢 Disponível'], ['ocupado', '🟡 Ocupado'], ['off', '⚫ Off']].map(([v, t]) => h('button', { class: 'aba-painel' + (d.minhaEscala === v ? ' ativo' : ''), onclick: async () => { await api('PUT', `/servidores/${s.id}/apostas/escala`, { escala: v }).catch((e) => toast(e.message, 'erro')); re(); } }, t)))) : null,
+      d.dono && d.ligado ? h('div', { class: 'aviso-aposta' }, h('div', {}, h('b', {}, '💼 Taxa da org'), h('small', {}, 'Porcentagem do pote que fica com a org/adm. Aparece na conta da sala.')),
+        (() => { const t = h('select', { class: 'busca-painel', style: 'flex:0 0 110px' }, [0, 5, 10, 15, 20].map((v) => h('option', { value: v }, v + '%'))); t.value = String(d.taxa); t.onchange = async () => { await api('PUT', `/servidores/${s.id}/apostas/taxa`, { taxa: Number(t.value) }).catch((e) => toast(e.message, 'erro')); toast('💼 Taxa: ' + t.value + '%', 'ok'); }; return t; })()) : null,
       !d.ligado ? h('p', { class: 'vazio-painel' }, 'As apostas estão desligadas aqui. Só o dono do servidor liga.') : [
         h('div', { class: 'barra-painel' }, selJogo, selModo, selFmt, valor, h('button', { class: 'bt prim', style: 'padding:9px 18px', onclick: fila }, '🎲 Entrar na fila')),
         h('small', { class: 'conta' }, '🔥 Free Fire · 🎯 Valorant · 🚗 GTA RP — as regras do jogo aparecem na sala quando ela fecha. Modos em time (X4, 5v5): o capitão entra na fila e paga pelo time.'),
@@ -1168,6 +1178,82 @@
       ban.style.transform = `scale(1.12) translate(${-x * 14}px, ${-y * 10}px)`;
     });
     menu.addEventListener('mouseleave', () => { ban.style.transform = ''; });
+  }
+
+  // ---------- org de apostas: painel de fila dentro do canal (ex.: 3x3-mobilador) ----------
+  const RE_CANAL_FILA = /^([1-4])x\1-(mobile|mobilador|emulador|misto)$/;
+  function painelFilaCanal(c) {
+    const m = c && !c.dm && RE_CANAL_FILA.exec(c.nome || '');
+    const s = servidorAtual();
+    if (!m || !s) return '';
+    const plat = m[2][0].toUpperCase() + m[2].slice(1);
+    const jogo = `Free Fire · ${m[1]}x${m[1]} · ${plat}`;
+    const box = h('div', { class: 'fila-canal' }, h('small', {}, 'Carregando fila…'));
+    const desenhar = async () => {
+      let d;
+      try { d = await api('GET', `/servidores/${s.id}/apostas`); } catch (e) { box.remove(); return; }
+      if (!d.ligado) { box.replaceChildren(h('small', {}, '🎲 Apostas desligadas neste servidor.')); return; }
+      const minhas = d.salas.filter((a) => a.jogo === jogo && a.status === 'aberta');
+      const naFila = minhas.find((a) => a.p1.id === E.eu.id);
+      box.replaceChildren(
+        h('div', { class: 'fc-topo' }, h('b', {}, `🔥 FILA ${m[1]}X${m[1]} · ${plat.toUpperCase()}`), h('span', { class: 'pilula vivo' }, `● ${d.aoVivo.salas} rolando · R$ ${d.aoVivo.emJogo} em jogo`)),
+        h('div', { class: 'fc-valores' }, [5, 10, 20, 30, 50, 100].map((v) => {
+          const esperando = minhas.filter((a) => a.valor === v && a.p1.id !== E.eu.id).length;
+          const minha = naFila && naFila.valor === v;
+          return h('button', { class: 'fc-valor' + (minha ? ' minha' : esperando ? ' tem' : ''), onclick: async () => {
+            if (minha) { await api('POST', `/apostas/${naFila.id}/cancelar`).catch((e) => toast(e.message, 'erro')); return desenhar(); }
+            if (!confirmou18()) return;
+            const livre = minhas.find((a) => a.valor === v && a.p1.id !== E.eu.id);
+            try {
+              if (livre) { const r = await api('POST', `/apostas/${livre.id}/entrar`); if (r.canalId) abrirSalaAposta(r.canalId); }
+              else { await api('POST', `/servidores/${s.id}/apostas`, { valor: v, jogo }); toast(`⏳ Na fila ${m[1]}x${m[1]} de R$ ${v}. Te aviso quando aparecer adversário!`, 'ok'); desenhar(); }
+            } catch (e) { toast(e.message, 'erro'); }
+          } }, h('b', {}, 'R$ ' + v), h('small', {}, minha ? 'você na fila · sair' : esperando ? `${esperando} esperando` : 'vazia'));
+        })),
+        h('small', { class: 'fc-dica' }, d.bloqueado ? '⛔ Você está na blacklist deste servidor.' : `🛡️ ${d.admsDisponiveis} adm(s) disponível(is)${d.taxa ? ` · taxa ${d.taxa}%` : ''} · capitão paga pelo time`));
+    };
+    desenhar();
+    box._redesenhar = desenhar;
+    return box;
+  }
+
+  // ---------- telas de resultado ----------
+  function telaVitoria(d) {
+    const t = h('div', { class: 'tela-vitoria' + (d.euVenci ? '' : ' derrota') },
+      h('div', { class: 'tv-caixa' }, h('div', { class: 'tv-trofeu' }, d.euVenci ? '🏆' : '💀'),
+        h('h2', {}, d.euVenci ? 'VITÓRIA!' : 'Não foi dessa vez'), h('p', {}, d.euVenci ? `Você levou R$ ${d.premio}` : `${d.vencedor} venceu a sala #${d.id}`),
+        h('button', { class: 'bt prim', onclick: () => t.remove() }, d.euVenci ? 'Bora de novo' : 'Revanche')),
+      d.euVenci ? Array.from({ length: 40 }, (_, i) => h('i', { class: 'tv-confete', style: `--x:${(i * 53) % 100}vw;--d:${(i % 10) * 0.12}s;--c:${['#ff4fb8', '#fbbf24', '#34d399', '#60a5fa', '#a78bfa'][i % 5]}` })) : null);
+    document.body.append(t);
+    tocarSom(d.euVenci ? 'vinheta' : 'saiu');
+    setTimeout(() => t.remove(), 7000);
+  }
+  function aoFechouAposta(d) {
+    tocarSom('zap');
+    const card = h('div', { class: 'chamada pedido-voz' }, h('b', {}, `⚔️ Achou adversário: ${d.adversario}!`), h('small', {}, `Sala #${d.id} · R$ ${d.valor}. Paga o adm e aperta ✅ Paguei.`),
+      h('div', { class: 'acoes' }, h('button', { class: 'bt prim', onclick: () => { card.remove(); abrirSalaAposta(d.canalId); } }, 'Ir pra sala')));
+    document.body.append(card);
+    setTimeout(() => card.remove(), 30000);
+  }
+
+  // ---------- ranking de apostadores e blacklist ----------
+  async function modalRankingApostas(s, periodo) {
+    let l = [];
+    try { l = await api('GET', `/servidores/${s.id}/apostas/ranking${periodo === 'semana' ? '?periodo=semana' : ''}`); } catch (e) { return toast(e.message, 'erro'); }
+    const abas = h('div', { class: 'abas-painel' }, [['geral', 'Geral'], ['semana', 'Semana']].map(([v, t]) => h('button', { type: 'button', class: 'aba-painel' + ((periodo || 'geral') === v ? ' ativo' : ''), onclick: () => modalRankingApostas(s, v) }, t)));
+    abrirModal({ titulo: '👑 Ranking de apostadores', sub: 'Quem mais amassou nas salas do servidor.', corpo: [abas, l.length ? h('ol', { class: 'ranking rank-apostas' }, l.map((x, i) =>
+      h('li', { class: i === 0 ? 'rei' : '' }, h('span', { class: 'pos' }, ['👑', '🥈', '🥉'][i] || i + 1 + 'º'), h('b', {}, x.usuario ? x.usuario.nome : '?'), i === 0 ? h('span', { class: 'pilula destaque' }, 'Rei do X1') : null,
+        h('small', { style: 'margin-left:auto' }, `${x.v}V ${x.d}D · ${x.pct}% · 🔥${x.melhor} seguidas`)))) : h('p', { class: 'vazio-painel' }, 'Ninguém finalizou aposta ainda.')] });
+  }
+  async function modalBlacklist(s, staff) {
+    let l = [];
+    try { l = await api('GET', `/servidores/${s.id}/apostas/blacklist`); } catch (e) { return toast(e.message, 'erro'); }
+    const quem = h('input', { placeholder: '@usuario', maxlength: 21 }), motivo = h('input', { placeholder: 'Motivo (ex.: não pagou a sala #12)', maxlength: 200 });
+    abrirModal({ titulo: '⛔ Blacklist de apostas', sub: 'Quem está aqui não entra em fila neste servidor.', corpo: [
+      h('div', { class: 'lista-busca' }, l.length ? l.map((b) => h('div', { class: 'res-busca' }, h('div', { class: 'rb-topo' }, h('b', {}, b.nome + ' (@' + b.usuario + ')'), h('small', {}, new Date(b.criado_em).toLocaleDateString('pt-BR')),
+        staff ? h('button', { type: 'button', class: 'bt', style: 'margin-left:auto;padding:3px 10px', onclick: async () => { await api('PUT', `/servidores/${s.id}/apostas/blacklist`, { usuario: b.usuario, tirar: true }).catch((e) => toast(e.message, 'erro')); modalBlacklist(s, staff); } }, 'Tirar') : null), h('div', { class: 'rb-txt' }, b.motivo || ''))) : h('p', { class: 'vazio-painel' }, 'Ninguém na blacklist. 🙏')),
+      staff ? [h('div', { class: 'sec-menu' }, 'Adicionar'), campo('Usuário', quem), campo('Motivo', motivo)] : null].flat().filter(Boolean),
+      botao: staff ? 'Colocar na blacklist' : null, acao: staff ? async () => { await api('PUT', `/servidores/${s.id}/apostas/blacklist`, { usuario: quem.value.trim(), motivo: motivo.value }); toast('⛔ Adicionado na blacklist', 'ok'); } : null });
   }
 
   // ---------- render geral ----------
@@ -1469,7 +1555,7 @@
       h('div', { class: 'respondendo', id: 'respondendo', hidden: true }),
       h('div', { class: 'caixa' }, bAnexo, arq, ta, info, bGif, emoji, bGrav, bEnviar),
       h('div', { class: 'dica' }, '@usuario menciona · /time 5 Valorant · /confete /fogo /explosao /terremoto /neon /arcoiris')));
-    main.replaceChildren(topo, c.tipo === 'assistir' ? h('section', { class: 'palco', id: 'palco' }) : '', msgs, compositor);
+    main.replaceChildren(topo, c.tipo === 'assistir' ? h('section', { class: 'palco', id: 'palco' }) : '', painelFilaCanal(c), msgs, compositor);
     // Arrastar e soltar arquivos em qualquer lugar do chat.
     const soltar = h('div', { class: 'soltar-aqui' }, h('div', {}, ic('mais', 34), h('b', {}, 'Solta pra enviar'), h('small', {}, (c.dm ? '@' + c.dm.outro.usuario : '#' + c.nome) + ' · até 10 arquivos')));
     let arrastando = 0;
@@ -2419,6 +2505,11 @@
     estudo: { nome: '📚 Estudo', canais: [['tarefas', 'texto'], ['duvidas', 'texto'], ['Sala de estudo', 'voz']] },
     jogo: { nome: '🎮 Comunidade de jogo', canais: [['anuncios', 'texto'], ['regras', 'texto'], ['procurando-time', 'texto'], ['clipes', 'texto'], ['Lobby', 'voz'], ['Ranked', 'voz'], ['Assistir partida', 'assistir']] },
     streamer: { nome: '📺 Comunidade de streamer', canais: [['avisos-da-live', 'texto'], ['chat-geral', 'texto'], ['clipes-e-cortes', 'texto'], ['sugestoes', 'texto'], ['Sala VIP', 'voz'], ['Watch party', 'assistir']] },
+    apostas: { nome: '🎲 Org de Apostas (Free Fire)', canais: [
+      ...['mobile', 'mobilador', 'emulador', 'misto'].flatMap((p) => { const cat = { mobile: '📱 MOBILE', mobilador: '🕹️ MOBILADOR', emulador: '💻 EMULADOR', misto: '🔀 MISTO' }[p]; return [['regras-apostas-' + p, 'texto', cat, { forum: true, soStaff: true }], ...['1x1', '2x2', '3x3', '4x4'].map((m) => [m + '-' + p, 'texto', cat])]; }),
+      ['mediadores', 'texto', '🛡️ SEGURANÇA', { soStaff: true }], ['feedback', 'texto', '🛡️ SEGURANÇA'], ['blacklist', 'texto', '🛡️ SEGURANÇA', { soStaff: true }], ['pagamentos', 'texto', '🛡️ SEGURANÇA', { soStaff: true }],
+      ['resenha', 'texto', '💬 COMUNIDADE'], ['chat-geral', 'texto', '💬 COMUNIDADE'], ['clips', 'texto', '💬 COMUNIDADE'], ['hall-da-gloria', 'texto', '💬 COMUNIDADE', { soStaff: true }], ['ranking-semanal', 'texto', '💬 COMUNIDADE', { soStaff: true }],
+      ['ANÁLISES 1', 'voz', '🧠 ANÁLISES'], ['ANÁLISES 2', 'voz', '🧠 ANÁLISES'], ['ANÁLISES 3', 'voz', '🧠 ANÁLISES']] },
     trabalho: { nome: '💼 Equipe / trabalho', canais: [['avisos', 'texto'], ['tarefas', 'texto'], ['ideias', 'texto'], ['Reunião', 'voz']] },
   };
   const NOVIDADES = [
@@ -2477,8 +2568,12 @@
         let s;
         if (aba === 'criar') {
           s = await api('POST', '/servidores', { nome: nome.value.trim() });
-          for (const [n, tipo] of MODELOS[modelo.value].canais) {
-            try { s.canais.push(await api('POST', `/servidores/${s.id}/canais`, { nome: n, tipo })); } catch (e) {}
+          for (const [n, tipo, categoria, extra] of MODELOS[modelo.value].canais) {
+            try {
+              let c = await api('POST', `/servidores/${s.id}/canais`, { nome: n, tipo });
+              if (categoria || extra) c = await api('PATCH', `/canais/${c.id}/config`, { categoria: categoria || '', ...(extra || {}) }).catch(() => c);
+              s.canais.push(c);
+            } catch (e) {}
           }
         } else {
           const cod = codigoDoConvite(codigo.value);
@@ -4116,7 +4211,9 @@
     Voz.aoFalarMudo = () => toast('🎙️ Você está mudo! Aperta Ctrl+Shift+M ou o microfone pra falar.', 'erro');
     sock.on('voz:pedido', cardPedidoVoz);
     sock.on('aposta:chamado', aoChamadoAposta);
-    sock.on('apostas:atualizado', (d) => { if (E.verApostas && d && d.servidorId === E.servidorId) renderMain(); });
+    sock.on('aposta:fechou', aoFechouAposta);
+    sock.on('aposta:fim', telaVitoria);
+    sock.on('apostas:atualizado', (d) => { if (!d || d.servidorId !== E.servidorId) return; if (E.verApostas) renderMain(); else document.querySelector('.fila-canal')?._redesenhar?.(); });
     sock.on('voz:atividade', aoAtividade);
     sock.on('voz:pedido-fim', (d) => $('#pedido-' + d.canalId + '-' + d.usuarioId)?.remove());
     sock.on('voz:resposta', (d) => {

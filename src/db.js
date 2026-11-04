@@ -181,6 +181,7 @@ for (const [tabela, coluna, def] of [
   ['servidores', 'automod', 'TEXT'],
   ['servidores', 'automod_cfg', 'TEXT'],
   ['servidores', 'apostas_on', 'INTEGER NOT NULL DEFAULT 0'],
+  ['servidores', 'apostas_taxa', 'INTEGER NOT NULL DEFAULT 0'],
   ['usuarios', 'efeito', 'TEXT'],
   ['usuarios', 'verificado', 'INTEGER NOT NULL DEFAULT 0'],
   ['canais', 'sala_espera', 'INTEGER NOT NULL DEFAULT 0'],
@@ -637,6 +638,32 @@ CREATE TABLE IF NOT EXISTS apostas_pix (
   usuario_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
   chave TEXT NOT NULL, PRIMARY KEY (servidor_id, usuario_id)
 );`);
+for (const [t, c, d] of [['apostas', 'pago1', 'INTEGER NOT NULL DEFAULT 0'], ['apostas', 'pago2', 'INTEGER NOT NULL DEFAULT 0'], ['apostas', 'taxa', 'INTEGER NOT NULL DEFAULT 0'], ['apostas_pix', 'escala', "TEXT NOT NULL DEFAULT 'disponivel'"]]) {
+  try { db.exec(`ALTER TABLE ${t} ADD COLUMN ${c} ${d}`); } catch { /* já existe */ }
+}
+db.exec('CREATE TABLE IF NOT EXISTS apostas_blacklist (servidor_id INTEGER NOT NULL REFERENCES servidores(id) ON DELETE CASCADE, usuario_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE, motivo TEXT, por INTEGER, criado_em INTEGER NOT NULL, PRIMARY KEY (servidor_id, usuario_id))');
+export const taxaApostas = (sid) => q('SELECT apostas_taxa FROM servidores WHERE id = ?').get(sid)?.apostas_taxa || 0;
+export const definirTaxaApostas = (sid, t) => q('UPDATE servidores SET apostas_taxa = ? WHERE id = ?').run(t, sid);
+export const escalaDoAdm = (sid, uid) => q('SELECT escala FROM apostas_pix WHERE servidor_id = ? AND usuario_id = ?').get(sid, uid)?.escala || null;
+export const definirEscala = (sid, uid, e) => q('UPDATE apostas_pix SET escala = ? WHERE servidor_id = ? AND usuario_id = ?').run(e, sid, uid);
+export const admsDisponiveis = (sid) => q("SELECT usuario_id FROM apostas_pix WHERE servidor_id = ? AND escala = 'disponivel'").all(sid).map((r) => r.usuario_id);
+export const naBlacklist = (sid, uid) => q('SELECT motivo FROM apostas_blacklist WHERE servidor_id = ? AND usuario_id = ?').get(sid, uid) || null;
+export const blacklistDoServidor = (sid) => q('SELECT b.usuario_id, b.motivo, b.criado_em, u.nome, u.usuario FROM apostas_blacklist b JOIN usuarios u ON u.id = b.usuario_id WHERE b.servidor_id = ? ORDER BY b.criado_em DESC').all(sid);
+export function definirBlacklist(sid, uid, motivo, por) {
+  if (motivo === null) q('DELETE FROM apostas_blacklist WHERE servidor_id = ? AND usuario_id = ?').run(sid, uid);
+  else q('INSERT OR REPLACE INTO apostas_blacklist (servidor_id, usuario_id, motivo, por, criado_em) VALUES (?, ?, ?, ?, ?)').run(sid, uid, motivo, por, Date.now());
+}
+/** Ranking: vitórias, derrotas, % e maior sequência de vitórias (desde `desde`). */
+export function rankingApostas(sid, desde = 0) {
+  const linhas = q("SELECT p1, p2, vencedor FROM apostas WHERE servidor_id = ? AND status = 'finalizada' AND criado_em >= ? ORDER BY id").all(sid, desde);
+  const m = new Map();
+  const de = (id) => { if (!m.has(id)) m.set(id, { id, v: 0, d: 0, seq: 0, melhor: 0 }); return m.get(id); };
+  for (const l of linhas) for (const p of [l.p1, l.p2]) { if (!p) continue; const x = de(p); if (l.vencedor === p) { x.v++; x.seq++; x.melhor = Math.max(x.melhor, x.seq); } else { x.d++; x.seq = 0; } }
+  return [...m.values()].sort((a, b) => b.v - a.v || a.d - b.d).slice(0, 30);
+}
+export const resumoAoVivo = (sid) => q("SELECT COUNT(*) AS salas, COALESCE(SUM(valor * 2), 0) AS emJogo FROM apostas WHERE servidor_id = ? AND status = 'andamento'").get(sid);
+export const statsDoAdm = (sid, uid) => q("SELECT COUNT(*) AS apitadas, COALESCE(SUM(valor * 2), 0) AS volume FROM apostas WHERE servidor_id = ? AND adm = ? AND status = 'finalizada'").get(sid, uid);
+export const canalPorNome = (sid, nome) => q("SELECT * FROM canais WHERE servidor_id = ? AND nome = ? AND tipo = 'texto'").get(sid, nome) || null;
 export const apostasLigadas = (sid) => !!q('SELECT apostas_on FROM servidores WHERE id = ?').get(sid)?.apostas_on;
 export const ligarApostas = (sid, on) => q('UPDATE servidores SET apostas_on = ? WHERE id = ?').run(on ? 1 : 0, sid);
 export const pixDoAdm = (sid, uid) => q('SELECT chave FROM apostas_pix WHERE servidor_id = ? AND usuario_id = ?').get(sid, uid)?.chave || null;

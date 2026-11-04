@@ -1578,3 +1578,35 @@ body.terremoto{animation:terremoto .8s cubic-bezier(.36,.07,.19,.97)}
 @keyframes rastro{to{transform:scale(0) translateY(10px);opacity:0}}
 @media (prefers-reduced-motion:reduce){.aura-anel i,.nome-glitch::before,.nome-glitch::after,.nome-ouro,.tx-neon,.tx-arcoiris,.msg.mencao,.tile.falando,.mini.falando,.rosto.falando,.moldura-lendaria .av,.av-linha .av{animation:none!important}}
 .autor.nome-ouro{background-image:linear-gradient(90deg,#b8860b,#ffd700,#fff6c2,#ffd700,#b8860b)!important;background-size:250% 100%!important;-webkit-background-clip:text!important;background-clip:text!important}
+
+/* ===== Apostas parte 2: fila no canal, contador, vitória, ranking ===== */
+.fila-canal{margin:10px 16px 0;padding:12px 14px;border-radius:12px;background:linear-gradient(135deg,color-mix(in srgb,var(--roxo) 18%,var(--card)),var(--card));border:1px solid color-mix(in srgb,var(--roxo) 45%,transparent);box-shadow:0 0 22px var(--roxo-suave)}
+.fc-topo{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.fc-topo b{letter-spacing:.06em}
+.fc-valores{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:8px}
+.fc-valor{display:flex;flex-direction:column;align-items:center;padding:10px 6px;border-radius:10px;background:var(--chip);border:1px solid var(--chip-borda);transition:transform .15s,border-color .15s}
+.fc-valor:hover{transform:translateY(-2px);border-color:var(--roxo)}
+.fc-valor b{font-size:16px}.fc-valor small{font-size:10.5px;color:var(--fraco)}
+.fc-valor.tem{border-color:var(--ok);box-shadow:0 0 12px rgba(62,230,168,.25)}.fc-valor.tem small{color:var(--ok)}
+.fc-valor.minha{background:var(--roxo);border-color:var(--roxo);color:#fff;animation:vsPulsa 1.6s infinite}.fc-valor.minha small{color:#fff}
+.fc-dica{display:block;margin-top:8px;color:var(--fraco);font-size:11.5px}
+.ao-vivo-apostas{display:flex;flex-wrap:wrap;align-items:center;gap:14px;padding:10px 14px;margin:10px 0 12px;border-radius:10px;background:var(--card);border:1px solid var(--borda);font-size:13px}
+.ao-vivo-apostas b{color:var(--roxo)}
+.ao-vivo-apostas .bt{padding:5px 12px;font-size:12px}
+.ao-vivo-apostas .bt:first-of-type{margin-left:auto}
+.pagos{font-size:12px}
+.rank-apostas{list-style:none;display:flex;flex-direction:column;gap:6px;margin-top:10px}
+.rank-apostas li{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;background:var(--chip)}
+.rank-apostas li.rei{background:linear-gradient(90deg,rgba(251,191,36,.2),var(--chip));border:1px solid rgba(251,191,36,.5)}
+.rank-apostas .pos{width:28px;text-align:center}
+.tela-vitoria{position:fixed;inset:0;z-index:var(--z-toast);display:grid;place-items:center;background:radial-gradient(circle,rgba(251,191,36,.25),rgba(0,0,0,.85) 70%);animation:modalPop .3s ease;overflow:hidden}
+.tela-vitoria.derrota{background:radial-gradient(circle,rgba(120,120,140,.2),rgba(0,0,0,.88) 70%)}
+.tv-caixa{text-align:center;z-index:1}
+.tv-trofeu{font-size:110px;animation:trofeu 1s cubic-bezier(.2,1.6,.4,1);filter:drop-shadow(0 0 30px rgba(251,191,36,.7))}
+@keyframes trofeu{from{transform:scale(0) rotate(-30deg)}}
+.tv-caixa h2{font-size:48px;font-weight:900;letter-spacing:.06em;background:linear-gradient(90deg,#fbbf24,#ff4fb8,#fbbf24);-webkit-background-clip:text;background-clip:text;color:transparent;margin:6px 0}
+.derrota .tv-caixa h2{background:none;color:#cbd5e1;font-size:32px}
+.derrota .tv-trofeu{filter:none}
+.tv-caixa p{color:#fff;font-size:18px;margin-bottom:16px}
+.tv-confete{position:absolute;top:-20px;left:var(--x);width:9px;height:14px;background:var(--c);border-radius:2px;animation:confeteCai 2.8s linear var(--d) infinite}
+@keyframes confeteCai{to{transform:translateY(110vh) rotate(720deg)}}
