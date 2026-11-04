@@ -1470,3 +1470,17 @@ h3 .verificado{width:18px;height:18px;font-size:11px}
 .conquista span.conq-ok{font-size:10px}
 .conquista span.conq-ic{font-size:30px}
 .conquista:not(.ok) span.conq-ic{font-size:22px;margin:10px 0 4px}
+
+/* ===== Balões: minhas mensagens na direita, as dos outros na esquerda ===== */
+.msg.minha{flex-direction:row-reverse}
+.msg.minha .corpo{text-align:right;display:flex;flex-direction:column;align-items:flex-end}
+.msg.minha .corpo>b,.msg.minha .corpo>time,.msg.minha .corpo>.tag{display:inline}
+.msg .texto{display:block;width:fit-content;max-width:min(560px,100%);padding:7px 12px;border-radius:14px 14px 14px 4px;background:var(--chip);border:1px solid var(--chip-borda);text-align:left}
+.msg.minha .texto{border-radius:14px 14px 4px 14px;background:color-mix(in srgb,var(--roxo) 26%,var(--card));border-color:color-mix(in srgb,var(--roxo) 45%,transparent)}
+.msg.agrupada .texto{margin-top:0}
+.msg.minha.agrupada .lado{order:-1}
+.msg.minha .acoes-msg{right:auto;left:10px}
+.msg.minha .reacoes,.msg.minha .previa-link,.msg.minha .anexo,.msg.minha img{align-self:flex-end}
+.msg.minha:hover{background:transparent;box-shadow:none}
+[data-theme="dark"] .msg.minha:hover{background:transparent;box-shadow:none}
+.msg.minha .corpo>*:not(.texto){text-align:right}

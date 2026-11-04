@@ -1455,7 +1455,8 @@
       aviso.lastChild.onclick = () => aviso.replaceWith(nodoMensagem({ ...m, autor: { ...m.autor, _ver: true } }, null));
       if (!m.autor._ver) return aviso;
     }
-    const div = h('div', { class: 'msg' + (agrupada ? ' agrupada' : '') + (mencionaEu(m) ? ' mencao' : ''), 'data-id': m.id });
+    const ehMinha = !!(m.autor && E.eu && m.autor.id === E.eu.id && !m.webhook && !m.sistema);
+    const div = h('div', { class: 'msg' + (agrupada ? ' agrupada' : '') + (mencionaEu(m) ? ' mencao' : '') + (ehMinha ? ' minha' : ' dele'), 'data-id': m.id });
     if (agrupada) div.append(h('span', { class: 'lado' }, hora(m.criadoEm)));
     else if (m.sistema || !m.autor) div.append(h('div', { class: 'av ia' }, logo()));
     else div.append(avatar(m.autor));
