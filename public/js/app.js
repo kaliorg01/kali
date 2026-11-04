@@ -347,7 +347,7 @@
   }
   async function selecionarServidor(id) {
     sairAssistir();
-    E.verVisao = false;
+    E.verVisao = false; E.verApostas = false;
     aplicarTemaServidor(id);
     E.modo = 'servidor';
     E.servidorId = id;
@@ -380,7 +380,7 @@
     render();
   }
   async function abrirCanal(id, semMobile) {
-    E.verVisao = false;
+    E.verVisao = false; E.verApostas = false;
     const c = acharCanal(id);
     if (!c) return;
     if (c.tipo === 'voz') {
@@ -453,6 +453,7 @@
       nav(ic('💬'), 'Mensagens', abrirDms, E.modo === 'dm' && !E.telaAmigos, nDm),
       nav(ic('👋'), 'Amigos', abrirAmigos, E.modo === 'dm' && E.telaAmigos, E.amigos.recebidos.length),
       nav(ic('🔖'), 'Mensagens salvas', modalSalvas),
+      nav(ic('🎲'), 'Apostas 1x1', () => abrirApostas(E.servidorId), E.modo === 'servidor' && E.verApostas),
       nav(ic('🏆'), 'Visão geral e ranking', () => abrirVisao(E.servidorId), E.modo === 'servidor' && E.verVisao),
       h('button', { class: 'rot rot-btn', 'aria-expanded': String(!fechado), onclick: () => { salvar('kali-srv-recolhido', fechado ? '' : '1'); renderSide(); } }, h('span', {}, (fechado ? '▸ ' : '▾ ') + 'Servidores'), h('small', {}, String(E.servidores.length))),
       fechado ? null : h('div', { class: 'lista-srv' }, srvs),
@@ -1015,6 +1016,98 @@
     } catch (err) { toast(err.message, 'erro'); }
   }
 
+  // ---------- apostas 1x1 (fila por valor; Pix direto pro adm chamado) ----------
+  async function abrirApostas(sid) {
+    const s = E.servidores.find((x) => x.id === sid) || servidorAtual();
+    if (!s) return;
+    if (E.modo !== 'servidor' || E.servidorId !== s.id) await selecionarServidor(s.id);
+    E.verApostas = true; E.verVisao = false; E.verCall = false;
+    $('#app').classList.add('chat');
+    renderMain(); renderSide();
+  }
+  const abrirSalaAposta = async (canalId) => { E.verApostas = false; E.modo = 'dm'; E.servidorId = null; await abrirCanal(canalId); render(); };
+  const confirmou18 = () => ler('kali-18') === '1' || (confirm('🔞 Apostas valendo dinheiro são só pra maiores de 18 anos e por sua conta e risco. A KALI não guarda nem devolve dinheiro: o Pix vai direto pro adm da sala. Você tem 18 anos ou mais?') && (salvar('kali-18', '1'), true));
+  async function renderApostas(main) {
+    const s = servidorAtual();
+    if (!s) { E.verApostas = false; return renderMain(); }
+    let d;
+    try { d = await api('GET', `/servidores/${s.id}/apostas`); } catch (err) { main.replaceChildren(h('div', { class: 'painel' }, h('p', {}, err.message))); return; }
+    if (!E.verApostas || servidorAtual()?.id !== s.id) return;
+    const re = () => renderApostas(main);
+    const valor = h('select', { class: 'busca-painel', style: 'flex:0 0 130px' }, [5, 10, 20, 30, 50, 100, 200].map((v) => h('option', { value: v }, 'R$ ' + v)));
+    valor.value = ler('kali-aposta-valor') || '10';
+    // Jogo → modos → formato. Vira um texto tipo "Free Fire · X1 · MD3", que é o que casa a fila.
+    const JOGOS_APOSTA = {
+      'Free Fire': { ic: '🔥', modos: ['X1 dos Crias', 'X2', 'X3', 'X4 (Squad)', 'Contra Squad (CS)', 'Gel infinito X1'], formatos: ['MD1', 'MD3', 'MD5'] },
+      'Valorant': { ic: '🎯', modos: ['1v1 (Mata-mata até 13)', '1v1 (primeiro a 20 kills)', '2v2', '5v5 personalizada'], formatos: ['MD1', 'MD3'] },
+      'GTA RP': { ic: '🚗', modos: ['Racha de carro', 'PvP X1 (arma)', 'PvP X1 (soco)', 'Fuga / perseguição', 'PvP em grupo'], formatos: ['1 rodada', 'MD3', 'MD5'] },
+      'Outro': { ic: '🎮', modos: ['X1', 'X2', '5v5'], formatos: ['MD1', 'MD3'] },
+    };
+    const selJogo = h('select', { class: 'busca-painel', style: 'flex:0 0 150px' }, Object.entries(JOGOS_APOSTA).map(([k, j]) => h('option', { value: k }, j.ic + ' ' + k)));
+    const selModo = h('select', { class: 'busca-painel', style: 'flex:1 1 170px' }), selFmt = h('select', { class: 'busca-painel', style: 'flex:0 0 110px' });
+    const encherModos = () => { const j = JOGOS_APOSTA[selJogo.value]; selModo.replaceChildren(...j.modos.map((m) => h('option', { value: m }, m))); selFmt.replaceChildren(...j.formatos.map((m) => h('option', { value: m }, m))); };
+    const [gS, mS, fS] = (ler('kali-aposta-jogo') || '').split(' · ');
+    selJogo.value = JOGOS_APOSTA[gS] ? gS : 'Free Fire'; encherModos(); if (mS) selModo.value = mS; if (fS) selFmt.value = fS;
+    selJogo.onchange = encherModos;
+    const jogo = { get value() { return [selJogo.value, selModo.value, selFmt.value].join(' · '); } };
+    const fila = async () => {
+      if (!confirmou18()) return;
+      salvar('kali-aposta-valor', valor.value); salvar('kali-aposta-jogo', jogo.value);
+      const v = Number(valor.value);
+      const livre = d.salas.find((x) => x.status === 'aberta' && x.valor === v && x.p1.id !== E.eu.id && (x.jogo || '') === jogo.value);
+      try {
+        if (livre) { const r = await api('POST', `/apostas/${livre.id}/entrar`); toast('⚔️ Achou adversário! Abrindo a sala…', 'ok'); if (r.canalId) abrirSalaAposta(r.canalId); }
+        else { await api('POST', `/servidores/${s.id}/apostas`, { valor: v, jogo: jogo.value }); toast('⏳ Você tá na fila de R$ ' + v + '. Quando alguém entrar, o adm é chamado.', 'ok'); re(); }
+      } catch (err) { toast(err.message, 'erro'); }
+    };
+    const pil = (t, c) => h('span', { class: 'pilula' + (c ? ' ' + c : '') }, t);
+    const STATUS_A = { aberta: ['Na fila', 'ok'], andamento: ['Em andamento', 'vivo'], finalizada: ['Finalizada', 'contorno'], cancelada: ['Cancelada', ''] };
+    const card = (a) => {
+      const souAdm = a.adm && a.adm.id === E.eu.id, souJog = [a.p1?.id, a.p2?.id].includes(E.eu.id);
+      const acoes = [];
+      if (a.status === 'aberta' && a.p1.id !== E.eu.id) acoes.push(h('button', { class: 'bt prim', onclick: async () => { if (!confirmou18()) return; try { const r = await api('POST', `/apostas/${a.id}/entrar`); if (r.canalId) abrirSalaAposta(r.canalId); } catch (err) { toast(err.message, 'erro'); } } }, '⚔️ Entrar R$ ' + a.valor));
+      if (a.status === 'aberta' && a.p1.id === E.eu.id) acoes.push(h('button', { class: 'bt', onclick: async () => { await api('POST', `/apostas/${a.id}/cancelar`).catch((e) => toast(e.message, 'erro')); re(); } }, 'Sair da fila'));
+      if (a.canalId && a.status !== 'aberta') acoes.push(h('button', { class: 'bt prim', onclick: () => abrirSalaAposta(a.canalId) }, '💬 Abrir sala'));
+      if (a.status === 'andamento' && (souAdm || d.staff)) {
+        acoes.push(h('button', { class: 'bt', onclick: async () => { if (!confirm(`${a.p1.nome} venceu?`)) return; await api('POST', `/apostas/${a.id}/vencedor`, { usuarioId: a.p1.id }).catch((e) => toast(e.message, 'erro')); re(); } }, '🏆 ' + a.p1.nome),
+          h('button', { class: 'bt', onclick: async () => { if (!confirm(`${a.p2.nome} venceu?`)) return; await api('POST', `/apostas/${a.id}/vencedor`, { usuarioId: a.p2.id }).catch((e) => toast(e.message, 'erro')); re(); } }, '🏆 ' + a.p2.nome),
+          h('button', { class: 'bt', onclick: async () => { if (!confirm('Cancelar a sala? Devolva o Pix pros dois.')) return; await api('POST', `/apostas/${a.id}/cancelar`).catch((e) => toast(e.message, 'erro')); re(); } }, '❌ Cancelar'));
+      }
+      const [st1, st2] = STATUS_A[a.status] || ['', ''];
+      return h('div', { class: 'card-srv card-aposta' + (souAdm ? ' sou-adm' : souJog ? ' sou-jog' : '') },
+        h('div', { class: 'capa capa-aposta' }, h('small', {}, 'R$'), h('b', {}, String(a.valor))),
+        h('div', { class: 'info' },
+          h('div', { class: 'linha-topo' }, h('b', {}, `SALA #${a.id}${a.jogo ? ' · ' + a.jogo : ''}`), h('span', { class: 'selos' }, souAdm ? pil('Você é o adm', 'destaque') : null, pil(st1, st2))),
+          h('div', { class: 'versus' }, h('span', {}, a.p1.nome), h('i', {}, 'VS'), h('span', { class: a.p2 ? '' : 'esperando' }, a.p2 ? a.p2.nome : 'esperando…')),
+          h('div', { class: 'stats' }, h('span', {}, '🛡️ ', h('b', {}, a.adm ? a.adm.nome : 'adm é chamado quando fechar')), h('span', {}, '💰 pote ', h('b', {}, 'R$ ' + a.valor * 2)),
+            a.vencedor ? h('span', {}, '🏆 ', h('b', {}, [a.p1, a.p2].find((p) => p && p.id === a.vencedor)?.nome || '')) : null),
+          acoes.length ? h('div', { class: 'acoes-aposta' }, acoes) : null));
+    };
+    const abertas = d.salas.filter((a) => a.status === 'aberta'), minhas = d.salas.filter((a) => a.status !== 'aberta');
+    const chave = h('input', { class: 'busca-painel', placeholder: 'Sua chave Pix (CPF, e-mail, celular ou aleatória)', maxlength: 120, value: d.minhaChave || '' });
+    main.replaceChildren(h('div', { class: 'painel apostas' },
+      h('h1', {}, 'Apostas ', h('span', {}, '1x1')),
+      h('p', { class: 'sub' }, 'Entra na fila do valor, quando aparecer adversário a sala fecha e um adm livre é chamado. O Pix vai direto pra chave do adm, que confirma, apita e paga o vencedor.'),
+      d.dono ? h('div', { class: 'aviso-aposta' }, h('div', {}, h('b', {}, d.ligado ? '🟢 Apostas ligadas neste servidor' : '🔴 Apostas desligadas'), h('small', {}, 'Dinheiro de verdade: confira as leis da sua região. O app não guarda nem processa pagamento.')),
+        h('button', { class: 'bt' + (d.ligado ? '' : ' prim'), onclick: async () => { if (!d.ligado && !confirm('Ligar apostas valendo dinheiro neste servidor? Você e seus adms se responsabilizam pelos pagamentos.')) return; await api('PUT', `/servidores/${s.id}/apostas/config`, { ligado: !d.ligado }).catch((e) => toast(e.message, 'erro')); re(); } }, d.ligado ? 'Desligar' : 'Ligar apostas')) : null,
+      d.staff ? h('div', { class: 'aviso-aposta' }, h('div', { style: 'flex:1' }, h('b', {}, '🔑 Sua chave Pix de adm'), h('small', {}, d.minhaChave ? 'Cadastrada: quando você for chamado pra uma sala, os jogadores pagam nela.' : 'Cadastre pra entrar na escala de adms das apostas.'), chave),
+        h('button', { class: 'bt prim', onclick: async () => { try { await api('PUT', `/servidores/${s.id}/apostas/pix`, { chave: chave.value }); toast(chave.value.trim() ? '🔑 Chave salva: você já pode ser chamado' : 'Chave removida', 'ok'); re(); } catch (e) { toast(e.message, 'erro'); } } }, 'Salvar')) : null,
+      !d.ligado ? h('p', { class: 'vazio-painel' }, 'As apostas estão desligadas aqui. Só o dono do servidor liga.') : [
+        h('div', { class: 'barra-painel' }, selJogo, selModo, selFmt, valor, h('button', { class: 'bt prim', style: 'padding:9px 18px', onclick: fila }, '🎲 Entrar na fila')),
+        h('small', { class: 'conta' }, '🔥 Free Fire · 🎯 Valorant · 🚗 GTA RP — as regras do jogo aparecem na sala quando ela fecha. Modos em time (X4, 5v5): o capitão entra na fila e paga pelo time.'),
+        h('small', { class: 'conta' }, `${d.admsComPix} adm(s) com Pix cadastrado`),
+        h('div', { class: 'sec-painel' }, h('b', {}, 'Filas abertas'), h('small', {}, '· clica pra enfrentar')),
+        abertas.length ? h('div', { class: 'grade-painel' }, abertas.map(card)) : h('p', { class: 'vazio-painel' }, 'Ninguém na fila agora. Entra você!'),
+        minhas.length ? [h('div', { class: 'sec-painel' }, h('b', {}, 'Minhas salas'), h('small', {}, '· últimas 24h')), h('div', { class: 'grade-painel' }, minhas.map(card))] : null]));
+  }
+  function aoChamadoAposta(d) {
+    tocarSom('zap');
+    const card = h('div', { class: 'chamada pedido-voz' }, h('b', {}, `🎲 Você foi chamado como adm! Sala #${d.id}`), h('small', {}, `${d.p1} x ${d.p2} · R$ ${d.valor} cada`),
+      h('div', { class: 'acoes' }, h('button', { class: 'bt prim', onclick: () => { card.remove(); abrirSalaAposta(d.canalId); } }, 'Abrir sala'), h('button', { class: 'bt', onclick: () => card.remove() }, 'Depois')));
+    document.body.append(card);
+    setTimeout(() => card.remove(), 45000);
+  }
+
   // ---------- render geral ----------
   function render() { $('#app').classList.toggle('modo-painel', E.modo === 'painel'); renderRail(); renderSide(); renderMain(); renderMembros(); }
 
@@ -1227,6 +1320,7 @@
     const main = $('#main');
     if (E.modo === 'painel') return renderPainel(main);
     if (E.modo === 'servidor' && E.verVisao) return renderVisao(main);
+    if (E.modo === 'servidor' && E.verApostas) return renderApostas(main);
     if (E.modo === 'dm' && E.telaAmigos) return renderAmigos(main);
     if (E.verCall && window.Voz && Voz.estado.canalId) return renderCall(main);
     const c = canalAtual();
@@ -3604,7 +3698,7 @@
     const jaTem = new Set(itens.filter((i) => i.tipo === 'dm' || i.tipo === 'amigo').map((i) => i.nome));
     for (const s of E.servidores) for (const m of E.membros.get(s.id) || []) if (m.id !== E.eu.id && !jaTem.has(m.nome)) { jaTem.add(m.nome); itens.push({ tipo: 'pessoa', nome: m.nome, sub: '@' + m.usuario + ' · ' + s.nome, ir: () => abrirDmCom(m.usuario).catch((e) => toast(e.message, 'erro')) }); }
     for (const [nome, sub, ir] of [['Painel', 'Ir pro painel', abrirPainel], ['Mutar / desmutar', 'Microfone na call', () => Voz.alternarMudo()], ['Ensurdecer', 'Áudio da call', () => Voz.alternarSurdo()], ['Sair da call', 'Desconectar', () => Voz.sair()],
-      ['Configurações', 'Abrir configurações', () => configUsuario()], ['Criar ou entrar em servidor', 'Novo servidor', modalServidor], ['Trocar tema claro/escuro', 'Aparência', alternarTema], ['Status de jogo', 'Jogando…', definirJogo], ['Atalhos', 'Ver atalhos do teclado', modalAtalhos], ['Ativar notificações', 'Push no celular/PC', () => ativarPush().then(() => toast('🔔 Notificações ligadas', 'ok')).catch((e) => toast(e.message, 'erro'))], ['Mensagens salvas', 'Suas salvas', modalSalvas], ['Novo story', 'Postar story de 24h', modalNovoStory], ['Meu perfil completo', 'Conquistas e números', () => perfilCompleto(E.eu)], ['Tour rápido', 'Rever o tour', () => { salvar('kali-tour', ''); tourInicial(); }]])
+      ['Configurações', 'Abrir configurações', () => configUsuario()], ['Criar ou entrar em servidor', 'Novo servidor', modalServidor], ['Trocar tema claro/escuro', 'Aparência', alternarTema], ['Status de jogo', 'Jogando…', definirJogo], ['Atalhos', 'Ver atalhos do teclado', modalAtalhos], ['Ativar notificações', 'Push no celular/PC', () => ativarPush().then(() => toast('🔔 Notificações ligadas', 'ok')).catch((e) => toast(e.message, 'erro'))], ['Apostas 1x1', 'Fila de apostas do servidor', () => abrirApostas(E.servidorId)], ['Mensagens salvas', 'Suas salvas', modalSalvas], ['Novo story', 'Postar story de 24h', modalNovoStory], ['Meu perfil completo', 'Conquistas e números', () => perfilCompleto(E.eu)], ['Tour rápido', 'Rever o tour', () => { salvar('kali-tour', ''); tourInicial(); }]])
       itens.push({ tipo: 'cmd', nome, sub, ir });
     const ICS = { canal: '#', voz: '🔊', dm: '@', amigo: '@', pessoa: '@', servidor: '★', cmd: '>' };
     const inp = h('input', { placeholder: 'Pra onde? (# canal, @ pessoa, * servidor, > comando)', 'aria-label': 'Troca rápida' });
@@ -3928,6 +4022,8 @@
     });
     Voz.aoFalarMudo = () => toast('🎙️ Você está mudo! Aperta Ctrl+Shift+M ou o microfone pra falar.', 'erro');
     sock.on('voz:pedido', cardPedidoVoz);
+    sock.on('aposta:chamado', aoChamadoAposta);
+    sock.on('apostas:atualizado', (d) => { if (E.verApostas && d && d.servidorId === E.servidorId) renderMain(); });
     sock.on('voz:atividade', aoAtividade);
     sock.on('voz:pedido-fim', (d) => $('#pedido-' + d.canalId + '-' + d.usuarioId)?.remove());
     sock.on('voz:resposta', (d) => {

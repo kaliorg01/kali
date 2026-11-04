@@ -1240,6 +1240,13 @@ export function criarRotas() {
   const apostaPublica = (a, uid) => ({ id: a.id, valor: a.valor, jogo: a.jogo, status: a.status, criadoEm: a.criado_em,
     p1: nomeDe(a.p1), p2: nomeDe(a.p2), adm: nomeDe(a.adm), vencedor: a.vencedor,
     canalId: [a.p1, a.p2, a.adm].includes(uid) ? a.canal_id : null });
+  // Regras padrão por jogo (aparecem na sala; o adm pode combinar outras).
+  const REGRAS_JOGO = {
+    'Free Fire': '📋 Regras Free Fire:\n• Sala personalizada criada pelo adm (ele manda ID e senha aqui)\n• Mandem o ID e o nick do FF antes de começar\n• Proibido emulador contra mobile, a não ser que os dois aceitem\n• Sem hack, macro ou painel: pego = perde o valor\n• Queda de conexão: refaz a rodada uma vez; caiu de novo, perde a rodada\n• Print do resultado final no chat',
+    'Valorant': '📋 Regras Valorant:\n• Partida personalizada (o adm ou o criador da sala hospeda)\n• Mandem o Riot ID (nome#tag) antes de começar\n• 1v1: mapa e agente combinados na sala; 5v5: capitães respondem pelo time\n• Sem smurf de elo muito diferente sem avisar, sem cheat (Vanguard ligado)\n• Desconectou: pausa de até 5 min, depois perde o round\n• Print do placar final no chat',
+    'GTA RP': '📋 Regras GTA RP:\n• Combinem cidade/servidor RP e o local do encontro\n• Mandem o nome do personagem e o ID na cidade\n• Racha: carros da mesma categoria, largada gravada; PvP: mesma arma e colete\n• Respeitem as regras da cidade (sem quebrar RP, sem mod menu)\n• Grava a tela ou o adm assiste ao vivo pra valer\n• Print ou clipe do resultado no chat',
+  };
+  const regrasDe = (jogo) => { const k = Object.keys(REGRAS_JOGO).find((n) => (jogo || '').startsWith(n)); return k ? '\n\n' + REGRAS_JOGO[k] : ''; };
   const avisarApostas = (sid) => emitir(`s:${sid}`, 'apostas:atualizado', { servidorId: sid });
   r.get('/servidores/:id/apostas', exigirLogin, (req, res) => {
     const uid = req.usuario.id;
@@ -1271,7 +1278,7 @@ export function criarRotas() {
     const c = corpoDe(req);
     const valor = Number(c.valor);
     if (!Number.isInteger(valor) || valor < 1 || valor > 10000) throw erro(400, 'Valor da sala: de R$ 1 a R$ 10.000 (inteiro).');
-    const jogo = typeof c.jogo === 'string' ? c.jogo.trim().slice(0, 40) : '';
+    const jogo = typeof c.jogo === 'string' ? c.jogo.trim().slice(0, 60) : '';
     if (db.apostaAbertaDe(s.id, uid)) throw erro(400, 'Você já está numa sala de aposta neste servidor.');
     if (!db.admsComPix(s.id).length) throw erro(400, 'Nenhum adm cadastrou chave Pix ainda.');
     const id = db.criarAposta(s.id, uid, valor, jogo);
@@ -1292,13 +1299,13 @@ export function criarRotas() {
     cands.sort((x, y) => estaOnline(y) - estaOnline(x) || db.apostasAtivasDoAdm(a.servidor_id, x) - db.apostasAtivasDoAdm(a.servidor_id, y));
     const adm = cands[0];
     const ids = [a.p1, uid, adm];
-    const canalId = db.criarGrupoDm(ids, `🎲 Aposta R${a.valor} #${a.id}`);
+    const canalId = db.criarGrupoDm(ids, `🎲 Aposta R$ ${a.valor} #${a.id}`);
     db.atualizarAposta(a.id, { p2: uid, adm, canal_id: canalId, status: 'andamento' });
     const n1 = db.usuarioPorId(a.p1).nome, n2 = db.usuarioPorId(uid).nome, na = db.usuarioPorId(adm).nome;
     for (const p of ids) { entrarSala(p, `c:${canalId}`); emitir(`u:${p}`, 'dm:nova', dmPublica(canalId, p)); }
     const canal = db.canalPorId(canalId);
     publicarMensagem(canal, { autorId: null, sistema: true, texto:
-      `🎲 SALA DE APOSTA #${a.id} — R$ ${a.valor} cada${a.jogo ? ' · ' + a.jogo : ''}\n⚔️ ${n1} x ${n2}\n🛡️ Adm da sala: ${na}\n\n💸 Cada um paga R$ ${a.valor} no Pix do adm:\n🔑 ${db.pixDoAdm(a.servidor_id, adm)}\n\nMandem o comprovante aqui. O adm confirma, vocês jogam e ele declara o vencedor.` });
+      `🎲 SALA DE APOSTA #${a.id} — R$ ${a.valor} cada${a.jogo ? ' · ' + a.jogo : ''}\n⚔️ ${n1} x ${n2}\n🛡️ Adm da sala: ${na}\n\n💸 Cada um paga R$ ${a.valor} no Pix do adm:\n🔑 \`${db.pixDoAdm(a.servidor_id, adm)}\`\n\nMandem o comprovante aqui. O adm confirma, vocês jogam e ele declara o vencedor.${regrasDe(a.jogo)}` });
     emitir(`u:${adm}`, 'aposta:chamado', { id: a.id, valor: a.valor, canalId, p1: n1, p2: n2 });
     push.enviarPush(adm, { titulo: '🎲 Você foi chamado pra uma aposta', corpo: `${n1} x ${n2} · R$ ${a.valor}`, url: '/' }).catch(() => {});
     avisarApostas(a.servidor_id);
