@@ -614,23 +614,46 @@ export function criarRotas() {
   });
 
   // Perfil: servidores e amigos em comum.
+  // Selo de verificado (✔️): só o dono do app dá/tira.
+  r.post('/usuarios/:id/verificado', exigirLogin, (req, res) => {
+    if (!ehDonoDoApp(req.usuario)) throw erro(403, 'Só o dono da KALI verifica contas.');
+    const alvo = idDe(req.params.id);
+    if (!db.usuarioPorId(alvo)) throw erro(404, 'Usuário não encontrado.');
+    db.definirVerificado(alvo, corpoDe(req).verificado !== false);
+    res.json({ ok: true });
+  });
+  // Cargo animado: o nome de quem tem o cargo brilha no chat (staff).
+  r.put('/cargos/:id/animado', exigirLogin, (req, res) => {
+    const cargo = cargoComoStaff(req.usuario.id, req.params.id);
+    db.definirCargoAnimado(cargo.id, !!corpoDe(req).animado);
+    avisarCargos(cargo.servidor_id);
+    res.json({ ok: true });
+  });
+
   // Conquistas: calculadas na hora a partir dos números da conta.
   r.get('/usuarios/:id/conquistas', exigirLogin, (req, res) => {
     const alvo = idDe(req.params.id);
     if (!db.usuarioPorId(alvo)) throw erro(404, 'Usuário não encontrado.');
     const e = db.estatisticasUsuario(alvo);
     const dias = e.criadoEm ? Math.floor((Date.now() - e.criadoEm) / 86400000) : 0;
+    // [emoji, nome, descrição, valor atual, meta, raridade]
     const lista = [
-      ['💬', 'Primeira palavra', 'Mandou a primeira mensagem', e.mensagens >= 1],
-      ['🗣️', 'Tagarela', '100 mensagens', e.mensagens >= 100],
-      ['📢', 'Lenda do chat', '1.000 mensagens', e.mensagens >= 1000],
-      ['🏗️', 'Fundador', 'Criou um servidor', e.servidoresDono >= 1],
-      ['🌍', 'Viajante', 'Está em 5 servidores', e.servidores >= 5],
-      ['🐣', 'Chegou agora', 'Conta nova (menos de 7 dias)', dias < 7],
-      ['🎖️', 'Veterano', '30 dias de KALI', dias >= 30],
-      ['👑', 'Raiz', '1 ano de KALI', dias >= 365],
-    ].map(([emoji, nome, desc, ok]) => ({ emoji, nome, desc, ok }));
-    res.json({ ...e, dias, conquistas: lista });
+      ['🐣', 'Chegou agora', 'Criou a conta na KALI', 1, 1, 'comum'],
+      ['💬', 'Primeira palavra', 'Mandou a primeira mensagem', e.mensagens, 1, 'comum'],
+      ['🗣️', 'Tagarela', 'Mandou 100 mensagens', e.mensagens, 100, 'raro'],
+      ['📢', 'Lenda do chat', 'Mandou 1.000 mensagens', e.mensagens, 1000, 'epico'],
+      ['☄️', 'Imparável', 'Mandou 10.000 mensagens', e.mensagens, 10000, 'lendario'],
+      ['🤝', 'Enturmado', 'Fez 5 amigos', e.amigos, 5, 'comum'],
+      ['🌟', 'Popular', 'Fez 25 amigos', e.amigos, 25, 'epico'],
+      ['🏗️', 'Fundador', 'Criou um servidor', e.servidoresDono, 1, 'raro'],
+      ['🏰', 'Imperador', 'Criou 3 servidores', e.servidoresDono, 3, 'lendario'],
+      ['🌍', 'Viajante', 'Está em 5 servidores', e.servidores, 5, 'raro'],
+      ['🎖️', 'Veterano', '30 dias de KALI', dias, 30, 'epico'],
+      ['👑', 'Raiz', '1 ano de KALI', dias, 365, 'lendario'],
+    ].map(([emoji, nome, desc, valor, meta, raridade]) => ({ emoji, nome, desc, valor: Math.min(valor, meta), meta, raridade, ok: valor >= meta }));
+    const PONTOS = { comum: 10, raro: 25, epico: 50, lendario: 100 };
+    const pontos = lista.filter((c) => c.ok).reduce((t, c) => t + PONTOS[c.raridade], 0);
+    res.json({ ...e, dias, pontos, pontosMax: lista.reduce((t, c) => t + PONTOS[c.raridade], 0), conquistas: lista });
   });
 
   // Stories de 24h.

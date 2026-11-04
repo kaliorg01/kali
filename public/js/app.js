@@ -564,6 +564,7 @@
           h('div', {}, h('h1', {}, s.nome), h('small', {}, (souDono(s) ? 'Você é o dono' : souStaffEm(s.id) ? 'Você é da staff' : 'Membro') + ' · convite ' + (s.convite || ''))),
           h('button', { class: 'bt', style: 'margin-left:auto', onclick: () => { E.verVisao = false; renderMain(); renderSide(); } }, 'Abrir chat'))),
       h('div', { class: 'nums-visao' }, num(membros.length, 'membros', '👥'), num(online, 'online agora', '🟢'), num(naCall, 'na call', '🔊'), num(s.canais.length, 'canais', '#')),
+      h('div', { class: 'mascote-visao', id: 'mascote-visao' }, h('small', {}, 'Carregando mascote…')),
       h('div', { class: 'grade-visao' },
         h('div', { class: 'card-srv bloco-visao' }, h('div', { class: 'info' }, h('div', { class: 'linha-topo' }, h('b', {}, '🏆 Ranking'), h('span', { class: 'selos' }, h('span', { class: 'pilula' }, 'XP'))), rank)),
         h('div', { class: 'card-srv bloco-visao' }, h('div', { class: 'info' }, h('div', { class: 'linha-topo' }, h('b', {}, '⚡ Atalhos')),
@@ -574,6 +575,8 @@
             souStaffEm(s.id) ? h('button', { class: 'bt', onclick: () => modalAutomod(s) }, '🛡️ AutoMod') : null))))));
     try {
       const lista = await api('GET', `/servidores/${s.id}/ranking`);
+      const tot = lista.reduce((t, x) => t + (x.xp || 0) + ((x.nivel || 1) - 1) * 100, 0), mc = mascoteDe(tot), mbox = $('#mascote-visao');
+      if (mbox) mbox.replaceChildren(h('div', { class: 'mascote-ic' }, mc.emoji), h('div', { class: 'mascote-txt' }, h('b', {}, 'Mascote: ' + mc.nome), h('small', {}, mc.prox ? `${tot} XP da galera · evolui pra ${mc.prox[1]} ${mc.prox[2]} em ${mc.prox[0]} XP` : `${tot} XP da galera · forma máxima!`), h('div', { class: 'barra-mascote' }, h('i', { style: `width:${mc.pct}%` }))));
       rank.replaceChildren(...(lista.length ? lista.slice(0, 8).map((x, i) => h('li', {}, h('span', {}, ['🥇', '🥈', '🥉'][i] || i + 1 + 'º'), avatar(x.usuario), h('b', {}, x.usuario.nome), h('small', { style: 'margin-left:auto' }, `nv ${x.nivel} · ${x.xp} XP`)))
         : [h('li', {}, h('small', {}, 'Ninguém pontuou ainda. Manda mensagem pra ganhar XP!'))]));
     } catch (err) { rank.replaceChildren(h('li', {}, h('small', {}, 'Ranking indisponível.'))); }
@@ -709,8 +712,24 @@
     f.style.setProperty('--perfil', u.cor || 'var(--roxo)');
     try {
       const d = await api('GET', `/usuarios/${u.id}/conquistas`);
-      nums.replaceChildren(...[[d.mensagens, 'mensagens'], [d.servidores, 'servidores'], [d.dias, 'dias de KALI']].map(([n, r]) => h('div', {}, h('b', {}, String(n)), h('small', {}, r))));
-      conq.replaceChildren(...d.conquistas.map((c) => h('div', { class: 'conquista' + (c.ok ? ' ok' : ''), title: c.desc }, h('span', {}, c.emoji), h('b', {}, c.nome), h('small', {}, c.desc))));
+      // números que sobem contando
+      const contar = (el, alvo) => { const t0 = performance.now(); const passo = (t) => { const k = Math.min(1, (t - t0) / 900); el.textContent = Math.round(alvo * (1 - Math.pow(1 - k, 3))).toLocaleString('pt-BR'); if (k < 1) requestAnimationFrame(passo); }; requestAnimationFrame(passo); };
+      nums.replaceChildren(...[[d.mensagens, 'mensagens', '💬'], [d.servidores, 'servidores', '🏠'], [d.amigos || 0, 'amigos', '🤝'], [d.dias, 'dias de KALI', '📅']].map(([n, r, ic]) => { const b = h('b', {}, '0'); contar(b, n); return h('div', {}, h('span', { class: 'ic-num' }, ic), b, h('small', {}, r)); }));
+      const RAR = { comum: 'Comum', raro: 'Raro', epico: 'Épico', lendario: 'Lendário' };
+      const ORDEM = ['comum', 'raro', 'epico', 'lendario'];
+      const feitas = d.conquistas.filter((c) => c.ok).length, pct = Math.round((d.pontos / d.pontosMax) * 100);
+      const maior = d.conquistas.filter((c) => c.ok).sort((a, b) => ORDEM.indexOf(b.raridade) - ORDEM.indexOf(a.raridade))[0];
+      const topo = h('div', { class: 'conq-topo' },
+        h('div', { class: 'anel-conq', style: `--p:${pct}` }, h('div', {}, h('b', {}, pct + '%'), h('small', {}, 'completo'))),
+        h('div', { class: 'conq-resumo' }, h('b', {}, `${feitas}/${d.conquistas.length} conquistas`), h('small', {}, `⚡ ${d.pontos} / ${d.pontosMax} pontos de conquista`),
+          maior ? h('div', { class: 'conq-destaque r-' + maior.raridade }, h('span', {}, maior.emoji), h('div', {}, h('small', {}, 'Maior conquista'), h('b', {}, maior.nome))) : null));
+      conq.before(topo);
+      conq.replaceChildren(...d.conquistas.map((c, i) => h('div', { class: `conquista r-${c.raridade}` + (c.ok ? ' ok' : ''), title: c.desc, style: `--d:${i * 45}ms` },
+        h('span', { class: 'conq-rar' }, RAR[c.raridade]),
+        h('span', { class: 'conq-ic' }, c.ok ? c.emoji : '🔒'),
+        h('b', {}, c.ok || c.raridade !== 'lendario' ? c.nome : '???'),
+        h('small', {}, c.desc),
+        c.ok ? h('span', { class: 'conq-ok' }, '✓ Desbloqueada') : h('div', { class: 'conq-barra' }, h('i', { style: `width:${Math.round((c.valor / c.meta) * 100)}%` }), h('small', {}, `${c.valor.toLocaleString('pt-BR')} / ${c.meta.toLocaleString('pt-BR')}`)))));
     } catch (e) { conq.replaceChildren(h('small', {}, 'Não consegui carregar.')); }
     if (u.id !== E.eu.id) api('GET', `/usuarios/${u.id}/comum`).then((d) => comum.replaceChildren(h('small', {}, `🏠 ${d.servidores.length} servidor(es) · 👥 ${d.amigos.length} amigo(s) em comum`))).catch(() => {});
   }
@@ -800,6 +819,12 @@
     f.classList.add('modal-velha');
   }
   function aoAtividade(d) {
+    if (d && d.estado && d.estado.jogo === 'duelo') {
+      const e = d.estado;
+      if (!duelo || duelo.id !== e.id) { duelo = e; toast('⚡ ' + (e.porNome || 'Alguém') + ' chamou um duelo de reflexo!', 'ok'); abrirDuelo(); }
+      else { Object.assign(duelo.tempos, e.tempos); duelo._pintar && duelo._pintar(); }
+      return;
+    }
     if (!d || !d.estado || d.estado.jogo !== 'velha') return;
     const novo = !velha || velha.tab.every((c) => !c);
     velha = d.estado;
@@ -809,6 +834,7 @@
   function menuAtividades(ancora) {
     abrirMenu(ancora, [h('div', { class: 'sec-menu' }, 'Atividades na call'),
       item('❌⭕ Jogo da velha', () => (velha ? abrirVelha() : novoVelha())),
+      item('⚡ Duelo de reflexo', novoDuelo),
       item('🫧 Bolha flutuante (quem tá falando)', bolhaCall)]);
   }
 
@@ -869,6 +895,124 @@
       }
     } catch (e) { /* cai pro tradutor do Google */ }
     window.open('https://translate.google.com/?sl=auto&tl=pt&op=translate&text=' + encodeURIComponent(texto.slice(0, 1500)), '_blank', 'noopener');
+  }
+
+  // ---------- selo de verificado ----------
+  const seloVerif = (u) => (u && u.verificado ? h('span', { class: 'verificado', title: 'Conta verificada' }, '✔') : null);
+  async function alternarVerificado(u) {
+    try { await api('POST', `/usuarios/${u.id}/verificado`, { verificado: !u.verificado }); u.verificado = !u.verificado; toast(u.verificado ? `✔ ${u.nome} verificado` : `Selo de ${u.nome} removido`, 'ok'); } catch (err) { toast(err.message, 'erro'); }
+  }
+  // nome com cargo animado (degradê brilhando na cor do cargo)
+  const cargoAnimado = (sid, uid) => !!(E.cargos.get(sid) || []).find((c) => c.animado && c.membros.includes(uid));
+
+  // ---------- reação que explode na tela ----------
+  function explodirEmoji(emoji, origem) {
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const r = origem ? origem.getBoundingClientRect() : { left: innerWidth / 2, top: innerHeight / 2, width: 0, height: 0 };
+    const x = r.left + r.width / 2, y = r.top + r.height / 2;
+    const grande = h('div', { class: 'emoji-boom' }, emoji);
+    grande.style.left = x + 'px'; grande.style.top = y + 'px';
+    document.body.append(grande);
+    setTimeout(() => grande.remove(), 900);
+    for (let i = 0; i < 12; i++) {
+      const p = h('div', { class: 'emoji-faisca' }, emoji);
+      const ang = (i / 12) * Math.PI * 2, dist = 70 + (i % 3) * 30;
+      p.style.left = x + 'px'; p.style.top = y + 'px';
+      p.style.setProperty('--dx', Math.cos(ang) * dist + 'px'); p.style.setProperty('--dy', Math.sin(ang) * dist + 'px');
+      document.body.append(p);
+      setTimeout(() => p.remove(), 800);
+    }
+  }
+
+  // ---------- cinema: cadeirinhas com quem está assistindo ----------
+  function cadeirasCinema(espectadores) {
+    const lista = espectadores || [];
+    const lugares = Math.max(8, Math.ceil(lista.length / 8) * 8);
+    return h('div', { class: 'cinema-fileiras', title: lista.length + ' assistindo' },
+      Array.from({ length: lugares }, (_, i) => {
+        const p = lista[i];
+        return h('div', { class: 'cadeira' + (p ? ' ocupada' : '') }, p ? h('span', { class: 'cad-av', style: 'background:' + (p.cor || 'var(--roxo)'), title: p.nome }, inicial(p.nome)) : null, h('i'));
+      }));
+  }
+
+  // ---------- duelo de reflexo (na call) ----------
+  let duelo = null;
+  function enviarDuelo() { pedir('voz:atividade', { estado: duelo }).then((r) => r.erro && toast(r.erro, 'erro')); }
+  function novoDuelo() {
+    if (!window.Voz || !Voz.estado.canalId) return toast('Entra numa call pra duelar.', 'erro');
+    duelo = { jogo: 'duelo', id: Date.now(), por: E.eu.id, porNome: E.eu.nome, atraso: 1500 + Math.floor(Math.random() * 3500), tempos: {} };
+    enviarDuelo(); abrirDuelo();
+  }
+  function abrirDuelo() {
+    if (!duelo) return;
+    const alvo = h('button', { type: 'button', class: 'alvo-duelo espera' }, 'Espera…');
+    const placar = h('div', { class: 'placar-duelo' });
+    const pintarPlacar = () => {
+      const ts = Object.entries(duelo.tempos).sort((a, b) => a[1].ms - b[1].ms);
+      placar.replaceChildren(...ts.map(([, t], i) => h('div', {}, (i === 0 ? '🏆 ' : '') + t.nome + ' — ' + (t.ms < 0 ? 'queimou a largada 😬' : t.ms + ' ms'))));
+    };
+    let liberado = false, t0 = 0;
+    const tm = setTimeout(() => { liberado = true; t0 = performance.now(); alvo.classList.remove('espera'); alvo.textContent = 'CLICA!'; }, duelo.atraso);
+    alvo.onclick = () => {
+      if (duelo.tempos[E.eu.id]) return;
+      const ms = liberado ? Math.round(performance.now() - t0) : -1;
+      duelo.tempos[E.eu.id] = { nome: E.eu.nome, ms };
+      alvo.textContent = ms < 0 ? 'Cedo demais!' : ms + ' ms';
+      alvo.disabled = true; pintarPlacar(); enviarDuelo();
+    };
+    pintarPlacar();
+    abrirModal({ titulo: '⚡ Duelo de reflexo', sub: 'Quando ficar verde, clica o mais rápido que der. Clicar antes queima a largada.', corpo: [alvo, placar] });
+    document.querySelector('.modal')?.classList.add('modal-duelo');
+    duelo._pintar = pintarPlacar; duelo._tm = tm;
+  }
+
+  // ---------- mascote do servidor (evolui com o XP da galera) ----------
+  const MASCOTES = [[0, '🥚', 'Ovo'], [200, '🐣', 'Filhote'], [1000, '🐥', 'Pintinho'], [3000, '🦅', 'Águia'], [8000, '🐉', 'Dragão'], [20000, '🐲', 'Dragão Lendário']];
+  function mascoteDe(xpTotal) {
+    let atual = MASCOTES[0], prox = null;
+    for (let i = 0; i < MASCOTES.length; i++) if (xpTotal >= MASCOTES[i][0]) { atual = MASCOTES[i]; prox = MASCOTES[i + 1] || null; }
+    return { emoji: atual[1], nome: atual[2], prox, pct: prox ? Math.min(100, ((xpTotal - atual[0]) / (prox[0] - atual[0])) * 100) : 100 };
+  }
+
+  // ---------- cartão de jogador (imagem pra postar) ----------
+  async function cartaoJogador(u) {
+    const W = 1080, H = 1350, cv = h('canvas', { width: W, height: H }), g = cv.getContext('2d');
+    const cor = u.cor || '#ff4fb8';
+    const grad = g.createLinearGradient(0, 0, W, H); grad.addColorStop(0, cor); grad.addColorStop(1, '#0b0b0d');
+    g.fillStyle = '#0b0b0d'; g.fillRect(0, 0, W, H);
+    g.fillStyle = grad; g.fillRect(0, 0, W, 520);
+    const carregar = (src) => new Promise((ok) => { if (!src) return ok(null); const i = new Image(); i.crossOrigin = 'anonymous'; i.onload = () => ok(i); i.onerror = () => ok(null); i.src = src; });
+    const [ban, av] = await Promise.all([carregar(u.bannerImg), carregar(u.avatar)]);
+    if (ban) { g.globalAlpha = 0.85; g.drawImage(ban, 0, 0, W, 520); g.globalAlpha = 1; }
+    g.save(); g.beginPath(); g.arc(W / 2, 520, 170, 0, Math.PI * 2); g.fillStyle = '#0b0b0d'; g.fill(); g.beginPath(); g.arc(W / 2, 520, 150, 0, Math.PI * 2); g.clip();
+    if (av) g.drawImage(av, W / 2 - 150, 370, 300, 300); else { g.fillStyle = cor; g.fillRect(W / 2 - 150, 370, 300, 300); g.fillStyle = '#fff'; g.font = 'bold 140px Segoe UI, sans-serif'; g.textAlign = 'center'; g.fillText(inicial(u.nome), W / 2, 570); }
+    g.restore();
+    g.textAlign = 'center'; g.fillStyle = '#fff'; g.font = 'bold 84px Segoe UI, sans-serif';
+    g.fillText(u.nome + (u.verificado ? ' ✔' : ''), W / 2, 790);
+    g.fillStyle = '#a3a9b5'; g.font = '44px Segoe UI, sans-serif'; g.fillText('@' + u.usuario, W / 2, 850);
+    let y = 950;
+    const jogo = jogoDe(u.statusTexto);
+    if (jogo) { g.fillStyle = cor; g.font = 'bold 46px Segoe UI, sans-serif'; g.fillText('🎮 Jogando ' + jogo, W / 2, y); y += 80; }
+    const v = u.vitrine || {};
+    if (v.bio) { g.fillStyle = '#f2f4f8'; g.font = '40px Segoe UI, sans-serif'; g.fillText(v.bio.slice(0, 60), W / 2, y); y += 70; }
+    if (v.jogos && v.jogos.length) { g.fillStyle = '#a3a9b5'; g.font = '38px Segoe UI, sans-serif'; g.fillText(v.jogos.slice(0, 4).join(' · '), W / 2, y); }
+    g.fillStyle = cor; g.font = 'bold 54px Segoe UI, sans-serif'; g.fillText('KALI', W / 2, H - 110);
+    g.fillStyle = '#8b93a3'; g.font = '34px Segoe UI, sans-serif'; g.fillText('me chama lá ✨', W / 2, H - 60);
+    let url;
+    try { url = cv.toDataURL('image/png'); } catch (e) { return toast('Não deu pra gerar a imagem com essa foto.', 'erro'); }
+    abrirModal({ titulo: '🪪 Cartão de jogador', sub: 'Salva e posta no Instagram/TikTok.', corpo: [h('img', { src: url, alt: 'Cartão de ' + u.nome, class: 'cartao-img' }),
+      h('a', { class: 'bt prim', href: url, download: 'kali-' + u.usuario + '.png', style: 'display:block;text-align:center;margin-top:8px' }, 'Baixar imagem')] });
+  }
+
+  // ---------- status "Ouvindo" ----------
+  const ouvindoDe = (t) => { const m = /^🎧\s*(?:ouvindo\s+)?(.+)$/i.exec(t || ''); return m ? m[1].trim() : null; };
+  async function definirOuvindo() {
+    const musica = prompt('🎧 Ouvindo o quê? (música - artista; vazio = parar)', ouvindoDe(E.eu.statusTexto) || '');
+    if (musica === null) return;
+    try {
+      E.eu = Object.assign(E.eu, await api('PATCH', '/eu', { statusTexto: musica.trim() ? '🎧 Ouvindo ' + musica.trim().slice(0, 60) : '' }));
+      toast(musica.trim() ? '🎧 Status atualizado' : 'Status removido', 'ok'); renderSide(); renderMembros();
+    } catch (err) { toast(err.message, 'erro'); }
   }
 
   // ---------- render geral ----------
@@ -1321,7 +1465,8 @@
       else if (m.sistema || !m.autor) corpo.append(h('b', { class: 'nome-ia' }, 'KALI'), h('span', { class: 'tag' }, 'IA'));
       else {
         const dono = s && s.donoId === m.autor.id, cor = s && !dono ? corCargo(s.id, m.autor.id) : null;
-        corpo.append(h('b', { class: 'autor' + (dono && !m.autor.corNome ? ' nome-dono' : ''), style: estiloNome(m.autor.corNome) || (cor ? `color:${cor}` : null) }, m.autor.nome));
+        const anim = s && !dono && !m.autor.corNome && cor && cargoAnimado(s.id, m.autor.id);
+        corpo.append(h('b', { class: 'autor' + (dono && !m.autor.corNome ? ' nome-dono' : '') + (anim ? ' nome-cargo-anim' : ''), style: anim ? `--c:${cor}` : estiloNome(m.autor.corNome) || (cor ? `color:${cor}` : null) }, m.autor.nome), seloVerif(m.autor));
       }
       corpo.append(h('time', { title: new Date(m.criadoEm).toLocaleString('pt-BR') }, hora(m.criadoEm)));
     }
@@ -1590,7 +1735,7 @@
       corpo: h('ul', { class: 'novidades' }, lista.map((m) => h('li', { style: 'cursor:pointer', onclick: () => { fecharModal(); irPara(m.id); } },
         h('div', {}, h('b', {}, m.autor ? m.autor.nome : 'KALI'), h('small', {}, corta(m.texto || (m.anexo ? '📎 ' + m.anexo.nome : '🎙 áudio'), 140)))))) });
   }
-  async function reagir(id, emoji) { const r = await pedir('msg:reagir', { id, emoji }); if (r.erro) toast(r.erro, 'erro'); }
+  async function reagir(id, emoji) { const r = await pedir('msg:reagir', { id, emoji }); if (r.erro) return toast(r.erro, 'erro'); explodirEmoji(emoji, document.querySelector(`.msg[data-id="${id}"]`)); }
   async function apagarMsg(m) {
     if (!confirm('Apagar esta mensagem?')) return;
     const r = await pedir('msg:apagar', { id: m.id });
@@ -1744,6 +1889,8 @@
     if (!(u && u.bannerImg)) banner.classList.add('banner-vivo');
     const partes = [banner];
     const jogo = u && jogoDe(u.statusTexto);
+    const ouv = u && ouvindoDe(u.statusTexto);
+    if (ouv) partes.push(h('div', { class: 'sec-perfil' }, 'Ouvindo agora'), h('div', { class: 'jogando-card ouvindo' }, h('span', { class: 'jogando-ic' }, h('span', { class: 'ondas' }, h('i'), h('i'), h('i'), h('i'))), h('div', {}, h('b', {}, ouv), h('small', {}, 'tocando agora'))));
     if (jogo) partes.push(h('div', { class: 'sec-perfil' }, 'Jogando agora'), h('div', { class: 'jogando-card' }, h('span', { class: 'jogando-ic' }, '🎮'), h('div', {}, h('b', {}, jogo), h('small', {}, 'em partida'))));
     if (v.bio) partes.push(h('div', { class: 'sec-perfil' }, 'Sobre mim'), h('p', { class: 'bio' }, v.bio));
     if (v.jogos && v.jogos.length) partes.push(h('div', { class: 'sec-perfil' }, 'Jogos'), h('div', { class: 'jogos' }, v.jogos.map((j) => h('span', { class: 'chip' }, '🎮 ' + j))));
@@ -1765,9 +1912,9 @@
       srvC && m.id === srvC.donoId ? h('span', { class: 'selo-perfil', title: 'Dono do servidor' }, '👑') : null,
       m.cargo && m.cargo !== 'dono' && SELO_CARGO[m.cargo] ? h('span', { class: 'selo-perfil', title: m.cargo }, SELO_CARGO[m.cargo]) : null,
       fazAniver(m) ? h('span', { class: 'selo-perfil', title: 'Aniversário hoje' }, '🎂') : null].filter(Boolean);
-    const recado = m.statusTexto && !jogoDe(m.statusTexto) ? h('div', { class: 'recado-perfil' }, '💬 ' + m.statusTexto) : null;
+    const recado = m.statusTexto && !jogoDe(m.statusTexto) && !ouvindoDe(m.statusTexto) ? h('div', { class: 'recado-perfil' }, '💬 ' + m.statusTexto) : null;
     const caixa = h('div', { class: 'caixa-perfil' },
-      h('div', { class: 'nome-linha' }, h('h3', {}, m.nome), selos.length ? h('div', { class: 'selos-perfil' }, selos) : null),
+      h('div', { class: 'nome-linha' }, h('h3', {}, m.nome, seloVerif(m)), selos.length ? h('div', { class: 'selos-perfil' }, selos) : null),
       h('small', { class: 'arroba' }, '@' + m.usuario + (m.apelido ? ` (${m.nomeConta})` : '') + ' · ' + st(m.id)[1]), recado, h('hr'), ...extras);
     const conteudo = [banner, h('div', { class: 'av-linha' }, avatar(m, 'av-vitrine', true), efeitoPerfil(m), h('span', { class: 'bolinha-perfil ' + st(m.id)[0], title: st(m.id)[1] })), caixa,
       h('button', { class: 'bt', onclick: () => perfilCompleto(m) }, '👤 Perfil completo')];
@@ -1822,6 +1969,8 @@
       }).catch(() => {});
     }
     // botões depois da caixa viram uma grade de ações
+    conteudo.push(h('button', { class: 'bt', onclick: () => { fecharMenu(); cartaoJogador(m); } }, '🪪 Cartão de jogador'));
+    if (E.eu.admin) conteudo.push(h('button', { class: 'bt', onclick: () => { fecharMenu(); alternarVerificado(m); } }, m.verificado ? 'Tirar ✔' : '✔ Verificar'));
     const fixos = conteudo.slice(0, 3), acoes = conteudo.slice(3).flat().filter((x) => x && x.tagName !== 'HR');
     const emComum = acoes.find((x) => x.classList && x.classList.contains('em-comum'));
     if (emComum) { acoes.splice(acoes.indexOf(emComum), 1); caixa.append(h('div', { class: 'sec-perfil' }, 'Em comum'), emComum); }
@@ -1951,7 +2100,7 @@
     const tela = $('.palco-tela'), e = estadoA;
     if (!tela) return;
     const quem = $('.palco-quem');
-    if (quem) quem.textContent = e && e.espectadores && e.espectadores.length ? '👀 Assistindo: ' + e.espectadores.map((x) => x.nome).join(', ') : '';
+    if (quem) quem.replaceChildren(...(e && e.espectadores && e.espectadores.length ? [h('small', {}, '🍿 ' + e.espectadores.length + ' na sala: ' + e.espectadores.map((x) => x.nome).join(', ')), cadeirasCinema(e.espectadores)] : []));
     if (!e || !e.url) {
       destruirPlayer(); delete tela.dataset.url;
       tela.replaceChildren(h('div', { class: 'palco-vazio' }, '🍿 Ninguém escolheu o vídeo ainda. Cola um link aí embaixo.'));
@@ -2739,6 +2888,7 @@
       h('div', { class: 'acoes-cargo' },
         h('button', { class: 'bt', title: 'Quem tem esse cargo', onclick: () => modalEscolher(s, c, 'membros') }, '👥'),
         h('button', { class: 'bt', title: 'Canais só pra esse cargo', onclick: () => modalEscolher(s, c, 'canais') }, '🔒'),
+        h('button', { class: 'bt' + (c.animado ? ' prim' : ''), title: c.animado ? 'Tirar brilho do nome' : 'Nome animado (brilho) no chat', onclick: async () => { try { await api('PUT', `/cargos/${c.id}/animado`, { animado: !c.animado }); await carregarCargos(s.id); modalCargos(s); } catch (err) { toast(err.message, 'erro'); } } }, '✨'),
         h('button', { class: 'bt', title: 'Permissões do cargo', onclick: () => modalPermCargo(s, c) }, '⚙'),
         h('button', { class: 'bt', title: 'Apagar cargo', onclick: async () => {
           if (!confirm(`Apagar o cargo ${c.nome}?`)) return;
@@ -3008,6 +3158,8 @@
       ['online', 'ausente', 'ocupado'].map((x) => item([h('span', { class: 'bolinha ' + STATUS[x][0] }), STATUS[x][1]], () => definir(x))),
       h('hr'),
       item(jogoDe(E.eu.statusTexto) ? '🎮 Jogando ' + jogoDe(E.eu.statusTexto) + ' (trocar)' : '🎮 Jogando…', definirJogo),
+      item(ouvindoDe(E.eu.statusTexto) ? '🎧 Ouvindo ' + ouvindoDe(E.eu.statusTexto) + ' (trocar)' : '🎧 Ouvindo…', definirOuvindo),
+      item('🪪 Meu cartão de jogador', () => cartaoJogador(E.eu)),
       item('Editar perfil', modalPerfil),
     ]);
   }

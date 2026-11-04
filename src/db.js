@@ -181,6 +181,7 @@ for (const [tabela, coluna, def] of [
   ['servidores', 'automod', 'TEXT'],
   ['servidores', 'automod_cfg', 'TEXT'],
   ['usuarios', 'efeito', 'TEXT'],
+  ['usuarios', 'verificado', 'INTEGER NOT NULL DEFAULT 0'],
   ['canais', 'sala_espera', 'INTEGER NOT NULL DEFAULT 0'],
   ['servidores', 'boas_vindas', 'TEXT'],
 ]) {
@@ -475,7 +476,10 @@ CREATE TABLE IF NOT EXISTS canal_cargos (
 `);
 export const cargoPorId = (id) => q('SELECT * FROM cargos WHERE id = ?').get(id) ?? null;
 export const cargosDoCanal = (canalId) => q('SELECT cargo_id FROM canal_cargos WHERE canal_id = ?').all(canalId).map((r) => r.cargo_id);
-export const cargosDoServidor = (sid) => q('SELECT id, nome, cor, perm FROM cargos WHERE servidor_id = ? ORDER BY id').all(sid).map((c) => ({
+try { db.exec('ALTER TABLE cargos ADD COLUMN animado INTEGER NOT NULL DEFAULT 0'); } catch { /* já existe */ }
+export const definirVerificado =(uid, on) => q('UPDATE usuarios SET verificado = ? WHERE id = ?').run(on ? 1 : 0, uid);
+export const definirCargoAnimado = (id, on) => q('UPDATE cargos SET animado = ? WHERE id = ?').run(on ? 1 : 0, id);
+export const cargosDoServidor = (sid) => q('SELECT id, nome, cor, perm, animado FROM cargos WHERE servidor_id = ? ORDER BY id').all(sid).map((c) => ({
   ...c,
   membros: q('SELECT usuario_id FROM membro_cargos WHERE cargo_id = ?').all(c.id).map((r) => r.usuario_id),
   canais: q('SELECT canal_id FROM canal_cargos WHERE cargo_id = ?').all(c.id).map((r) => r.canal_id),
@@ -610,6 +614,7 @@ export function estatisticasUsuario(id) {
   return {
     mensagens: q('SELECT COUNT(*) AS n FROM mensagens WHERE autor_id = ?').get(id).n,
     servidoresDono: q('SELECT COUNT(*) AS n FROM servidores WHERE dono_id = ?').get(id).n,
+    amigos: q("SELECT COUNT(*) AS n FROM amizades WHERE (de = ? OR para = ?) AND status = 'aceita'").get(id, id).n,
     servidores: q('SELECT COUNT(*) AS n FROM membros WHERE usuario_id = ?').get(id).n,
     criadoEm: u.criado_em || null,
   };
@@ -798,7 +803,7 @@ export function marcarImagem(dono, id, tipo, v) {
   q(`UPDATE ${tabela} SET ${coluna} = ? WHERE id = ?`).run(v, id);
 }
 const SELECT_MSG = `SELECT m.*, u.usuario AS a_usuario, u.nome AS a_nome, u.cor AS a_cor, u.avatar_v AS a_avatar,
-                    u.equip_moldura AS a_moldura, u.equip_cor AS a_cor_item, mb.apelido AS a_apelido
+                    u.equip_moldura AS a_moldura, u.equip_cor AS a_cor_item, mb.apelido AS a_apelido, u.verificado AS a_verificado
                     FROM mensagens m LEFT JOIN usuarios u ON u.id = m.autor_id
                     LEFT JOIN canais cx ON cx.id = m.canal_id
                     LEFT JOIN membros mb ON mb.servidor_id = cx.servidor_id AND mb.usuario_id = m.autor_id`;
@@ -887,7 +892,7 @@ export function serMensagem(row, reacoes = []) {
     canalId: row.canal_id,
     autor: row.autor_id != null && row.a_usuario != null
       ? { id: row.autor_id, usuario: row.a_usuario, nome: row.a_apelido || row.a_nome, cor: row.a_cor, avatar: urlImagem('u', row.autor_id, 'avatar', row.a_avatar),
-        moldura: urlItem(row.a_moldura), corNome: corDoItem(row.a_cor_item) }
+        moldura: urlItem(row.a_moldura), corNome: corDoItem(row.a_cor_item), verificado: !!row.a_verificado }
       : null,
     texto: row.texto,
     criadoEm: row.criado_em,

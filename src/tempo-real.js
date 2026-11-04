@@ -92,6 +92,7 @@ export function usuarioPublico(row, { proprio = false } = {}) {
     bannerImg: db.urlItem(row.equip_banner),
     moldura: db.urlItem(row.equip_moldura),
     corNome: db.corDoItem(row.equip_cor),
+    verificado: !!row.verificado,
   };
   if (foco) u.focoAte = row.foco_ate;
   const lista = (j) => { try { const v = JSON.parse(j || '[]'); return Array.isArray(v) ? v : []; } catch { return []; } };

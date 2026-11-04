@@ -1382,3 +1382,91 @@ button.editado:hover{color:var(--texto)}
 /* tradução */
 .traducao{margin-top:6px;padding:6px 10px;border-left:3px solid var(--roxo);border-radius:6px;background:var(--chip)}
 .traducao small{color:var(--fraco);font-size:11px}
+/* verificado */
+.verificado{display:inline-grid;place-items:center;width:15px;height:15px;margin-left:4px;border-radius:50%;background:#1d9bf0;color:#fff;font-size:9px;font-weight:900;vertical-align:1px;box-shadow:0 0 8px rgba(29,155,240,.5)}
+h3 .verificado{width:18px;height:18px;font-size:11px}
+/* cargo animado */
+.nome-cargo-anim{background:linear-gradient(90deg,var(--c),#fff 45%,var(--c) 60%,var(--c));background-size:250% 100%;-webkit-background-clip:text;background-clip:text;color:transparent!important;animation:cargoBrilha 3s linear infinite;filter:drop-shadow(0 0 6px color-mix(in srgb,var(--c) 45%,transparent))}
+@keyframes cargoBrilha{from{background-position:100% 0}to{background-position:-150% 0}}
+/* reação que explode */
+.emoji-boom{position:fixed;z-index:9999;font-size:64px;pointer-events:none;transform:translate(-50%,-50%);animation:boom .85s cubic-bezier(.2,1.4,.4,1) forwards}
+@keyframes boom{0%{transform:translate(-50%,-50%) scale(.2);opacity:0}35%{transform:translate(-50%,-90%) scale(1.5);opacity:1}100%{transform:translate(-50%,-140%) scale(1);opacity:0}}
+.emoji-faisca{position:fixed;z-index:9998;font-size:20px;pointer-events:none;transform:translate(-50%,-50%);animation:faisca .8s ease-out forwards}
+@keyframes faisca{to{transform:translate(calc(-50% + var(--dx)),calc(-50% + var(--dy))) scale(.4) rotate(160deg);opacity:0}}
+/* cinema */
+.palco-quem{display:flex;flex-direction:column;gap:6px}
+.cinema-fileiras{display:grid;grid-template-columns:repeat(8,1fr);gap:6px;padding:10px 12px 6px;border-radius:10px;background:linear-gradient(180deg,rgba(255,255,255,.03),transparent);perspective:400px}
+.cadeira{position:relative;height:42px;display:flex;justify-content:center;align-items:flex-end;transform:rotateX(18deg)}
+.cadeira i{position:absolute;bottom:0;left:8%;right:8%;height:24px;border-radius:8px 8px 4px 4px;background:linear-gradient(180deg,#7a1f3d,#4a0f24);box-shadow:inset 0 -4px 0 rgba(0,0,0,.35)}
+.cadeira.ocupada i{background:linear-gradient(180deg,color-mix(in srgb,var(--roxo) 70%,#000),color-mix(in srgb,var(--roxo) 35%,#000))}
+.cad-av{position:relative;z-index:1;width:26px;height:26px;margin-bottom:14px;border-radius:50%;display:grid;place-items:center;color:#fff;font-size:11px;font-weight:700;border:2px solid var(--bg);animation:sentar .4s cubic-bezier(.2,1.4,.4,1)}
+@keyframes sentar{from{transform:translateY(-14px);opacity:0}}
+/* duelo */
+.alvo-duelo{display:block;width:100%;height:170px;border-radius:12px;font-size:28px;font-weight:900;color:#fff;background:var(--ok);transition:background .1s}
+.alvo-duelo.espera{background:var(--ocup);cursor:wait}
+.alvo-duelo:disabled{opacity:.85}
+.placar-duelo{margin-top:10px;display:flex;flex-direction:column;gap:4px;font-size:13px}
+/* mascote */
+.mascote-visao{display:flex;align-items:center;gap:14px;padding:14px;margin-bottom:14px;border-radius:10px;background:var(--card);border:1px solid var(--borda)}
+.mascote-ic{font-size:44px;animation:mascotePula 2.4s ease-in-out infinite}
+@keyframes mascotePula{50%{transform:translateY(-6px) rotate(-4deg)}}
+.mascote-txt{flex:1;display:flex;flex-direction:column;gap:4px}
+.mascote-txt small{color:var(--fraco)}
+.barra-mascote{height:6px;border-radius:3px;background:var(--chip);overflow:hidden}
+.barra-mascote i{display:block;height:100%;background:var(--grad);border-radius:3px;transition:width .6s}
+/* cartão de jogador */
+.cartao-img{width:100%;border-radius:10px;display:block}
+/* ouvindo agora: ondinhas */
+.ondas{display:flex;gap:3px;align-items:flex-end;height:18px}
+.ondas i{width:4px;background:#fff;border-radius:2px;animation:onda 1s ease-in-out infinite}
+.ondas i:nth-child(2){animation-delay:.2s}.ondas i:nth-child(3){animation-delay:.4s}.ondas i:nth-child(4){animation-delay:.1s}
+@keyframes onda{0%,100%{height:4px}50%{height:18px}}
+.jogando-card.ouvindo .jogando-ic{animation:none;background:linear-gradient(135deg,#1db954,#0e7a37)}
+@media (prefers-reduced-motion:reduce){.nome-cargo-anim,.mascote-ic,.ondas i,.cad-av{animation:none!important}}
+
+/* ===== Conquistas nível "insano": raridade, holográfico, progresso ===== */
+.r-comum{--rc:#9ca3af}.r-raro{--rc:#38bdf8}.r-epico{--rc:#c084fc}.r-lendario{--rc:#fbbf24}
+.nums-perfil{grid-template-columns:repeat(4,1fr)}
+.nums-perfil div{position:relative;overflow:hidden;border:1px solid var(--borda)}
+.nums-perfil .ic-num{display:block;font-size:16px;margin-bottom:2px}
+.nums-perfil b{font-size:20px;font-variant-numeric:tabular-nums}
+.conq-topo{display:flex;align-items:center;gap:14px;padding:12px;margin:4px 0 10px;border-radius:12px;background:linear-gradient(135deg,color-mix(in srgb,var(--perfil,var(--roxo)) 20%,var(--chip)),var(--chip));border:1px solid var(--borda)}
+.anel-conq{--p:0;width:78px;height:78px;flex:none;border-radius:50%;display:grid;place-items:center;background:conic-gradient(var(--perfil,var(--roxo)) calc(var(--p)*1%),var(--chip-borda) 0);animation:anelGira 1.2s cubic-bezier(.2,.9,.3,1)}
+@property --p{syntax:'<number>';inherits:false;initial-value:0}
+@keyframes anelGira{from{--p:0}}
+.anel-conq>div{width:62px;height:62px;border-radius:50%;background:var(--card);display:flex;flex-direction:column;align-items:center;justify-content:center}
+.anel-conq b{font-size:17px}.anel-conq small{font-size:9px;color:var(--fraco);text-transform:uppercase}
+.conq-resumo{display:flex;flex-direction:column;gap:3px;min-width:0}
+.conq-resumo>b{font-size:15px}.conq-resumo>small{color:var(--suave);font-size:12px}
+.conq-destaque{display:flex;align-items:center;gap:8px;margin-top:4px;padding:6px 10px;border-radius:8px;border:1px solid var(--rc);background:color-mix(in srgb,var(--rc) 12%,transparent);box-shadow:0 0 16px color-mix(in srgb,var(--rc) 30%,transparent)}
+.conq-destaque span{font-size:22px}.conq-destaque small{display:block;font-size:10px;color:var(--fraco);text-transform:uppercase}.conq-destaque b{font-size:13px;color:var(--rc)}
+.grade-conquistas{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.conquista{position:relative;overflow:hidden;opacity:1;filter:none;padding:14px 8px 10px;border-radius:12px;background:var(--chip);border:1px solid var(--borda);animation:conqEntra .45s cubic-bezier(.2,1.2,.4,1) both;animation-delay:var(--d);transition:transform .2s,box-shadow .2s}
+@keyframes conqEntra{from{opacity:0;transform:translateY(12px) scale(.94)}}
+.conquista:hover{transform:translateY(-3px)}
+.conq-rar{position:absolute;top:6px;left:8px;font-size:8.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--rc)}
+.conq-ic{font-size:30px;margin-top:6px;filter:grayscale(1) opacity(.5)}
+.conquista:not(.ok) b{color:var(--fraco)}
+.conquista.ok{border-color:color-mix(in srgb,var(--rc) 70%,transparent);background:linear-gradient(160deg,color-mix(in srgb,var(--rc) 16%,var(--chip)),var(--chip) 70%);box-shadow:0 0 18px color-mix(in srgb,var(--rc) 22%,transparent),inset 0 1px 0 rgba(255,255,255,.06)}
+.conquista.ok .conq-ic{filter:drop-shadow(0 0 10px color-mix(in srgb,var(--rc) 70%,transparent));animation:conqFlutua 3s ease-in-out infinite}
+@keyframes conqFlutua{50%{transform:translateY(-3px) scale(1.06)}}
+.conquista.ok:hover{box-shadow:0 0 28px color-mix(in srgb,var(--rc) 45%,transparent)}
+/* brilho passando nas desbloqueadas */
+.conquista.ok::after{content:"";position:absolute;inset:0;background:linear-gradient(115deg,transparent 40%,rgba(255,255,255,.16) 50%,transparent 60%);transform:translateX(-120%);animation:brilhoBanner 5s ease-in-out infinite;animation-delay:var(--d)}
+/* lendária: borda holográfica girando */
+.conquista.r-lendario.ok{border-color:transparent;background:linear-gradient(var(--chip),var(--chip)) padding-box,conic-gradient(from var(--ang),#fbbf24,#ff4fb8,#8b5cf6,#38bdf8,#34d399,#fbbf24) border-box;border:2px solid transparent;animation:conqEntra .45s both,holo 4s linear infinite}
+@property --ang{syntax:'<angle>';inherits:false;initial-value:0deg}
+@keyframes holo{to{--ang:360deg}}
+.conquista.r-lendario.ok b{background:linear-gradient(90deg,#fbbf24,#ff4fb8,#8b5cf6);-webkit-background-clip:text;background-clip:text;color:transparent}
+.conquista.r-epico.ok .conq-ic{animation-duration:2.2s}
+.conq-ok{margin-top:6px;font-size:10px;font-weight:700;color:var(--rc);text-transform:uppercase;letter-spacing:.05em}
+.conq-barra{width:100%;margin-top:8px}
+.conq-barra i{display:block;height:5px;border-radius:3px;background:linear-gradient(90deg,var(--rc),color-mix(in srgb,var(--rc) 50%,#fff));box-shadow:0 0 8px color-mix(in srgb,var(--rc) 60%,transparent);min-width:3px;position:relative}
+.conq-barra{background:none}
+.conq-barra::before{content:"";display:block;height:5px;border-radius:3px;background:var(--chip-borda);margin-bottom:-5px}
+.conq-barra small{display:block;margin-top:4px;font-size:10px;color:var(--fraco);font-variant-numeric:tabular-nums}
+@media (prefers-reduced-motion:reduce){.conquista,.conquista.ok::after,.conquista.ok .conq-ic,.anel-conq{animation:none!important}}
+.conquista span.conq-rar{font-size:8.5px}
+.conquista span.conq-ok{font-size:10px}
+.conquista span.conq-ic{font-size:30px}
+.conquista:not(.ok) span.conq-ic{font-size:22px;margin:10px 0 4px}
