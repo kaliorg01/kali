@@ -95,7 +95,7 @@ export function usuarioPublico(row, { proprio = false } = {}) {
   };
   if (foco) u.focoAte = row.foco_ate;
   const lista = (j) => { try { const v = JSON.parse(j || '[]'); return Array.isArray(v) ? v : []; } catch { return []; } };
-  u.vitrine = { bio: row.bio || '', banner: row.banner || '', links: lista(row.links), aniversario: row.aniversario || '', jogos: lista(row.jogos) };
+  u.vitrine = { bio: row.bio || '', banner: row.banner || '', links: lista(row.links), aniversario: row.aniversario || '', jogos: lista(row.jogos), efeito: row.efeito || '' };
   return u;
 }
 export function membroPublico(row, donoId) {
@@ -747,6 +747,16 @@ function aoConectar(socket) {
   });
 
   // ---------------- voz
+  ouvir(socket, 'voz:atividade', (d) => {
+    exigirObjeto(d);
+    const canalId = vozDoUsuario.get(uid);
+    if (!canalId) throw erro(400, 'Entra numa call pra jogar.');
+    const estado = d.estado;
+    if (!estado || typeof estado !== 'object' || JSON.stringify(estado).length > 2000) throw erro(400, 'Jogada inválida.');
+    for (const [outro, info] of voz.get(canalId) || []) if (outro !== uid) io.to(info.socketId).emit('voz:atividade', { de: uid, estado });
+    return { ok: true };
+  });
+
   ouvir(socket, 'voz:aceitar', (d) => {
     exigirObjeto(d);
     const canal = db.canalPorId(exigirId(d.canalId, 'Canal'));

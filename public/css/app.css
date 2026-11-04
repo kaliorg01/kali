@@ -1313,3 +1313,72 @@ button.editado:hover{color:var(--texto)}
 .acoes-perfil .bt.prim{grid-column:1/-1}
 /* banner também no perfil da DM, com o mesmo movimento */
 .perfil-dm .banner-perfil{height:110px}
+
+/* ===== Efeitos de perfil ===== */
+.efeito-perfil{position:absolute;inset:-14px;pointer-events:none;overflow:visible;border-radius:50%}
+.efeito-perfil i{position:absolute;left:var(--x);top:100%;font-style:normal;font-size:12px;opacity:0;animation:particula 2.8s linear infinite;animation-delay:calc(var(--i) * -.23s)}
+@keyframes particula{0%{transform:translateY(0) scale(.6);opacity:0}15%{opacity:1}100%{transform:translateY(-120px) scale(1.1) rotate(40deg);opacity:0}}
+.efeito-neve i{top:-10%;color:#e0f2fe;animation-name:neve}
+@keyframes neve{0%{transform:translateY(0);opacity:0}15%{opacity:1}100%{transform:translateY(120px) rotate(180deg);opacity:0}}
+.efeito-estrelas i{color:#fde68a;text-shadow:0 0 6px #fde68a}
+.efeito-coracoes i{color:#ff4fb8}
+.efeito-raios i{color:#facc15;animation-duration:1.4s}
+.efeito-confete i:nth-child(3n){color:#ff4fb8}.efeito-confete i:nth-child(3n+1){color:#34d399}.efeito-confete i:nth-child(3n+2){color:#60a5fa}
+.av-linha{z-index:1}
+@media (prefers-reduced-motion:reduce){.efeito-perfil{display:none}}
+/* perfil completo */
+.modal.perfil-grande{width:min(560px,100%);padding:0 0 16px;overflow-x:hidden;background:linear-gradient(180deg,color-mix(in srgb,var(--perfil,var(--roxo)) 35%,var(--card)) 0%,var(--card) 50%)}
+.modal.perfil-grande>h2{display:none}
+.perfil-grande .banner-perfil{height:180px;width:100%}
+.perfil-grande>*:not(.banner-perfil){margin-left:16px;margin-right:16px}
+.perfil-grande .av-linha{margin-top:-60px!important}
+.perfil-grande .av-vitrine{width:110px!important;height:110px!important;font-size:38px;border:7px solid var(--card)}
+.nums-perfil{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
+.nums-perfil div{background:var(--chip);border-radius:8px;padding:8px;text-align:center}
+.nums-perfil b{display:block;font-size:18px}.nums-perfil small{color:var(--fraco);font-size:11px}
+.grade-conquistas{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:8px;margin-top:4px}
+.conquista{display:flex;flex-direction:column;align-items:center;text-align:center;gap:2px;padding:10px 6px;border-radius:10px;background:var(--chip);border:1px solid var(--borda);opacity:.4;filter:grayscale(1)}
+.conquista span{font-size:24px}.conquista b{font-size:12px}.conquista small{font-size:10.5px;color:var(--fraco)}
+.conquista.ok{opacity:1;filter:none;border-color:color-mix(in srgb,var(--perfil,var(--roxo)) 60%,transparent);box-shadow:0 0 14px color-mix(in srgb,var(--perfil,var(--roxo)) 25%,transparent)}
+/* stories */
+.stories{display:flex;gap:12px;overflow-x:auto;padding:4px 2px 14px;margin-bottom:6px;scrollbar-width:none}
+.story-bola{display:flex;flex-direction:column;align-items:center;gap:4px;flex:none;width:66px}
+.story-bola .sb-av{width:60px;height:60px;border-radius:50%;padding:3px;background:conic-gradient(from 0deg,#ff4fb8,#8b5cf6,#1fa2ff,#ff4fb8);display:grid;place-items:center;transition:transform .2s}
+.story-bola:hover .sb-av{transform:scale(1.06)}
+.story-bola .sb-av .av{width:100%!important;height:100%!important;border:3px solid var(--bg);box-sizing:border-box}
+.story-bola.visto .sb-av{background:var(--chip-borda)}
+.story-novo .sb-av{background:var(--chip);font-size:24px;color:var(--roxo);border:2px dashed var(--chip-borda)}
+.story-bola small{font-size:11px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--suave)}
+.story-prev{border-radius:12px;padding:20px;min-height:200px;display:grid;place-items:center;margin-bottom:10px}
+.story-txt{width:100%;background:transparent;border:0;outline:none;color:#fff;font-size:20px;font-weight:700;text-align:center;resize:none}
+.story-txt::placeholder{color:rgba(255,255,255,.7)}
+.story-tela{position:fixed;inset:0;z-index:var(--z-toast);background:rgba(0,0,0,.92);display:grid;place-items:center;animation:modalPop .25s ease}
+.story-caixa{position:relative;width:min(400px,100vw);height:min(711px,100dvh);border-radius:14px;overflow:hidden;display:flex;flex-direction:column}
+.story-barras{display:flex;gap:4px;padding:10px 10px 0}
+.story-barras i{flex:1;height:3px;border-radius:2px;background:rgba(255,255,255,.35);overflow:hidden;position:relative}
+.story-barras i.cheia{background:#fff}
+.story-barras i.andando::after{content:"";position:absolute;inset:0;background:#fff;transform-origin:left;animation:storyAnda 5s linear forwards}
+@keyframes storyAnda{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+.story-topo{display:flex;align-items:center;gap:8px;padding:10px;color:#fff;z-index:2}
+.story-topo .av{width:32px;height:32px}
+.story-topo small{opacity:.75}
+.story-topo .icbtn{margin-left:auto;color:#fff}.story-topo .icbtn+.icbtn{margin-left:0}
+.story-texto{flex:1;display:grid;place-items:center;padding:24px;color:#fff;font-size:24px;font-weight:800;text-align:center;text-shadow:0 2px 12px rgba(0,0,0,.3);word-break:break-word}
+.story-lado{position:absolute;top:60px;bottom:0;width:40%;z-index:1}.story-lado.esq{left:0}.story-lado.dir{right:0}
+/* eventos com contagem */
+.contagem{display:flex;gap:6px;margin:4px 0}
+.contagem span{display:flex;flex-direction:column;align-items:center;min-width:46px;padding:6px 4px;border-radius:6px;background:var(--roxo-suave);border:1px solid color-mix(in srgb,var(--roxo) 40%,transparent)}
+.contagem b{font-size:18px;color:var(--roxo);font-variant-numeric:tabular-nums}.contagem small{font-size:9.5px;color:var(--fraco);text-transform:uppercase}
+.card-evento{cursor:default}.card-evento:hover{transform:none}
+/* jogo da velha */
+.velha{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;width:min(260px,100%);margin:0 auto}
+.casa{aspect-ratio:1;border-radius:10px;background:var(--chip);border:1px solid var(--chip-borda);font-size:38px;font-weight:800;transition:transform .12s,background .15s}
+.casa:not(:disabled):hover{background:var(--hover);transform:scale(1.04)}
+.casa.c-X{color:var(--roxo)}.casa.c-O{color:var(--ok)}
+.casa.c-X,.casa.c-O{animation:casaPop .25s cubic-bezier(.2,1.5,.4,1)}
+@keyframes casaPop{from{transform:scale(.4)}}
+.status-velha{text-align:center;font-weight:600;margin-bottom:10px}
+.corpo-velha{display:flex;flex-direction:column;align-items:center}
+/* tradução */
+.traducao{margin-top:6px;padding:6px 10px;border-left:3px solid var(--roxo);border-radius:6px;background:var(--chip)}
+.traducao small{color:var(--fraco);font-size:11px}

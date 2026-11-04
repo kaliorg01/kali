@@ -452,6 +452,7 @@
       nav(ic('▦'), 'Painel', abrirPainel, E.modo === 'painel'),
       nav(ic('💬'), 'Mensagens', abrirDms, E.modo === 'dm' && !E.telaAmigos, nDm),
       nav(ic('👋'), 'Amigos', abrirAmigos, E.modo === 'dm' && E.telaAmigos, E.amigos.recebidos.length),
+      nav(ic('🔖'), 'Mensagens salvas', modalSalvas),
       nav(ic('🏆'), 'Visão geral e ranking', () => abrirVisao(E.servidorId), E.modo === 'servidor' && E.verVisao),
       h('button', { class: 'rot rot-btn', 'aria-expanded': String(!fechado), onclick: () => { salvar('kali-srv-recolhido', fechado ? '' : '1'); renderSide(); } }, h('span', {}, (fechado ? '▸ ' : '▾ ') + 'Servidores'), h('small', {}, String(E.servidores.length))),
       fechado ? null : h('div', { class: 'lista-srv' }, srvs),
@@ -501,6 +502,9 @@
               h('div', { class: 'stats' }, h('span', {}, h('b', {}, String(ms.length)), ' na call'),
                 h('button', { class: 'bt prim', onclick: async () => { await selecionarServidor(s.id); abrirCanal(c.id); } }, 'Entrar'))));
         })))] : null));
+    const pn = main.querySelector('.painel');
+    barraStories().then((b) => { if (pn.isConnected) pn.insertBefore(b, pn.children[0]); });
+    blocoEventos().then((b) => { if (b && pn.isConnected) pn.append(b); }).catch(() => {});
   }
 
   // ---------- boas-vindas (regras + cargos por escolha) ----------
@@ -678,6 +682,193 @@
     };
     desenhar();
     abrirModal({ titulo: 'Tour rápido', corpo });
+  }
+
+  // ---------- efeitos de perfil (partículas em volta do avatar) ----------
+  const EFEITOS_PERFIL = { '': 'Nenhum', neve: '❄️ Neve', fogo: '🔥 Fogo', estrelas: '✨ Estrelas', coracoes: '💖 Corações', raios: '⚡ Raios', confete: '🎉 Confete' };
+  const PARTICULA = { neve: '❄', fogo: '🔥', estrelas: '✦', coracoes: '♥', raios: '⚡', confete: '●' };
+  function efeitoPerfil(u) {
+    const ef = u && u.vitrine && u.vitrine.efeito;
+    if (!ef || !PARTICULA[ef]) return null;
+    return h('div', { class: 'efeito-perfil efeito-' + ef, 'aria-hidden': 'true' }, Array.from({ length: 12 }, (_, i) => h('i', { style: `--i:${i};--x:${(i * 37) % 100}%` }, PARTICULA[ef])));
+  }
+
+  // ---------- perfil completo (tela grande) com conquistas ----------
+  async function perfilCompleto(u) {
+    fecharMenu();
+    const [banner, ...extras] = vitrine(u);
+    const conq = h('div', { class: 'grade-conquistas' }, h('small', {}, 'Carregando conquistas…'));
+    const nums = h('div', { class: 'nums-perfil' });
+    const comum = h('div', { class: 'em-comum' });
+    const av = h('div', { class: 'av-linha' }, avatar(u, 'av-vitrine', true), efeitoPerfil(u), h('span', { class: 'bolinha-perfil ' + st(u.id)[0] }));
+    const f = abrirModal({ titulo: u.nome, corpo: [banner, av,
+      h('div', { class: 'caixa-perfil' }, h('h3', {}, u.nome), h('small', { class: 'arroba' }, '@' + u.usuario + ' · ' + st(u.id)[1]),
+        u.statusTexto ? h('div', { class: 'recado-perfil' }, '💬 ' + u.statusTexto) : null, nums, h('hr'), ...extras,
+        h('div', { class: 'sec-perfil' }, 'Conquistas'), conq, u.id !== E.eu.id ? [h('div', { class: 'sec-perfil' }, 'Em comum'), comum] : null)].flat().filter(Boolean) });
+    f.classList.add('perfil-grande');
+    f.style.setProperty('--perfil', u.cor || 'var(--roxo)');
+    try {
+      const d = await api('GET', `/usuarios/${u.id}/conquistas`);
+      nums.replaceChildren(...[[d.mensagens, 'mensagens'], [d.servidores, 'servidores'], [d.dias, 'dias de KALI']].map(([n, r]) => h('div', {}, h('b', {}, String(n)), h('small', {}, r))));
+      conq.replaceChildren(...d.conquistas.map((c) => h('div', { class: 'conquista' + (c.ok ? ' ok' : ''), title: c.desc }, h('span', {}, c.emoji), h('b', {}, c.nome), h('small', {}, c.desc))));
+    } catch (e) { conq.replaceChildren(h('small', {}, 'Não consegui carregar.')); }
+    if (u.id !== E.eu.id) api('GET', `/usuarios/${u.id}/comum`).then((d) => comum.replaceChildren(h('small', {}, `🏠 ${d.servidores.length} servidor(es) · 👥 ${d.amigos.length} amigo(s) em comum`))).catch(() => {});
+  }
+
+  // ---------- stories de 24h ----------
+  const FUNDOS_STORY = { rosa: 'linear-gradient(135deg,#ff4fb8,#8b2fd6)', azul: 'linear-gradient(135deg,#1fa2ff,#1d4ed8)', roxo: 'linear-gradient(135deg,#7c3aed,#c026d3)', verde: 'linear-gradient(135deg,#10b981,#0e7490)', fogo: 'linear-gradient(135deg,#f97316,#dc2626)', noite: 'linear-gradient(135deg,#0f172a,#334155)' };
+  async function barraStories() {
+    const barra = h('div', { class: 'stories' }, h('button', { class: 'story-bola story-novo', onclick: modalNovoStory, title: 'Postar story' }, h('span', { class: 'sb-av' }, '＋'), h('small', {}, 'Seu story')));
+    api('GET', '/stories').then((lista) => {
+      for (const a of lista) barra.append(h('button', { class: 'story-bola' + (lerVistos().includes(a.stories[a.stories.length - 1].id) ? ' visto' : ''), onclick: () => verStories(lista, lista.indexOf(a)) },
+        h('span', { class: 'sb-av' }, avatar(a, '', false)), h('small', {}, a.id === E.eu.id ? 'Você' : a.nome)));
+    }).catch(() => {});
+    return barra;
+  }
+  const lerVistos = () => { try { return JSON.parse(ler('kali-stories-vistos') || '[]'); } catch (e) { return []; } };
+  function modalNovoStory() {
+    let fundo = 'rosa';
+    const txt = h('textarea', { rows: 4, maxlength: 200, placeholder: 'O que tá rolando? (some em 24h)', class: 'story-txt' });
+    const prev = h('div', { class: 'story-prev', style: 'background:' + FUNDOS_STORY.rosa }, txt);
+    const cores = h('div', { class: 'cores' }, Object.entries(FUNDOS_STORY).map(([k, g]) => { const b = h('button', { type: 'button', class: k === fundo ? 'ativa' : '', title: k, style: 'background:' + g }); b.onclick = () => { fundo = k; prev.style.background = g; cores.querySelectorAll('button').forEach((x) => x.classList.toggle('ativa', x === b)); }; return b; }));
+    abrirModal({ titulo: '📸 Novo story', sub: 'Aparece pros seus amigos e pra galera dos seus servidores por 24h.', corpo: [prev, cores], botao: 'Postar',
+      acao: async () => { await api('POST', '/stories', { texto: txt.value, fundo }); toast('📸 Story postado!', 'ok'); if (E.modo === 'painel') renderMain(); } });
+  }
+  function verStories(lista, ia) {
+    let a = ia, i = 0, timer = null;
+    const tela = h('div', { class: 'story-tela', role: 'dialog' });
+    const fechar = () => { clearTimeout(timer); tela.remove(); document.removeEventListener('keydown', tecla); if (E.modo === 'painel') renderMain(); };
+    const tecla = (e) => { if (e.key === 'Escape') fechar(); if (e.key === 'ArrowRight') prox(); if (e.key === 'ArrowLeft') ant(); };
+    const prox = () => { const au = lista[a]; if (++i >= au.stories.length) { i = 0; if (++a >= lista.length) return fechar(); } mostrar(); };
+    const ant = () => { if (--i < 0) { if (--a < 0) { a = 0; i = 0; } else i = lista[a].stories.length - 1; } mostrar(); };
+    const mostrar = () => {
+      clearTimeout(timer);
+      const au = lista[a], sto = au.stories[i];
+      salvar('kali-stories-vistos', JSON.stringify([...new Set([...lerVistos(), sto.id])].slice(-300)));
+      const min = Math.max(1, Math.round((Date.now() - sto.criadoEm) / 60000));
+      tela.replaceChildren(h('div', { class: 'story-caixa', style: 'background:' + (FUNDOS_STORY[sto.fundo] || FUNDOS_STORY.rosa) },
+        h('div', { class: 'story-barras' }, au.stories.map((_, j) => h('i', { class: j < i ? 'cheia' : j === i ? 'andando' : '' }))),
+        h('div', { class: 'story-topo' }, avatar(au, '', false), h('b', {}, au.nome), h('small', {}, min < 60 ? min + ' min' : Math.round(min / 60) + ' h'),
+          au.id === E.eu.id ? h('button', { class: 'icbtn', title: 'Apagar story', onclick: async (e) => { e.stopPropagation(); await api('DELETE', '/stories/' + sto.id).catch(() => {}); fechar(); } }, '🗑') : null,
+          h('button', { class: 'icbtn', title: 'Fechar', onclick: (e) => { e.stopPropagation(); fechar(); } }, '✕')),
+        h('p', { class: 'story-texto' }, sto.texto),
+        h('button', { class: 'story-lado esq', 'aria-label': 'Anterior', onclick: ant }), h('button', { class: 'story-lado dir', 'aria-label': 'Próximo', onclick: prox })));
+      timer = setTimeout(prox, 5000);
+    };
+    document.body.append(tela);
+    document.addEventListener('keydown', tecla);
+    mostrar();
+  }
+
+  // ---------- eventos com contagem regressiva (Painel) ----------
+  async function blocoEventos() {
+    const box = h('div', { class: 'eventos-painel' });
+    const todos = (await Promise.all(E.servidores.map((s) => api('GET', `/servidores/${s.id}/eventos`).then((l) => l.map((e) => ({ ...e, srv: s }))).catch(() => [])))).flat()
+      .filter((e) => e.inicio > Date.now()).sort((x, y) => x.inicio - y.inicio).slice(0, 6);
+    if (!todos.length) return null;
+    const relogio = (alvo) => { const el = h('div', { class: 'contagem' }); const tick = () => { const s = Math.max(0, Math.floor((alvo - Date.now()) / 1000)); const p = [Math.floor(s / 86400), Math.floor(s / 3600) % 24, Math.floor(s / 60) % 60, s % 60]; el.replaceChildren(...p.map((n, k) => h('span', {}, h('b', {}, String(n).padStart(2, '0')), h('small', {}, ['dias', 'horas', 'min', 'seg'][k])))); if (!el.isConnected && el.dataset.on) return; el.dataset.on = 1; setTimeout(tick, 1000); }; tick(); return el; };
+    box.append(h('div', { class: 'sec-painel' }, h('b', {}, 'Em breve'), h('small', {}, '· eventos dos seus servidores')),
+      h('div', { class: 'grade-painel' }, todos.map((e) => h('div', { class: 'card-srv card-evento' }, h('div', { class: 'info' },
+        h('div', { class: 'linha-topo' }, h('b', {}, '📅 ' + e.titulo), h('span', { class: 'selos' }, h('span', { class: 'pilula contorno' }, e.srv.nome), h('span', { class: 'pilula destaque' }, 'Em breve'))),
+        e.descricao ? h('p', {}, e.descricao) : null, relogio(e.inicio),
+        h('div', { class: 'stats' }, h('span', {}, h('b', {}, String(e.interessados)), ' vão'), h('span', {}, new Date(e.inicio).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })),
+          h('button', { class: 'bt' + (e.euVou ? '' : ' prim'), onclick: async (ev) => { ev.stopPropagation(); try { await api('POST', `/eventos/${e.id}/interesse`); renderMain(); } catch (err) { toast(err.message, 'erro'); } } }, e.euVou ? '✓ Vou' : 'Tenho interesse')))))));
+    return box;
+  }
+
+  // ---------- atividade na call: jogo da velha ----------
+  let velha = null;
+  const linhasVelha = [[0, 1, 2], [3, 4, 5], [6, 7, 8], [0, 3, 6], [1, 4, 7], [2, 5, 8], [0, 4, 8], [2, 4, 6]];
+  function novoVelha() { velha = { jogo: 'velha', tab: Array(9).fill(''), vez: 'X', jog: { X: E.eu.id, O: null }, nomes: { X: E.eu.nome, O: '' } }; enviarVelha(); abrirVelha(); }
+  function enviarVelha() { pedir('voz:atividade', { estado: velha }).then((r) => r.erro && toast(r.erro, 'erro')); }
+  function vencedorVelha(t) { for (const [a, b, c] of linhasVelha) if (t[a] && t[a] === t[b] && t[a] === t[c]) return t[a]; return t.every(Boolean) ? 'empate' : null; }
+  function abrirVelha() {
+    if (!velha) return;
+    const v = vencedorVelha(velha.tab);
+    const meu = velha.jog.X === E.eu.id ? 'X' : velha.jog.O === E.eu.id ? 'O' : null;
+    const grade = h('div', { class: 'velha' }, velha.tab.map((c, i) => h('button', { type: 'button', class: 'casa ' + (c ? 'c-' + c : ''), disabled: !!c || !!v || null, onclick: () => {
+      let eu = meu;
+      if (!eu && !velha.jog.O && velha.jog.X !== E.eu.id) { velha.jog.O = E.eu.id; velha.nomes.O = E.eu.nome; eu = 'O'; }
+      if (eu !== velha.vez) return toast(eu ? 'Espera sua vez!' : 'Só os dois jogadores jogam.', 'erro');
+      velha.tab[i] = eu; velha.vez = eu === 'X' ? 'O' : 'X'; enviarVelha(); abrirVelha();
+    } }, c)));
+    const status = v === 'empate' ? '🤝 Deu velha!' : v ? `🏆 ${velha.nomes[v] || v} venceu!` : `Vez do ${velha.vez} (${velha.nomes[velha.vez] || 'quem clicar primeiro'})`;
+    const atual = document.querySelector('.modal.modal-velha');
+    const corpo = [h('p', { class: 'status-velha' }, status), grade, h('button', { type: 'button', class: 'bt', style: 'margin-top:10px', onclick: novoVelha }, '🔄 Nova partida')];
+    if (atual) { atual.querySelector('.corpo-velha').replaceChildren(...corpo); return; }
+    const f = abrirModal({ titulo: '❌⭕ Jogo da velha', sub: 'Todo mundo na call vê. O primeiro que clicar vira o O.', corpo: h('div', { class: 'corpo-velha' }, corpo) });
+    f.classList.add('modal-velha');
+  }
+  function aoAtividade(d) {
+    if (!d || !d.estado || d.estado.jogo !== 'velha') return;
+    const novo = !velha || velha.tab.every((c) => !c);
+    velha = d.estado;
+    if (document.querySelector('.modal.modal-velha')) abrirVelha();
+    else if (novo) toast('❌⭕ Começou um jogo da velha na call! Clica no 🎮 pra jogar.', 'ok');
+  }
+  function menuAtividades(ancora) {
+    abrirMenu(ancora, [h('div', { class: 'sec-menu' }, 'Atividades na call'),
+      item('❌⭕ Jogo da velha', () => (velha ? abrirVelha() : novoVelha())),
+      item('🫧 Bolha flutuante (quem tá falando)', bolhaCall)]);
+  }
+
+  // ---------- bolha flutuante da call (Picture-in-Picture de documento) ----------
+  async function bolhaCall() {
+    if (!window.documentPictureInPicture) return toast('Seu navegador não tem janela flutuante (funciona no Chrome/Edge do PC).', 'erro');
+    if (!Voz.estado.canalId) return toast('Entra numa call primeiro.', 'erro');
+    const w = await documentPictureInPicture.requestWindow({ width: 240, height: 300 });
+    w.document.body.style.cssText = 'margin:0;font-family:Segoe UI,system-ui,sans-serif;background:#0b0b0d;color:#f2f4f8;padding:10px';
+    const desenhar = () => {
+      if (w.closed) return clearInterval(t);
+      const ms = E.voz.get(Voz.estado.canalId) || [];
+      w.document.body.innerHTML = '';
+      const titulo = w.document.createElement('div'); titulo.textContent = '🔊 ' + ((acharCanal(Voz.estado.canalId) || {}).nome || 'Call'); titulo.style.cssText = 'font-size:12px;font-weight:700;margin-bottom:8px;opacity:.8';
+      w.document.body.append(titulo);
+      for (const m of ms) {
+        const l = w.document.createElement('div');
+        l.style.cssText = `display:flex;align-items:center;gap:8px;padding:6px 8px;margin-bottom:4px;border-radius:8px;background:${m.falando ? 'rgba(62,230,168,.18)' : '#151518'};box-shadow:${m.falando ? 'inset 0 0 0 2px #3ee6a8' : 'none'}`;
+        l.textContent = (m.falando ? '🟢 ' : m.mudo ? '🔇 ' : '⚪ ') + m.nome;
+        w.document.body.append(l);
+      }
+      const bt = w.document.createElement('button'); bt.textContent = Voz.estado.mudo ? '🎙️ Desmutar' : '🔇 Mutar';
+      bt.style.cssText = 'margin-top:6px;width:100%;padding:8px;border:0;border-radius:8px;background:#e0359b;color:#fff;font-weight:600;cursor:pointer';
+      bt.onclick = () => { Voz.alternarMudo(); desenhar(); };
+      w.document.body.append(bt);
+    };
+    const t = setInterval(desenhar, 400); desenhar();
+  }
+
+  // ---------- mensagens salvas ----------
+  const salvas = () => { try { return JSON.parse(ler('kali-salvas') || '[]'); } catch (e) { return []; } };
+  function alternarSalva(m) {
+    let l = salvas();
+    if (l.some((x) => x.id === m.id)) { l = l.filter((x) => x.id !== m.id); toast('Tirada das salvas', 'ok'); }
+    else { l.unshift({ id: m.id, canalId: m.canalId, texto: (m.texto || (m.anexo ? '📎 ' + (m.anexo.nome || 'anexo') : '')).slice(0, 300), autor: m.autor ? m.autor.nome : 'KALI', criadoEm: m.criadoEm }); toast('🔖 Mensagem salva', 'ok'); }
+    salvar('kali-salvas', JSON.stringify(l.slice(0, 200)));
+  }
+  function modalSalvas() {
+    const l = salvas();
+    abrirModal({ titulo: '🔖 Mensagens salvas', sub: l.length ? 'Clica pra ir até a mensagem.' : 'Nada salvo ainda. Passa o mouse numa mensagem → ⋯ → Salvar.', corpo: h('div', { class: 'lista-busca' }, l.map((m) =>
+      h('button', { type: 'button', class: 'res-busca', onclick: () => { fecharModal(); irPara(m.id, m.canalId); } }, h('div', { class: 'rb-topo' }, h('b', {}, m.autor), h('small', {}, new Date(m.criadoEm).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }))), h('div', { class: 'rb-txt' }, m.texto)))) });
+  }
+
+  // ---------- traduzir mensagem ----------
+  async function traduzir(m, alvoEl) {
+    const texto = m.texto || '';
+    if (!texto) return;
+    try {
+      if (window.Translator && window.LanguageDetector) {
+        const det = await (await LanguageDetector.create()).detect(texto);
+        const de = det && det[0] ? det[0].detectedLanguage : 'en';
+        if (de === 'pt') return toast('Essa mensagem já está em português.', 'ok');
+        const tr = await Translator.create({ sourceLanguage: de, targetLanguage: 'pt' });
+        const saida = await tr.translate(texto);
+        const box = h('div', { class: 'traducao' }, h('small', {}, '🌐 Tradução (' + de + ' → pt)'), h('p', {}, saida));
+        alvoEl && alvoEl.append(box);
+        return;
+      }
+    } catch (e) { /* cai pro tradutor do Google */ }
+    window.open('https://translate.google.com/?sl=auto&tl=pt&op=translate&text=' + encodeURIComponent(texto.slice(0, 1500)), '_blank', 'noopener');
   }
 
   // ---------- render geral ----------
@@ -864,6 +1055,7 @@
           h('div', { class: 'info' }, h('b', {}, 'Voz conectada'), h('small', {}, (c ? c.nome : '') + (srv ? ' / ' + srv.nome : ''))),
           h('button', { class: 'icbtn sair-voz', title: 'Desconectar', onclick: () => { Voz.sair(); } }, ic('desligar', 18))),
         h('div', { class: 'pv-acoes' },
+        h('button', { class: 'icbtn', title: 'Atividades (jogo da velha, bolha flutuante)', onclick: (e) => menuAtividades(e.currentTarget) }, '🎮'),
         h('button', { class: 'icbtn' + (ev.camera ? ' ativo-tela' : ''), title: ev.camera ? 'Desligar câmera' : 'Ligar câmera',
           onclick: () => Voz.alternarCamera().catch((err) => toast(err.message, 'erro')) }, ic('camera', 18)),
         h('button', { class: 'icbtn' + (ev.compartilhando ? ' ativo-tela' : ''), title: ev.compartilhando ? 'Parar de compartilhar' : 'Compartilhar tela (1080p/60fps)',
@@ -1271,6 +1463,8 @@
         }) : null,
         item('Encaminhar', () => bEnc.click()),
         item('Me lembra disso', () => bLembrar.click()),
+        item(salvas().some((x) => x.id === m.id) ? '🔖 Tirar das salvas' : '🔖 Salvar mensagem', () => alternarSalva(m)),
+        m.texto ? item('🌐 Traduzir', () => traduzir(m, document.querySelector(`.msg[data-id="${m.id}"] .texto`) || document.querySelector(`.msg[data-id="${m.id}"]`))) : null,
         m.anexo && /^image\//.test(m.anexo.tipo || '') ? item(gifsFav().some((g) => g.url === m.anexo.url) ? '⭐ Tirar dos favoritos' : '⭐ Salvar nos favoritos (GIF/imagem)', () => alternarFav(m.anexo)) : null,
         m.texto ? item('Copiar texto', () => { navigator.clipboard?.writeText(m.texto).then(() => toast('Texto copiado ✓', 'ok')).catch(() => {}); }) : null,
         !minha && s ? item('Denunciar mensagem', () => modalDenuncia(m)) : null,
@@ -1575,7 +1769,8 @@
     const caixa = h('div', { class: 'caixa-perfil' },
       h('div', { class: 'nome-linha' }, h('h3', {}, m.nome), selos.length ? h('div', { class: 'selos-perfil' }, selos) : null),
       h('small', { class: 'arroba' }, '@' + m.usuario + (m.apelido ? ` (${m.nomeConta})` : '') + ' · ' + st(m.id)[1]), recado, h('hr'), ...extras);
-    const conteudo = [banner, h('div', { class: 'av-linha' }, avatar(m, 'av-vitrine', true), h('span', { class: 'bolinha-perfil ' + st(m.id)[0], title: st(m.id)[1] })), caixa];
+    const conteudo = [banner, h('div', { class: 'av-linha' }, avatar(m, 'av-vitrine', true), efeitoPerfil(m), h('span', { class: 'bolinha-perfil ' + st(m.id)[0], title: st(m.id)[1] })), caixa,
+      h('button', { class: 'bt', onclick: () => perfilCompleto(m) }, '👤 Perfil completo')];
     const srv = servidorAtual();
     if (srv && E.modo === 'servidor' && (m.id === E.eu.id || souStaffEm(srv.id))) {
       conteudo.push(h('button', { class: 'bt', onclick: () => {
@@ -2836,17 +3031,18 @@
       return b;
     }));
     const jogos = h('input', { maxlength: 160, placeholder: 'Valorant, LoL, Minecraft (até 5)' }); jogos.value = (v.jogos || []).join(', ');
+    const efeito = h('select', {}, Object.entries(EFEITOS_PERFIL).map(([k, r]) => h('option', { value: k }, r))); efeito.value = v.efeito || '';
     const links = h('textarea', { rows: 2, maxlength: 1100, placeholder: 'https://twitch.tv/voce (um por linha, até 5)', class: 'campo-area' }); links.value = (v.links || []).join('\n');
     const aniver = h('input', { maxlength: 5, placeholder: 'DD/MM' });
     if (v.aniversario) { const [mm, dd] = v.aniversario.split('-'); aniver.value = `${dd}/${mm}`; }
     abrirModal({ titulo: 'Seu perfil vitrine', corpo: [campo('Nome de exibição', nome), campo('Recado', status), h('div', { class: 'campo' }, h('span', {}, 'Cor do avatar'), cores),
-      h('div', { class: 'campo' }, h('span', {}, 'Banner'), banners), campo('Bio', bio), campo('Jogos favoritos', jogos), campo('Links na bio', links), campo('Aniversário', aniver)], botao: 'Salvar',
+      h('div', { class: 'campo' }, h('span', {}, 'Banner'), banners), campo('Bio', bio), campo('✨ Efeito no avatar', efeito), campo('Jogos favoritos', jogos), campo('Links na bio', links), campo('Aniversário', aniver)], botao: 'Salvar',
       acao: async () => {
         const a = aniver.value.trim();
         const m = /^(\d{1,2})\/(\d{1,2})$/.exec(a);
         if (a && !m) throw new Error('Aniversário no formato DD/MM.');
         E.eu = Object.assign(E.eu, await api('PATCH', '/eu', {
-          nome: nome.value.trim(), statusTexto: status.value.trim(), cor, bio: bio.value.trim(), banner,
+          nome: nome.value.trim(), statusTexto: status.value.trim(), cor, bio: bio.value.trim(), banner, efeito: efeito.value,
           jogos: jogos.value.split(',').map((x) => x.trim()).filter(Boolean),
           links: links.value.split('\n').map((x) => x.trim()).filter(Boolean),
           aniversario: m ? `${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}` : '',
@@ -3255,7 +3451,7 @@
     const jaTem = new Set(itens.filter((i) => i.tipo === 'dm' || i.tipo === 'amigo').map((i) => i.nome));
     for (const s of E.servidores) for (const m of E.membros.get(s.id) || []) if (m.id !== E.eu.id && !jaTem.has(m.nome)) { jaTem.add(m.nome); itens.push({ tipo: 'pessoa', nome: m.nome, sub: '@' + m.usuario + ' · ' + s.nome, ir: () => abrirDmCom(m.usuario).catch((e) => toast(e.message, 'erro')) }); }
     for (const [nome, sub, ir] of [['Painel', 'Ir pro painel', abrirPainel], ['Mutar / desmutar', 'Microfone na call', () => Voz.alternarMudo()], ['Ensurdecer', 'Áudio da call', () => Voz.alternarSurdo()], ['Sair da call', 'Desconectar', () => Voz.sair()],
-      ['Configurações', 'Abrir configurações', () => configUsuario()], ['Criar ou entrar em servidor', 'Novo servidor', modalServidor], ['Trocar tema claro/escuro', 'Aparência', alternarTema], ['Status de jogo', 'Jogando…', definirJogo], ['Atalhos', 'Ver atalhos do teclado', modalAtalhos], ['Ativar notificações', 'Push no celular/PC', () => ativarPush().then(() => toast('🔔 Notificações ligadas', 'ok')).catch((e) => toast(e.message, 'erro'))], ['Tour rápido', 'Rever o tour', () => { salvar('kali-tour', ''); tourInicial(); }]])
+      ['Configurações', 'Abrir configurações', () => configUsuario()], ['Criar ou entrar em servidor', 'Novo servidor', modalServidor], ['Trocar tema claro/escuro', 'Aparência', alternarTema], ['Status de jogo', 'Jogando…', definirJogo], ['Atalhos', 'Ver atalhos do teclado', modalAtalhos], ['Ativar notificações', 'Push no celular/PC', () => ativarPush().then(() => toast('🔔 Notificações ligadas', 'ok')).catch((e) => toast(e.message, 'erro'))], ['Mensagens salvas', 'Suas salvas', modalSalvas], ['Novo story', 'Postar story de 24h', modalNovoStory], ['Meu perfil completo', 'Conquistas e números', () => perfilCompleto(E.eu)], ['Tour rápido', 'Rever o tour', () => { salvar('kali-tour', ''); tourInicial(); }]])
       itens.push({ tipo: 'cmd', nome, sub, ir });
     const ICS = { canal: '#', voz: '🔊', dm: '@', amigo: '@', pessoa: '@', servidor: '★', cmd: '>' };
     const inp = h('input', { placeholder: 'Pra onde? (# canal, @ pessoa, * servidor, > comando)', 'aria-label': 'Troca rápida' });
@@ -3579,6 +3775,7 @@
     });
     Voz.aoFalarMudo = () => toast('🎙️ Você está mudo! Aperta Ctrl+Shift+M ou o microfone pra falar.', 'erro');
     sock.on('voz:pedido', cardPedidoVoz);
+    sock.on('voz:atividade', aoAtividade);
     sock.on('voz:pedido-fim', (d) => $('#pedido-' + d.canalId + '-' + d.usuarioId)?.remove());
     sock.on('voz:resposta', (d) => {
       const c = acharCanal(d.canalId);

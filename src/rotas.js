@@ -103,6 +103,10 @@ function validarVitrine(c) {
     }
     v.jogos = c.jogos.map((j) => j.trim());
   }
+  if (c.efeito !== undefined) {
+    if (!['', 'neve', 'fogo', 'estrelas', 'coracoes', 'raios', 'confete'].includes(c.efeito)) throw erro(400, 'Efeito inválido.');
+    v.efeito = c.efeito;
+  }
   return v;
 }
 function servidorComoStaff(uid, sid) {
@@ -610,6 +614,46 @@ export function criarRotas() {
   });
 
   // Perfil: servidores e amigos em comum.
+  // Conquistas: calculadas na hora a partir dos números da conta.
+  r.get('/usuarios/:id/conquistas', exigirLogin, (req, res) => {
+    const alvo = idDe(req.params.id);
+    if (!db.usuarioPorId(alvo)) throw erro(404, 'Usuário não encontrado.');
+    const e = db.estatisticasUsuario(alvo);
+    const dias = e.criadoEm ? Math.floor((Date.now() - e.criadoEm) / 86400000) : 0;
+    const lista = [
+      ['💬', 'Primeira palavra', 'Mandou a primeira mensagem', e.mensagens >= 1],
+      ['🗣️', 'Tagarela', '100 mensagens', e.mensagens >= 100],
+      ['📢', 'Lenda do chat', '1.000 mensagens', e.mensagens >= 1000],
+      ['🏗️', 'Fundador', 'Criou um servidor', e.servidoresDono >= 1],
+      ['🌍', 'Viajante', 'Está em 5 servidores', e.servidores >= 5],
+      ['🐣', 'Chegou agora', 'Conta nova (menos de 7 dias)', dias < 7],
+      ['🎖️', 'Veterano', '30 dias de KALI', dias >= 30],
+      ['👑', 'Raiz', '1 ano de KALI', dias >= 365],
+    ].map(([emoji, nome, desc, ok]) => ({ emoji, nome, desc, ok }));
+    res.json({ ...e, dias, conquistas: lista });
+  });
+
+  // Stories de 24h.
+  const FUNDOS_STORY = ['rosa', 'azul', 'roxo', 'verde', 'fogo', 'noite'];
+  r.get('/stories', exigirLogin, (req, res) => {
+    const linhas = db.storiesVisiveis(req.usuario.id);
+    const autores = new Map();
+    for (const l of linhas) { if (!autores.has(l.usuario_id)) { const u = db.usuarioPorId(l.usuario_id); if (u) autores.set(l.usuario_id, { id: u.id, nome: u.nome, usuario: u.usuario, cor: u.cor, avatar: db.urlImagem('u', u.id, 'avatar', u.avatar_v), stories: [] }); } autores.get(l.usuario_id)?.stories.push({ id: l.id, texto: l.texto, fundo: l.fundo, criadoEm: l.criado_em }); }
+    res.json([...autores.values()].map((a) => ({ ...a, stories: a.stories.reverse() })));
+  });
+  r.post('/stories', exigirLogin, (req, res) => {
+    const c = corpoDe(req);
+    const texto = typeof c.texto === 'string' ? c.texto.trim() : '';
+    if (texto.length < 1 || texto.length > 200) throw erro(400, 'O story precisa ter de 1 a 200 caracteres.');
+    if (!FUNDOS_STORY.includes(c.fundo)) throw erro(400, 'Fundo inválido.');
+    if (db.storiesVisiveis(req.usuario.id).filter((s) => s.usuario_id === req.usuario.id).length >= 10) throw erro(400, 'Máximo de 10 stories por dia.');
+    res.status(201).json({ id: db.criarStory(req.usuario.id, texto, c.fundo) });
+  });
+  r.delete('/stories/:id', exigirLogin, (req, res) => {
+    if (!db.apagarStory(idDe(req.params.id), req.usuario.id)) throw erro(404, 'Story não encontrado.');
+    res.json({ ok: true });
+  });
+
   r.get('/usuarios/:id/comum', exigirLogin, (req, res) => {
     const uid = req.usuario.id, alvo = idDe(req.params.id);
     if (!db.usuarioPorId(alvo)) throw erro(404, 'Usuário não encontrado.');

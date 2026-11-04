@@ -180,6 +180,7 @@ for (const [tabela, coluna, def] of [
   ['usuarios', 'aniv_ano', 'INTEGER'],
   ['servidores', 'automod', 'TEXT'],
   ['servidores', 'automod_cfg', 'TEXT'],
+  ['usuarios', 'efeito', 'TEXT'],
   ['canais', 'sala_espera', 'INTEGER NOT NULL DEFAULT 0'],
   ['servidores', 'boas_vindas', 'TEXT'],
 ]) {
@@ -582,12 +583,36 @@ export function atualizarPerfil(id, { nome, cor, statusTexto }) {
   if (statusTexto !== undefined) q('UPDATE usuarios SET status_texto = ? WHERE id = ?').run(statusTexto, id);
 }
 /** Perfil vitrine: listas guardadas como JSON. */
-export function atualizarVitrine(id, { bio, banner, links, aniversario, jogos }) {
+export function atualizarVitrine(id, { bio, banner, links, aniversario, jogos, efeito }) {
+  if (efeito !== undefined) q('UPDATE usuarios SET efeito = ? WHERE id = ?').run(efeito || null, id);
   if (bio !== undefined) q('UPDATE usuarios SET bio = ? WHERE id = ?').run(bio || null, id);
   if (banner !== undefined) q('UPDATE usuarios SET banner = ? WHERE id = ?').run(banner || null, id);
   if (links !== undefined) q('UPDATE usuarios SET links = ? WHERE id = ?').run(links.length ? JSON.stringify(links) : null, id);
   if (aniversario !== undefined) q('UPDATE usuarios SET aniversario = ? WHERE id = ?').run(aniversario || null, id);
   if (jogos !== undefined) q('UPDATE usuarios SET jogos = ? WHERE id = ?').run(jogos.length ? JSON.stringify(jogos) : null, id);
+}
+// Stories de 24h (texto + cor de fundo).
+db.exec('CREATE TABLE IF NOT EXISTS stories (id INTEGER PRIMARY KEY AUTOINCREMENT, usuario_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE, texto TEXT NOT NULL, fundo TEXT NOT NULL, criado_em INTEGER NOT NULL)');
+export const criarStory = (uid, texto, fundo) => Number(q('INSERT INTO stories (usuario_id, texto, fundo, criado_em) VALUES (?, ?, ?, ?)').run(uid, texto, fundo, Date.now()).lastInsertRowid);
+export const apagarStory = (id, uid) => q('DELETE FROM stories WHERE id = ? AND usuario_id = ?').run(id, uid).changes > 0;
+/** Stories das últimas 24h de quem a pessoa conhece: ela mesma, amigos e quem divide servidor. */
+export function storiesVisiveis(uid) {
+  const desde = Date.now() - 86400000;
+  q('DELETE FROM stories WHERE criado_em < ?').run(desde);
+  return q(`SELECT s.id, s.usuario_id, s.texto, s.fundo, s.criado_em FROM stories s WHERE s.criado_em >= ? AND (s.usuario_id = ?
+    OR s.usuario_id IN (SELECT m2.usuario_id FROM membros m1 JOIN membros m2 ON m2.servidor_id = m1.servidor_id WHERE m1.usuario_id = ?)
+    OR s.usuario_id IN (SELECT CASE WHEN de = ? THEN para ELSE de END FROM amizades WHERE (de = ? OR para = ?) AND status = 'aceita'))
+    ORDER BY s.criado_em DESC LIMIT 200`).all(desde, uid, uid, uid, uid, uid);
+}
+/** Números pras conquistas do perfil. */
+export function estatisticasUsuario(id) {
+  const u = q('SELECT criado_em FROM usuarios WHERE id = ?').get(id) || {};
+  return {
+    mensagens: q('SELECT COUNT(*) AS n FROM mensagens WHERE autor_id = ?').get(id).n,
+    servidoresDono: q('SELECT COUNT(*) AS n FROM servidores WHERE dono_id = ?').get(id).n,
+    servidores: q('SELECT COUNT(*) AS n FROM membros WHERE usuario_id = ?').get(id).n,
+    criadoEm: u.criado_em || null,
+  };
 }
 export const marcarAniversario = (id, ano) => q('UPDATE usuarios SET aniv_ano = ? WHERE id = ?').run(ano, id);
 export const definirStatus = (id, status) => q('UPDATE usuarios SET status = ? WHERE id = ?').run(status, id);
