@@ -409,8 +409,76 @@
     marcarLido(id);
   }
 
+  // ---------- Painel (tela inicial em grade, estilo dashboard) ----------
+  function abrirPainel() {
+    sairAssistir();
+    aplicarTemaServidor(null);
+    E.modo = 'painel'; E.servidorId = null; E.canalId = null; E.telaAmigos = false;
+    salvar('kali-servidor', 'painel');
+    $('#app').classList.add('chat');
+    render();
+  }
+  function sidePainel() {
+    const nDm = E.dms.reduce((t, d) => t + (E.naoLidos[d.canalId] || 0), 0);
+    const nav = (ic, rot, fn, ativo, n) => h('button', { class: 'nav-painel' + (ativo ? ' ativo' : ''), onclick: fn },
+      h('span', { class: 'ic' }, ic), h('span', { class: 'nm' }, rot), n ? h('span', { class: 'n' }, n > 99 ? '99+' : n) : null);
+    return [h('div', { class: 'side-topo' }, h('span', {}, 'KALI')),
+      h('div', { class: 'side-corpo' },
+        nav('▦', 'Painel', abrirPainel, true),
+        nav('💬', 'Mensagens', abrirDms, false, nDm),
+        nav('👋', 'Amigos', abrirAmigos, false, E.amigos.recebidos.length),
+        nav('＋', 'Criar ou entrar', modalServidor),
+        nav('⌨️', 'Atalhos', modalAtalhos),
+        nav('⚙️', 'Configurações', () => configUsuario()))];
+  }
+  function renderPainel(main) {
+    const filtro = E.filtroPainel || 'todos', termo = (E.buscaPainel || '').toLowerCase();
+    const naCall = (s) => s.canais.filter((c) => c.tipo === 'voz').flatMap((c) => (E.voz.get(c.id) || []).map((m) => ({ ...m, canal: c })));
+    const todos = E.servidores.filter((s) => s.nome.toLowerCase().includes(termo));
+    const lista = todos.filter((s) => filtro === 'todos' || (filtro === 'call' ? naCall(s).length : naoLidosServidor(s)));
+    const pilula = (t, cls) => h('span', { class: 'pilula' + (cls ? ' ' + cls : '') }, t);
+    const card = (s) => {
+      const call = naCall(s), nl = naoLidosServidor(s);
+      const texto = s.canais.filter((c) => c.tipo !== 'voz' && !c.paiCanal).length, voz = s.canais.filter((c) => c.tipo === 'voz').length;
+      const cargo = souDono(s) ? 'dono' : souStaffEm(s.id) ? 'staff' : 'membro';
+      return h('button', { class: 'card-srv', onclick: () => selecionarServidor(s.id) },
+        h('div', { class: 'capa' }, s.icone ? h('img', { src: s.icone, alt: '' }) : h('span', {}, s.sigla || inicial(s.nome))),
+        h('div', { class: 'info' },
+          h('div', { class: 'linha-topo' }, h('b', {}, s.nome),
+            h('span', { class: 'selos' }, pilula(cargo, 'contorno'), call.length ? pilula('● ao vivo', 'vivo') : pilula('ativo', 'ok'))),
+          h('p', {}, (s.canais.find((c) => c.tipo === 'texto') ? '# ' + s.canais.filter((c) => c.tipo === 'texto').slice(0, 4).map((c) => c.nome).join('  # ') : 'Sem canais de texto ainda.')),
+          h('div', { class: 'tags' }, pilula(texto + ' texto'), pilula(voz + ' voz'), nl ? pilula(nl + ' não lidas', 'destaque') : null),
+          h('div', { class: 'stats' },
+            h('span', {}, h('b', {}, String(call.length)), ' na call'),
+            h('span', {}, h('b', {}, String(texto + voz)), ' canais'),
+            h('span', { class: 'conv' }, '🔗 ' + (s.convite || '')))));
+    };
+    const vivos = todos.filter((s) => naCall(s).length);
+    const busca = h('input', { class: 'busca-painel', placeholder: 'Buscar servidores…', value: E.buscaPainel || '', 'aria-label': 'Buscar servidores' });
+    busca.oninput = () => { E.buscaPainel = busca.value; const pos = busca.selectionStart; renderPainel(main); const b = main.querySelector('.busca-painel'); b.focus(); b.setSelectionRange(pos, pos); };
+    const aba = (v, t) => h('button', { class: 'aba-painel' + (filtro === v ? ' ativo' : ''), onclick: () => { E.filtroPainel = v; renderPainel(main); } }, t);
+    main.replaceChildren(h('div', { class: 'painel' },
+      h('h1', {}, 'Servidores ', h('span', {}, 'disponíveis')),
+      h('p', { class: 'sub' }, 'Seus servidores num lugar só: quem tá na call, o que tem de novo e atalho pra entrar.'),
+      h('small', { class: 'conta' }, E.servidores.length + (E.servidores.length === 1 ? ' servidor' : ' servidores')),
+      h('div', { class: 'barra-painel' }, busca, h('div', { class: 'abas-painel' }, aba('todos', 'Todos'), aba('call', 'Ao vivo'), aba('novos', 'Não lidos'))),
+      h('div', { class: 'sec-painel' }, h('b', {}, 'Meus servidores'), h('small', {}, '· clica pra abrir')),
+      lista.length ? h('div', { class: 'grade-painel' }, lista.map(card))
+        : h('p', { class: 'vazio-painel' }, E.servidores.length ? 'Nada com esse filtro.' : 'Você ainda não tem servidor.', ' ', h('button', { class: 'bt prim', onclick: modalServidor }, 'Criar ou entrar')),
+      vivos.length ? [h('div', { class: 'sec-painel' }, h('b', {}, 'Ao vivo agora'), h('small', {}, '· gente conversando')),
+        h('div', { class: 'grade-painel' }, vivos.flatMap((s) => s.canais.filter((c) => (E.voz.get(c.id) || []).length).map((c) => {
+          const ms = E.voz.get(c.id);
+          return h('div', { class: 'card-srv card-vivo' },
+            h('div', { class: 'info' },
+              h('div', { class: 'linha-topo' }, h('b', {}, '🔊 ' + c.nome), h('span', { class: 'selos' }, pilula(s.nome, 'contorno'), pilula('● ao vivo', 'vivo'))),
+              h('div', { class: 'rostos' }, ms.slice(0, 8).map((m) => h('span', { class: 'rosto' + (m.falando ? ' falando' : ''), title: m.nome }, inicial(m.nome))), ms.length > 8 ? h('small', {}, '+' + (ms.length - 8)) : null),
+              h('div', { class: 'stats' }, h('span', {}, h('b', {}, String(ms.length)), ' na call'),
+                h('button', { class: 'bt prim', onclick: async () => { await selecionarServidor(s.id); abrirCanal(c.id); } }, 'Entrar'))));
+        })))] : null));
+  }
+
   // ---------- render geral ----------
-  function render() { renderRail(); renderSide(); renderMain(); renderMembros(); }
+  function render() { $('#app').classList.toggle('modo-painel', E.modo === 'painel'); renderRail(); renderSide(); renderMain(); renderMembros(); }
 
   function renderRail() {
     const rail = $('#rail');
@@ -418,7 +486,8 @@
     const bDm = h('button', { class: 'srv logo-btn' + (E.modo === 'dm' ? ' ativo' : ''), title: 'Mensagens diretas', onclick: abrirDms }, logo());
     const nAvisos = nDm + E.amigos.recebidos.length;
     if (nAvisos) bDm.append(h('span', { class: 'bad' }, nAvisos > 99 ? '99+' : nAvisos));
-    const itens = [bDm, h('div', { class: 'sep' })];
+    const bPainel = h('button', { class: 'srv painel-btn' + (E.modo === 'painel' ? ' ativo' : ''), title: 'Painel', onclick: abrirPainel }, '▦');
+    const itens = [bPainel, bDm, h('div', { class: 'sep' })];
     for (const s of E.servidores) {
       const b = h('button', { class: 'srv' + (E.modo === 'servidor' && s.id === E.servidorId ? ' ativo' : ''), title: s.nome, onclick: () => selecionarServidor(s.id) }, s.icone ? h('img', { class: 'icone-srv', src: s.icone, alt: '' }) : s.sigla || inicial(s.nome));
       const n = naoLidosServidor(s);
@@ -503,6 +572,7 @@
   function renderSide() {
     const side = $('#side');
     const partes = [];
+    if (E.modo === 'painel') return side.replaceChildren(...sidePainel());
     if (E.modo === 'dm') {
       partes.push(h('div', { class: 'side-topo topo-busca' }, h('button', { class: 'achar-conversa', onclick: modalNovaDm }, 'Encontre ou comece uma conversa')));
       // Igual ao Discord: Amigos e Loja no topo, depois "Mensagens diretas ＋".
@@ -608,6 +678,7 @@
 
   function renderMain() {
     const main = $('#main');
+    if (E.modo === 'painel') return renderPainel(main);
     if (E.modo === 'dm' && E.telaAmigos) return renderAmigos(main);
     if (E.verCall && window.Voz && Voz.estado.canalId) return renderCall(main);
     const c = canalAtual();
@@ -1209,6 +1280,7 @@
     const box = $('#membros');
     const fechar = h('div', { class: 'topo-membros' }, h('span', {}, 'Membros'), h('button', { class: 'icbtn', onclick: alternarMembros }, '✕'));
     const c = canalAtual();
+    if (E.modo === 'painel') return box.replaceChildren();
     if (E.modo === 'dm') {
       if (!c || !c.dm) return box.replaceChildren(fechar);
       const o = c.dm.outro;
@@ -3300,6 +3372,7 @@
     if (await usarConvitePendente()) return;
     const salvo = ler('kali-servidor');
     if (salvo === 'dm') return abrirDms();
+    if (salvo === 'painel' || (!salvo && E.servidores.length)) return abrirPainel();
     const s = E.servidores.find((x) => x.id === Number(salvo)) || E.servidores[0];
     if (s) await selecionarServidor(s.id); else render();
   }
