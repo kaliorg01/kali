@@ -3862,10 +3862,36 @@
   })();
   // Pede permissão de notificação no primeiro clique (navegador exige um gesto).
   if (window.Notification && Notification.permission === 'default') document.addEventListener('click', () => { Notification.requestPermission().catch(() => {}); }, { once: true });
+  // Título e ícone da aba mostram o que está ligado: tela, câmera, call. Minimizado, o título pisca pra lembrar que ainda está transmitindo.
+  let piscaTitulo = false, iconeAtual = '';
+  function iconeAba(tipo) {
+    if (iconeAtual === tipo) return;
+    iconeAtual = tipo;
+    const link = document.querySelector('link[rel="icon"]');
+    if (!link) return;
+    if (!tipo) { link.href = '/img/icone.png'; return; }
+    const img = new Image();
+    img.onload = () => {
+      const c = document.createElement('canvas'); c.width = c.height = 64;
+      const g = c.getContext('2d'); g.drawImage(img, 0, 0, 64, 64);
+      g.beginPath(); g.arc(48, 48, 15, 0, Math.PI * 2); g.fillStyle = tipo === 'tela' ? '#ff2d55' : tipo === 'camera' ? '#ff9f0a' : '#30d158'; g.fill();
+      g.lineWidth = 4; g.strokeStyle = '#000'; g.stroke();
+      try { link.href = c.toDataURL('image/png'); } catch (e) {}
+    };
+    img.src = '/img/icone.png';
+  }
   function atualizarTitulo() {
     const n = Object.values(E.mencoes).reduce((t, x) => t + (x || 0), 0);
-    document.title = n ? `(${n > 99 ? '99+' : n}) KALI` : 'KALI';
+    const ev = window.Voz ? Voz.estado : {};
+    const base = n ? `(${n > 99 ? '99+' : n}) KALI` : 'KALI';
+    const ativo = ev.compartilhando ? '🔴 Transmitindo tela' : ev.camera ? '📷 Câmera ligada' : ev.canalId ? (ev.mudo ? '🔇 Na call (mudo)' : '🔊 Na call') : '';
+    iconeAba(ev.compartilhando ? 'tela' : ev.camera ? 'camera' : ev.canalId ? 'call' : '');
+    if (!ativo) { document.title = base; return; }
+    if (document.hidden && (ev.compartilhando || ev.camera)) { piscaTitulo = !piscaTitulo; document.title = piscaTitulo ? (ev.compartilhando ? '🔴 AO VIVO — sua tela tá sendo vista' : '📷 AO VIVO — câmera ligada') : ativo + ' · ' + base; return; }
+    document.title = ativo + ' · ' + base;
   }
+  setInterval(atualizarTitulo, 1200);
+  document.addEventListener('visibilitychange', atualizarTitulo);
   function trocarMsg(canalId, id, fn) {
     const arr = E.msgs.get(canalId);
     if (!arr) return;

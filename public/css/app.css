@@ -1502,3 +1502,13 @@ h3 .verificado{width:18px;height:18px;font-size:11px}
 .msg.minha:hover{background:transparent;box-shadow:none}
 [data-theme="dark"] .msg.minha:hover{background:transparent;box-shadow:none}
 .msg.minha .corpo>*:not(.texto){text-align:right}
+
+/* ===== Botão ativo brilhando (tela/câmera) e selo AO VIVO pulsando pros outros ===== */
+.icbtn.ativo-tela{position:relative;background:var(--ocup)!important;color:#fff;box-shadow:0 0 0 0 rgba(255,45,85,.7);animation:brilhoAtivo 1.6s ease-out infinite}
+.icbtn.ativo-tela::after{content:"";position:absolute;top:3px;right:3px;width:7px;height:7px;border-radius:50%;background:#fff;animation:pisca 1s steps(2) infinite}
+@keyframes brilhoAtivo{0%{box-shadow:0 0 0 0 rgba(255,45,85,.75),0 0 14px rgba(255,45,85,.6)}70%{box-shadow:0 0 0 10px rgba(255,45,85,0),0 0 18px rgba(255,45,85,.4)}100%{box-shadow:0 0 0 0 rgba(255,45,85,0),0 0 14px rgba(255,45,85,.6)}}
+@keyframes pisca{50%{opacity:.2}}
+.ao-vivo{animation:aoVivoPulsa 1.4s ease-in-out infinite;box-shadow:0 0 10px rgba(255,45,85,.6)}
+.ao-vivo::before{content:"● ";animation:pisca 1s steps(2) infinite}
+@keyframes aoVivoPulsa{50%{transform:scale(1.08);box-shadow:0 0 16px rgba(255,45,85,.9)}}
+@media (prefers-reduced-motion:reduce){.icbtn.ativo-tela,.icbtn.ativo-tela::after,.ao-vivo,.ao-vivo::before{animation:none}}
