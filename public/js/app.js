@@ -429,9 +429,11 @@
         nav('⚙️', 'Configurações', () => configUsuario()))];
   }
   // Menu fixo do topo da lateral (substitui o trilho de bolinhas do Discord): ícone + nome, item ativo com barrinha.
+  function aplicarMini() { $('#app').classList.toggle('lateral-mini', ler('kali-lateral-mini') === '1' && innerWidth > 760); renderSide(); }
   function navLateral() {
+    const mini = ler('kali-lateral-mini') === '1' && innerWidth > 760, fechado = !mini && ler('kali-srv-recolhido') === '1';
     const nDm = E.dms.reduce((t, d) => t + (E.naoLidos[d.canalId] || 0), 0);
-    const nav = (ic, rot, fn, ativo, n, cls) => h('button', { class: 'nav-painel' + (ativo ? ' ativo' : '') + (cls ? ' ' + cls : ''), onclick: fn },
+    const nav = (ic, rot, fn, ativo, n, cls) => h('button', { class: 'nav-painel' + (ativo ? ' ativo' : '') + (cls ? ' ' + cls : ''), onclick: fn, title: rot },
       ic, h('span', { class: 'nm' }, rot), n ? h('span', { class: 'n' }, n > 99 ? '99+' : n) : null);
     const ic = (t) => h('span', { class: 'ic' }, t);
     const srvs = E.servidores.map((sv) => {
@@ -441,12 +443,13 @@
       return b;
     });
     return h('nav', { class: 'nav-lateral', 'aria-label': 'Navegação' },
-      h('div', { class: 'marca' }, logo(), h('b', {}, 'KALI')),
+      h('div', { class: 'marca' }, logo(), h('b', {}, 'KALI'),
+        h('button', { class: 'recolher', title: mini ? 'Abrir menu' : 'Recolher menu', 'aria-label': mini ? 'Abrir menu' : 'Recolher menu', onclick: () => { salvar('kali-lateral-mini', mini ? '' : '1'); aplicarMini(); } }, mini ? '»' : '«')),
       nav(ic('▦'), 'Painel', abrirPainel, E.modo === 'painel'),
       nav(ic('💬'), 'Mensagens', abrirDms, E.modo === 'dm' && !E.telaAmigos, nDm),
       nav(ic('👋'), 'Amigos', abrirAmigos, E.modo === 'dm' && E.telaAmigos, E.amigos.recebidos.length),
-      h('div', { class: 'rot' }, 'Servidores'),
-      h('div', { class: 'lista-srv' }, srvs),
+      h('button', { class: 'rot rot-btn', 'aria-expanded': String(!fechado), onclick: () => { salvar('kali-srv-recolhido', fechado ? '' : '1'); renderSide(); } }, h('span', {}, (fechado ? '▸ ' : '▾ ') + 'Servidores'), h('small', {}, String(E.servidores.length))),
+      fechado ? null : h('div', { class: 'lista-srv' }, srvs),
       nav(ic('＋'), 'Criar ou entrar', modalServidor, false, 0, 'nav-add'));
   }
   function renderPainel(main) {
@@ -592,8 +595,8 @@
     const side = $('#side');
     const partes = [];
     const topoNav = navLateral();
-    if (E.modo === 'painel') return side.replaceChildren(topoNav, ...sidePainel());
-    if (E.modo === 'dm') {
+    if (E.modo === 'painel') partes.push(...sidePainel());
+    else if (E.modo === 'dm') {
       partes.push(h('div', { class: 'side-topo topo-busca' }, h('button', { class: 'achar-conversa', onclick: modalNovaDm }, 'Encontre ou comece uma conversa')));
       // Igual ao Discord: Amigos e Loja no topo, depois "Mensagens diretas ＋".
       const pend = E.amigos.recebidos.length;
@@ -689,7 +692,13 @@
     const eu = h('button', { class: 'eu', title: 'Status e perfil', onclick: (e) => menuPerfil(e.currentTarget) },
       avatar(E.eu, '', true), h('span', { class: 'txt' }, h('b', {}, E.eu.nome), h('small', {}, rotStatus(E.eu))));
     eu.querySelector('.av').style.cssText += ';width:34px;height:34px';
-    partes.push(h('div', { class: 'painel-pe' }, vozPainel, h('div', { class: 'side-pe' }, eu,
+    const sv = servidorAtual();
+    const destaque = ler('kali-destaque-fechado') === '1' ? null : h('div', { class: 'card-destaque' },
+      h('button', { class: 'fechar', title: 'Esconder', onclick: () => { salvar('kali-destaque-fechado', '1'); renderSide(); } }, '✕'),
+      h('b', {}, sv ? '🚀 Chama a galera' : '📱 KALI no celular'),
+      h('small', {}, sv ? 'Manda o convite de ' + sv.nome + ' pros amigos.' : 'Baixa o app e transmite a tela do celular.'),
+      sv ? h('button', { class: 'bt', onclick: modalConvite }, 'Convidar') : h('a', { class: 'bt', href: LINK_APK }, 'Baixar app'));
+    partes.push(h('div', { class: 'painel-pe' }, destaque, vozPainel, h('div', { class: 'side-pe' }, eu,
       h('button', { class: 'icbtn' + (ev.mudo ? ' desligado' : ''), title: ev.mudo ? 'Ativar microfone' : 'Silenciar microfone', 'aria-pressed': String(!!ev.mudo), onclick: () => Voz.alternarMudo() }, ic(ev.mudo ? 'micOff' : 'mic')),
       h('button', { class: 'icbtn' + (ev.surdo ? ' desligado' : ''), title: ev.surdo ? 'Ativar áudio' : 'Desativar áudio', 'aria-pressed': String(!!ev.surdo), onclick: () => Voz.alternarSurdo() }, ic(ev.surdo ? 'foneOff' : 'fone')),
       h('button', { class: 'icbtn', title: 'Configurações', onclick: () => configUsuario() }, ic('engrenagem')))));
@@ -3391,6 +3400,7 @@
     conectar();
     if (await usarConvitePendente()) return;
     const salvo = ler('kali-servidor');
+    $('#app').classList.toggle('lateral-mini', ler('kali-lateral-mini') === '1' && innerWidth > 760);
     if (salvo === 'dm') return abrirDms();
     if (salvo === 'painel' || (!salvo && E.servidores.length)) return abrirPainel();
     const s = E.servidores.find((x) => x.id === Number(salvo)) || E.servidores[0];
