@@ -184,7 +184,7 @@ async function testes() {
     check('GET /entrar.html → 200', entrar.status === 200);
     const cli = await fetch(BASE + '/socket.io/socket.io.js');
     check('GET /socket.io/socket.io.js → 200', cli.status === 200);
-    for (const arq of ['/css/app.css', '/js/app.js', '/js/voz.js']) {
+    for (const arq of ['/css/app.css', '/js/app-1-nucleo.js', '/js/app-7-sistema.js', '/js/voz.js']) {
       const r = await fetch(BASE + arq);
       check(`GET ${arq} → 200`, r.status === 200);
     }

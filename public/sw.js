@@ -1,7 +1,7 @@
 // KALI — service worker: guarda só a "casca" do app (html, css, js, imagens) e atualiza em segundo plano.
 // Nunca guarda /api nem /socket.io. Troque VERSAO pra forçar todo mundo a baixar de novo.
-const VERSAO = 'kali-v3';
-const CASCA = ['/index.html', '/entrar.html', '/css/app.css', '/js/app.js', '/js/voz.js', '/img/icone.png', '/img/logo-dragao.png', '/manifest.webmanifest'];
+const VERSAO = 'kali-v4';
+const CASCA = ['/index.html', '/entrar.html', '/css/app.css', '/js/app-1-nucleo.js', '/js/app-2-inicio.js', '/js/app-3-apostas.js', '/js/app-4-render.js', '/js/app-5-recursos.js', '/js/app-6-telas.js', '/js/app-7-sistema.js', '/js/voz.js', '/img/icone.png', '/img/logo-dragao.png', '/manifest.webmanifest'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(VERSAO).then((c) => c.addAll(CASCA)).catch(() => {}).then(() => self.skipWaiting()));

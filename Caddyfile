@@ -1,0 +1,5 @@
+# HTTPS automático pro domínio em $DOMINIO (certificado grátis da Let's Encrypt, renova sozinho).
+{$DOMINIO} {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:3333
+}

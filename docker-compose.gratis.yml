@@ -1,0 +1,32 @@
+# KALI no ar de graça, com HTTPS automático (Let's Encrypt via Caddy).
+# Uso:  DOMINIO=suakali.duckdns.org docker compose -f docker-compose.gratis.yml up -d --build
+# O Caddy roda na rede do host e fala com a KALI por 127.0.0.1, então a KALI enxerga o IP real de cada pessoa.
+services:
+  kali:
+    build: .
+    container_name: kali
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3333:3333"   # só o Caddy acessa; o mundo entra pelo HTTPS
+    environment:
+      - PORT=3333
+      - HOST=0.0.0.0
+      - NODE_ENV=production
+      - KALI_DB=/app/dados/kali.db
+      - KALI_AUDIOS=/app/dados/audios
+      - LOG_LEVEL=info
+    volumes:
+      - ./dados:/app/dados
+
+  caddy:
+    image: caddy:2.8-alpine
+    container_name: kali-https
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      - DOMINIO=${DOMINIO:?Defina DOMINIO, ex.: DOMINIO=suakali.duckdns.org}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./dados/caddy:/data
+    depends_on:
+      - kali
