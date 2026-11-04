@@ -99,3 +99,17 @@ button.side-topo:hover .seta{transform:translateY(2px)}
 .painel>*:nth-child(2){animation-delay:.04s}.painel>*:nth-child(3){animation-delay:.08s}.painel>*:nth-child(4){animation-delay:.12s}.painel>*:nth-child(n+5){animation-delay:.16s}
 @keyframes sobePagina{from{opacity:0;transform:translateY(10px)}}
 @media (prefers-reduced-motion:reduce){.painel>*,.apostas .barra-painel .bt.prim,.nav-painel.ativo::before{animation:none!important}}
+
+/* convite pra instalar no celular */
+.instalar-folha{position:fixed;inset:0;z-index:9800;background:rgba(0,0,0,.55);display:flex;align-items:flex-end;justify-content:center;animation:fadeIn .25s both;transition:opacity .3s}
+.instalar-folha.saindo{opacity:0}
+.if-caixa{position:relative;width:min(480px,100%);padding:22px 20px max(20px,env(safe-area-inset-bottom));border-radius:20px 20px 0 0;background:linear-gradient(180deg,color-mix(in srgb,var(--roxo) 18%,var(--card)),var(--card) 60%);border-top:1px solid color-mix(in srgb,var(--roxo) 50%,transparent);text-align:center;animation:folhaSobe .4s cubic-bezier(.2,1.2,.3,1) both}
+@keyframes folhaSobe{from{transform:translateY(100%)}}
+.if-ic{width:72px;height:72px;border-radius:18px;box-shadow:0 0 28px var(--roxo-suave);margin-bottom:10px}
+.if-caixa h3{font-family:var(--fonte-hud);font-size:20px;text-transform:uppercase;letter-spacing:.04em}
+.if-caixa p{color:var(--suave);font-size:13.5px;margin:6px 0 14px;line-height:1.45}
+.if-acoes{display:flex;flex-direction:column;gap:8px}
+.if-acoes .bt{display:block;padding:12px;font-size:15px;text-decoration:none;text-align:center}
+.if-acoes small{color:var(--fraco);font-size:11.5px}
+.if-passos{text-align:left;margin:6px 0 0 18px;display:flex;flex-direction:column;gap:6px;font-size:14px;color:var(--suave)}
+.if-fechar{position:absolute;top:10px;right:12px;width:30px;height:30px;border-radius:50%;color:var(--fraco)}
