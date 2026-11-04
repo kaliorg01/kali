@@ -1,0 +1,101 @@
+/* KALI — polimento visual: tipografia de jogo, lateral com rolagem única e tela de apostas.
+   Carrega depois do app.css, então ganha das regras antigas sem precisar mexer nelas. */
+:root{
+  --fonte:"Inter","Segoe UI",system-ui,-apple-system,sans-serif;
+  --fonte-hud:"Chakra Petch","Rajdhani","Segoe UI",system-ui,sans-serif;
+}
+body{font-family:var(--fonte);letter-spacing:-.005em;-webkit-font-smoothing:antialiased}
+:root[data-fonte="redonda"] body{font-family:ui-rounded,"Nunito",var(--fonte)}
+:root[data-fonte="mono"] body{font-family:var(--mono)}
+
+/* títulos e rótulos com cara de HUD */
+.painel h1,.side-topo,.sec-painel,.rot,.nav-lateral .marca b,.capa-info h1,.cv-titulo,.modal>h2,.topo h1{font-family:var(--fonte-hud)}
+.painel h1{font-size:26px;font-weight:700;letter-spacing:.01em;text-transform:uppercase}
+.painel .sub{font-size:13px;max-width:720px;line-height:1.5}
+.sec-painel{font-size:12px;font-weight:700;letter-spacing:.14em;margin:18px 0 10px}
+.sec-painel b{display:inline-flex;align-items:center;gap:8px}
+.sec-painel b::before{content:"";width:3px;height:12px;border-radius:2px;background:var(--roxo);box-shadow:0 0 8px var(--roxo)}
+.modal>h2{font-size:19px;letter-spacing:.02em;text-transform:uppercase}
+
+/* ================= LATERAL ================= */
+/* uma rolagem só pra lateral toda (antes eram duas barras) */
+.side{overflow-y:auto;overflow-x:hidden;scrollbar-width:thin;scrollbar-color:var(--chip-borda) transparent}
+.side::-webkit-scrollbar{width:6px}.side::-webkit-scrollbar-thumb{background:var(--chip-borda);border-radius:3px}
+.nav-lateral{max-height:none!important;overflow:visible!important;flex:none;padding:12px 10px 10px;border-bottom:1px solid var(--borda)}
+.side-corpo{overflow:visible!important;flex:1 0 auto;padding:6px 10px 12px}
+.painel-pe{position:sticky;bottom:0;z-index:5;margin:8px;background:color-mix(in srgb,var(--card) 92%,transparent);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+.side>.side-topo,.side>button.side-topo{position:sticky;top:0;z-index:4;background:var(--sidebar)}
+
+/* marca */
+.nav-lateral .marca{padding:2px 6px 14px;gap:10px}
+.nav-lateral .marca b{font-size:15px;font-weight:700;letter-spacing:.32em;background:linear-gradient(90deg,#fff,color-mix(in srgb,var(--roxo) 70%,#fff));-webkit-background-clip:text;background-clip:text;color:transparent}
+
+/* itens do menu: compactos, com barrinha que desliza e ícone que acende */
+.nav-painel,.nav-dm,.canal,.dm-item{position:relative;font-size:13.5px;font-weight:500;border-radius:8px;transition:background .18s,color .18s,transform .18s}
+.nav-painel{padding:8px 10px;gap:12px;color:var(--suave)}
+.nav-painel .ic,.nav-dm .ic{color:var(--fraco);transition:color .18s,transform .25s cubic-bezier(.2,1.6,.4,1)}
+.nav-painel:hover,.nav-dm:hover{background:var(--hover);color:var(--texto);transform:translateX(2px)}
+.nav-painel:hover .ic,.nav-dm:hover .ic{color:var(--roxo);transform:scale(1.12)}
+.nav-painel.ativo,.canal.ativo,.dm-item.ativo{color:#fff;font-weight:600;background:linear-gradient(90deg,color-mix(in srgb,var(--roxo) 26%,transparent),color-mix(in srgb,var(--roxo) 6%,transparent));box-shadow:none}
+.nav-painel.ativo::before,.canal.ativo::before,.dm-item.ativo::before{content:"";position:absolute;left:0;top:7px;bottom:7px;width:3px;border-radius:0 3px 3px 0;background:var(--roxo);box-shadow:0 0 10px var(--roxo);animation:barraEntra .3s cubic-bezier(.2,1.4,.4,1)}
+@keyframes barraEntra{from{transform:scaleY(0)}}
+.nav-painel.ativo .ic{color:var(--roxo)}
+.nav-painel .n,.canal .n{font-family:var(--fonte-hud);font-weight:700;border-radius:6px;box-shadow:0 0 10px color-mix(in srgb,var(--roxo) 50%,transparent)}
+.ic-srv{border-radius:6px!important;box-shadow:0 0 0 1px rgba(255,255,255,.08)}
+.nav-add{color:var(--ok)!important;opacity:.85}.nav-add .ic{color:var(--ok)!important}
+.nav-add:hover{opacity:1}
+
+/* rótulos de seção (SERVIDORES, CANAIS DE TEXTO…) */
+.rot,.rot-btn{font-size:10.5px!important;font-weight:700;letter-spacing:.16em!important;color:var(--fraco);padding:14px 10px 6px!important}
+.rot-btn:hover{color:var(--texto)}
+
+/* cabeçalho do servidor: nome grande com brilho */
+.side-topo{height:50px;padding:0 14px;font-size:14px!important;font-weight:700;letter-spacing:.14em!important;color:var(--texto)!important;border-bottom:1px solid var(--borda)}
+button.side-topo:hover{background:var(--hover)}
+.side-topo .seta{transition:transform .2s}
+button.side-topo:hover .seta{transform:translateY(2px)}
+
+/* "Eventos" e "Convidar amigos": viram linhas compactas iguais ao menu */
+.side-corpo .nav-dm{display:flex;align-items:center;gap:12px;width:100%;padding:8px 10px;color:var(--suave);margin-bottom:2px}
+.side-corpo .btn-novo{display:flex;align-items:center;gap:12px;width:100%;padding:8px 10px;margin:0 0 6px;border:1px dashed color-mix(in srgb,var(--roxo) 45%,var(--borda));border-radius:8px;background:transparent!important;color:var(--texto);font-size:13.5px;font-weight:600;transition:background .18s,border-color .18s}
+.side-corpo .btn-novo span{color:var(--roxo);font-size:16px!important;width:18px;text-align:center}
+.side-corpo .btn-novo:hover{background:var(--roxo-suave)!important;border-color:var(--roxo)}
+
+/* canais: # menor e discreto, nome em destaque */
+.canal{padding:7px 10px;gap:10px;color:var(--suave)}
+.canal .ic{width:16px;font-size:15px;opacity:.55}
+.canal.ativo .ic{opacity:1;color:var(--roxo)}
+.canal:hover{color:var(--texto);background:var(--hover)}
+.canal.nao-lido{color:var(--texto)}
+.canal.nao-lido::after{content:"";position:absolute;left:-6px;top:50%;width:4px;height:8px;margin-top:-4px;border-radius:0 3px 3px 0;background:var(--texto)}
+
+/* rodapé do usuário */
+.painel-pe{border-radius:12px!important}
+.eu b{font-family:var(--fonte-hud);font-size:14px;letter-spacing:.02em}
+
+/* ================= APOSTAS ================= */
+.apostas h1{display:flex;align-items:center;gap:10px}
+.apostas h1::before{content:"";width:34px;height:34px;border-radius:8px;background:var(--grad);box-shadow:0 0 18px var(--roxo-suave);
+  -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 4h16v16H4zM8.5 8.5h.01M15.5 8.5h.01M12 12h.01M8.5 15.5h.01M15.5 15.5h.01'/%3E%3C/svg%3E") center/70% no-repeat,linear-gradient(#000,#000);-webkit-mask-composite:xor;mask-composite:exclude}
+.aviso-aposta{position:relative;overflow:hidden;padding:14px 16px;border-radius:12px;background:linear-gradient(135deg,color-mix(in srgb,var(--roxo) 8%,var(--card)),var(--card));border:1px solid var(--borda);transition:border-color .2s}
+.aviso-aposta:hover{border-color:color-mix(in srgb,var(--roxo) 40%,var(--borda))}
+.aviso-aposta::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--roxo);box-shadow:0 0 12px var(--roxo)}
+.aviso-aposta b{font-family:var(--fonte-hud);font-size:15px;letter-spacing:.02em}
+.aviso-aposta .busca-painel{margin-top:4px}
+.aviso-aposta .bt{min-width:110px}
+.apostas .vazio-painel{padding:18px;border-radius:12px;border:1px dashed var(--chip-borda);justify-content:center;color:var(--fraco);background:color-mix(in srgb,var(--card) 50%,transparent)}
+.apostas .barra-painel{padding:12px;border-radius:12px;background:var(--card);border:1px solid var(--borda)}
+.apostas .barra-painel .bt.prim{font-family:var(--fonte-hud);font-weight:700;letter-spacing:.06em;text-transform:uppercase;box-shadow:0 0 18px color-mix(in srgb,var(--roxo) 45%,transparent);animation:pulsoFila 2.4s ease-in-out infinite}
+@keyframes pulsoFila{50%{box-shadow:0 0 28px color-mix(in srgb,var(--roxo) 70%,transparent)}}
+.versus{font-family:var(--fonte-hud);font-size:16px;letter-spacing:.02em}
+.capa-aposta b{font-family:var(--fonte-hud)}
+
+/* botões: texto mais firme */
+.bt{font-weight:600;letter-spacing:.01em}
+.bt.prim{font-weight:700}
+
+/* entrada suave das páginas */
+.painel>*{animation:sobePagina .45s cubic-bezier(.2,1,.3,1) both}
+.painel>*:nth-child(2){animation-delay:.04s}.painel>*:nth-child(3){animation-delay:.08s}.painel>*:nth-child(4){animation-delay:.12s}.painel>*:nth-child(n+5){animation-delay:.16s}
+@keyframes sobePagina{from{opacity:0;transform:translateY(10px)}}
+@media (prefers-reduced-motion:reduce){.painel>*,.apostas .barra-painel .bt.prim,.nav-painel.ativo::before{animation:none!important}}
