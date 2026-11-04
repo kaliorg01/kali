@@ -1466,7 +1466,7 @@
       else {
         const dono = s && s.donoId === m.autor.id, cor = s && !dono ? corCargo(s.id, m.autor.id) : null;
         const anim = s && !dono && !m.autor.corNome && cor && cargoAnimado(s.id, m.autor.id);
-        corpo.append(h('b', { class: 'autor' + (dono && !m.autor.corNome ? ' nome-dono' : '') + (anim ? ' nome-cargo-anim' : ''), style: anim ? `--c:${cor}` : estiloNome(m.autor.corNome) || (cor ? `color:${cor}` : null) }, m.autor.nome), seloVerif(m.autor));
+        corpo.append(h('b', { class: 'autor' + (dono && !m.autor.corNome ? ' nome-dono' : '') + (anim ? ' nome-cargo-anim' : ''), style: anim ? `--c:${cor}` : estiloNome(m.autor.corNome) || (cor ? `color:${cor}` : null) }, m.autor.nome), seloVerif(m.autor) || '');
       }
       corpo.append(h('time', { title: new Date(m.criadoEm).toLocaleString('pt-BR') }, hora(m.criadoEm)));
     }

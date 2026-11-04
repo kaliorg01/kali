@@ -180,6 +180,7 @@ for (const [tabela, coluna, def] of [
   ['usuarios', 'aniv_ano', 'INTEGER'],
   ['servidores', 'automod', 'TEXT'],
   ['servidores', 'automod_cfg', 'TEXT'],
+  ['servidores', 'apostas_on', 'INTEGER NOT NULL DEFAULT 0'],
   ['usuarios', 'efeito', 'TEXT'],
   ['usuarios', 'verificado', 'INTEGER NOT NULL DEFAULT 0'],
   ['canais', 'sala_espera', 'INTEGER NOT NULL DEFAULT 0'],
@@ -619,6 +620,38 @@ export function estatisticasUsuario(id) {
     criadoEm: u.criado_em || null,
   };
 }
+// ---------------------------------------------------------------- apostas (salas 1x1; o Pix vai direto pro adm, o app não mexe em dinheiro)
+db.exec(`
+CREATE TABLE IF NOT EXISTS apostas (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  servidor_id INTEGER NOT NULL REFERENCES servidores(id) ON DELETE CASCADE,
+  valor INTEGER NOT NULL, jogo TEXT,
+  p1 INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+  p2 INTEGER REFERENCES usuarios(id) ON DELETE SET NULL,
+  adm INTEGER REFERENCES usuarios(id) ON DELETE SET NULL,
+  canal_id INTEGER, status TEXT NOT NULL DEFAULT 'aberta', vencedor INTEGER,
+  criado_em INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS apostas_pix (
+  servidor_id INTEGER NOT NULL REFERENCES servidores(id) ON DELETE CASCADE,
+  usuario_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+  chave TEXT NOT NULL, PRIMARY KEY (servidor_id, usuario_id)
+);`);
+export const apostasLigadas = (sid) => !!q('SELECT apostas_on FROM servidores WHERE id = ?').get(sid)?.apostas_on;
+export const ligarApostas = (sid, on) => q('UPDATE servidores SET apostas_on = ? WHERE id = ?').run(on ? 1 : 0, sid);
+export const pixDoAdm = (sid, uid) => q('SELECT chave FROM apostas_pix WHERE servidor_id = ? AND usuario_id = ?').get(sid, uid)?.chave || null;
+export function definirPixAdm(sid, uid, chave) {
+  if (chave) q('INSERT OR REPLACE INTO apostas_pix (servidor_id, usuario_id, chave) VALUES (?, ?, ?)').run(sid, uid, chave);
+  else q('DELETE FROM apostas_pix WHERE servidor_id = ? AND usuario_id = ?').run(sid, uid);
+}
+export const admsComPix = (sid) => q('SELECT usuario_id FROM apostas_pix WHERE servidor_id = ?').all(sid).map((r) => r.usuario_id);
+export const apostaPorId = (id) => q('SELECT * FROM apostas WHERE id = ?').get(id) || null;
+export const criarAposta = (sid, uid, valor, jogo) => Number(q('INSERT INTO apostas (servidor_id, valor, jogo, p1, criado_em) VALUES (?, ?, ?, ?, ?)').run(sid, valor, jogo || null, uid, Date.now()).lastInsertRowid);
+export const atualizarAposta = (id, campos) => { const ks = Object.keys(campos); q(`UPDATE apostas SET ${ks.map((k) => k + ' = ?').join(', ')} WHERE id = ?`).run(...ks.map((k) => campos[k]), id); };
+export const apostasDoServidor = (sid, uid) => q(`SELECT * FROM apostas WHERE servidor_id = ? AND (status = 'aberta' OR (status = 'andamento' AND (p1 = ? OR p2 = ? OR adm = ?))
+  OR (status IN ('finalizada','cancelada') AND (p1 = ? OR p2 = ? OR adm = ?) AND criado_em > ?)) ORDER BY id DESC LIMIT 60`).all(sid, uid, uid, uid, uid, uid, uid, Date.now() - 86400000);
+export const apostasAtivasDoAdm = (sid, uid) => q("SELECT COUNT(*) AS n FROM apostas WHERE servidor_id = ? AND adm = ? AND status = 'andamento'").get(sid, uid).n;
+export const apostaAbertaDe = (sid, uid) => q("SELECT id FROM apostas WHERE servidor_id = ? AND status IN ('aberta','andamento') AND (p1 = ? OR p2 = ?)").get(sid, uid, uid) || null;
 export const marcarAniversario = (id, ano) => q('UPDATE usuarios SET aniv_ano = ? WHERE id = ?').run(ano, id);
 export const definirStatus = (id, status) => q('UPDATE usuarios SET status = ? WHERE id = ?').run(status, id);
 export const definirFoco = (id, ate) => q('UPDATE usuarios SET foco_ate = ? WHERE id = ?').run(ate, id);

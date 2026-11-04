@@ -14,7 +14,7 @@ import { publicarMensagem, caminhoAnexo, pareceGolpe, respostaValida, quantosOnl
   BONUS_MISSAO, MISSOES, anunciarMensagem, aoApagarCanal, aoApagarServidor, aoAtualizarPerfil, aoSairDoServidor,
   apagarArquivosAudio, caminhoAudio, checarLimiteMensagens, desconectarSessao, emitir, entrarSala,
   membroPublico, nivelDe, origemPermitida, salaDoCanal, semanaAtual, usuarioPublico, xpParaNivel,
-  emitirLfg, ganharXpLfg, lfgPublico,
+  emitirLfg, ganharXpLfg, lfgPublico, estaOnline,
 } from './tempo-real.js';
 import { gerarResumo } from './resumo.js';
 import { buscarSeguro, previaDe } from './previa.js';
@@ -1234,6 +1234,101 @@ export function criarRotas() {
   });
   r.post('/push/sair', exigirLogin, (req, res) => { const e = corpoDe(req).endpoint; if (typeof e === 'string') db.removerPush(e); res.json({ ok: true }); });
   r.post('/push/teste', exigirLogin, async (req, res) => { await push.enviarPush(req.usuario.id, { titulo: 'KALI', corpo: '🔔 Notificações ligadas! É assim que vai chegar.', url: '/' }); res.json({ ok: true }); });
+
+  // ------------------------------------------------------------ apostas 1x1 (Pix direto pro adm; desligado por padrão)
+  const nomeDe = (id) => { const u = id && db.usuarioPorId(id); return u ? { id: u.id, nome: u.nome, usuario: u.usuario } : null; };
+  const apostaPublica = (a, uid) => ({ id: a.id, valor: a.valor, jogo: a.jogo, status: a.status, criadoEm: a.criado_em,
+    p1: nomeDe(a.p1), p2: nomeDe(a.p2), adm: nomeDe(a.adm), vencedor: a.vencedor,
+    canalId: [a.p1, a.p2, a.adm].includes(uid) ? a.canal_id : null });
+  const avisarApostas = (sid) => emitir(`s:${sid}`, 'apostas:atualizado', { servidorId: sid });
+  r.get('/servidores/:id/apostas', exigirLogin, (req, res) => {
+    const uid = req.usuario.id;
+    const s = servidorComoMembro(uid, idDe(req.params.id));
+    const staff = db.ehStaff(s.id, uid);
+    res.json({ ligado: db.apostasLigadas(s.id), staff, dono: s.dono_id === uid, minhaChave: staff ? db.pixDoAdm(s.id, uid) : null,
+      admsComPix: db.admsComPix(s.id).length, salas: db.apostasDoServidor(s.id, uid).map((a) => apostaPublica(a, uid)) });
+  });
+  r.put('/servidores/:id/apostas/config', exigirLogin, (req, res) => {
+    const uid = req.usuario.id;
+    const s = servidorComoDono(uid, idDe(req.params.id));
+    db.ligarApostas(s.id, !!corpoDe(req).ligado);
+    db.registrarAuditoria(s.id, uid, 'apostas', null, corpoDe(req).ligado ? 'ligou as apostas' : 'desligou as apostas');
+    avisarApostas(s.id);
+    res.json({ ok: true });
+  });
+  r.put('/servidores/:id/apostas/pix', exigirLogin, (req, res) => {
+    const uid = req.usuario.id;
+    const s = servidorComoStaff(uid, idDe(req.params.id));
+    const chave = typeof corpoDe(req).chave === 'string' ? corpoDe(req).chave.trim() : '';
+    if (chave && (chave.length < 3 || chave.length > 120)) throw erro(400, 'Chave Pix inválida.');
+    db.definirPixAdm(s.id, uid, chave || null);
+    res.json({ ok: true });
+  });
+  r.post('/servidores/:id/apostas', exigirLogin, (req, res) => {
+    const uid = req.usuario.id;
+    const s = servidorComoMembro(uid, idDe(req.params.id));
+    if (!db.apostasLigadas(s.id)) throw erro(403, 'As apostas estão desligadas neste servidor.');
+    const c = corpoDe(req);
+    const valor = Number(c.valor);
+    if (!Number.isInteger(valor) || valor < 1 || valor > 10000) throw erro(400, 'Valor da sala: de R$ 1 a R$ 10.000 (inteiro).');
+    const jogo = typeof c.jogo === 'string' ? c.jogo.trim().slice(0, 40) : '';
+    if (db.apostaAbertaDe(s.id, uid)) throw erro(400, 'Você já está numa sala de aposta neste servidor.');
+    if (!db.admsComPix(s.id).length) throw erro(400, 'Nenhum adm cadastrou chave Pix ainda.');
+    const id = db.criarAposta(s.id, uid, valor, jogo);
+    avisarApostas(s.id);
+    res.status(201).json(apostaPublica(db.apostaPorId(id), uid));
+  });
+  r.post('/apostas/:id/entrar', exigirLogin, (req, res) => {
+    const uid = req.usuario.id;
+    const a = db.apostaPorId(idDe(req.params.id));
+    if (!a) throw erro(404, 'Sala não encontrada.');
+    servidorComoMembro(uid, a.servidor_id);
+    if (a.status !== 'aberta') throw erro(400, 'Essa sala já fechou.');
+    if (a.p1 === uid) throw erro(400, 'Você criou essa sala, espera alguém entrar.');
+    if (db.apostaAbertaDe(a.servidor_id, uid)) throw erro(400, 'Você já está em outra sala de aposta.');
+    // adm livre: staff com Pix, fora da partida; online primeiro, depois quem tem menos salas rolando
+    const cands = db.admsComPix(a.servidor_id).filter((id) => id !== a.p1 && id !== uid && db.ehStaff(a.servidor_id, id));
+    if (!cands.length) throw erro(400, 'Nenhum adm livre com Pix cadastrado agora.');
+    cands.sort((x, y) => estaOnline(y) - estaOnline(x) || db.apostasAtivasDoAdm(a.servidor_id, x) - db.apostasAtivasDoAdm(a.servidor_id, y));
+    const adm = cands[0];
+    const ids = [a.p1, uid, adm];
+    const canalId = db.criarGrupoDm(ids, `🎲 Aposta R${a.valor} #${a.id}`);
+    db.atualizarAposta(a.id, { p2: uid, adm, canal_id: canalId, status: 'andamento' });
+    const n1 = db.usuarioPorId(a.p1).nome, n2 = db.usuarioPorId(uid).nome, na = db.usuarioPorId(adm).nome;
+    for (const p of ids) { entrarSala(p, `c:${canalId}`); emitir(`u:${p}`, 'dm:nova', dmPublica(canalId, p)); }
+    const canal = db.canalPorId(canalId);
+    publicarMensagem(canal, { autorId: null, sistema: true, texto:
+      `🎲 SALA DE APOSTA #${a.id} — R$ ${a.valor} cada${a.jogo ? ' · ' + a.jogo : ''}\n⚔️ ${n1} x ${n2}\n🛡️ Adm da sala: ${na}\n\n💸 Cada um paga R$ ${a.valor} no Pix do adm:\n🔑 ${db.pixDoAdm(a.servidor_id, adm)}\n\nMandem o comprovante aqui. O adm confirma, vocês jogam e ele declara o vencedor.` });
+    emitir(`u:${adm}`, 'aposta:chamado', { id: a.id, valor: a.valor, canalId, p1: n1, p2: n2 });
+    push.enviarPush(adm, { titulo: '🎲 Você foi chamado pra uma aposta', corpo: `${n1} x ${n2} · R$ ${a.valor}`, url: '/' }).catch(() => {});
+    avisarApostas(a.servidor_id);
+    res.json(apostaPublica(db.apostaPorId(a.id), uid));
+  });
+  r.post('/apostas/:id/cancelar', exigirLogin, (req, res) => {
+    const uid = req.usuario.id;
+    const a = db.apostaPorId(idDe(req.params.id));
+    if (!a) throw erro(404, 'Sala não encontrada.');
+    const pode = (a.status === 'aberta' && a.p1 === uid) || (a.status === 'andamento' && (a.adm === uid || db.ehStaff(a.servidor_id, uid)));
+    if (!pode) throw erro(403, 'Você não pode cancelar essa sala.');
+    db.atualizarAposta(a.id, { status: 'cancelada' });
+    if (a.canal_id) { const c = db.canalPorId(a.canal_id); if (c) publicarMensagem(c, { autorId: null, sistema: true, texto: '❌ Sala cancelada pelo adm. Combinem a devolução do Pix com ele.' }); }
+    avisarApostas(a.servidor_id);
+    res.json({ ok: true });
+  });
+  r.post('/apostas/:id/vencedor', exigirLogin, (req, res) => {
+    const uid = req.usuario.id;
+    const a = db.apostaPorId(idDe(req.params.id));
+    if (!a || a.status !== 'andamento') throw erro(404, 'Sala não encontrada ou já encerrada.');
+    if (a.adm !== uid && !db.ehStaff(a.servidor_id, uid)) throw erro(403, 'Só o adm da sala declara o vencedor.');
+    const v = Number(corpoDe(req).usuarioId);
+    if (v !== a.p1 && v !== a.p2) throw erro(400, 'O vencedor precisa ser um dos dois jogadores.');
+    db.atualizarAposta(a.id, { status: 'finalizada', vencedor: v });
+    const c = db.canalPorId(a.canal_id);
+    if (c) publicarMensagem(c, { autorId: null, sistema: true, texto: `🏆 ${db.usuarioPorId(v).nome} venceu a aposta #${a.id} (R$ ${a.valor * 2} no pote). O adm faz o Pix do prêmio.` });
+    db.registrarAuditoria(a.servidor_id, uid, 'aposta', db.usuarioPorId(v).nome, `venceu a sala #${a.id} de R$ ${a.valor}`);
+    avisarApostas(a.servidor_id);
+    res.json({ ok: true });
+  });
 
   // ------------------------------------------------------------ AutoMod (palavras bloqueadas)
   r.get('/servidores/:id/automod', exigirLogin, (req, res) => {
