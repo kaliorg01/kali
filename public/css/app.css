@@ -1085,3 +1085,38 @@ button.editado:hover{color:var(--texto)}
 :root[data-theme="dark"][data-acento] .n1{background:var(--roxo)}
 .campo-sel{min-width:200px;max-width:100%;padding:8px 10px;border-radius:10px;border:1px solid var(--chip-borda);background:var(--chip);color:var(--texto)}
 .campo-sel option{background:var(--card);color:var(--texto)}
+
+/* ===== Visual "painel" (referência: dashboard escuro organizado) =====
+   Painéis sólidos e chapados, borda fina, cantos menores, item ativo com barrinha de destaque. Só no tema escuro. */
+:root[data-theme="dark"]{
+  --bg:#0b0b0d;--sidebar:#101013;--rail:#08080a;--card:#151518;--chip:#1b1b1f;--chip-borda:#26262b;
+  --borda:#1f1f24;--borda-fina:#18181c;--hover:#1a1a1e;--raio:10px;--sombra:0 6px 20px rgba(0,0,0,.45);
+}
+[data-theme="dark"] body{background:var(--bg);background-image:none}
+[data-theme="dark"] .neb{display:none}
+[data-theme="dark"] .rail,[data-theme="dark"] .side,[data-theme="dark"] .membros,[data-theme="dark"] .caixa,[data-theme="dark"] .modal,[data-theme="dark"] .menu,[data-theme="dark"] .topo{backdrop-filter:none;-webkit-backdrop-filter:none}
+[data-theme="dark"] .topo{background:var(--bg)}
+/* trilho de servidores */
+[data-theme="dark"] .srv{border-radius:12px;background:var(--chip)}
+[data-theme="dark"] .srv.ativo{box-shadow:0 0 0 1px var(--roxo),0 6px 18px var(--roxo-suave)}
+/* lateral: títulos pequenos e itens tipo menu de painel */
+[data-theme="dark"] .side-topo{font-size:13px;letter-spacing:.04em}
+[data-theme="dark"] .rot{font-size:10.5px;letter-spacing:.12em;font-weight:700}
+[data-theme="dark"] .canal,[data-theme="dark"] .dm-item{border-radius:6px;padding:7px 10px}
+[data-theme="dark"] .canal.ativo,[data-theme="dark"] .dm-item.ativo{background:var(--roxo-suave);color:var(--texto);box-shadow:inset 3px 0 0 var(--roxo)}
+[data-theme="dark"] .canal.ativo .ic{color:var(--roxo);opacity:1}
+[data-theme="dark"] .btn-novo{border-radius:8px}
+/* área de mensagens: cada mensagem vira um card ao passar o mouse */
+[data-theme="dark"] .msg{border-radius:8px}
+[data-theme="dark"] .msg:hover{background:var(--card);box-shadow:inset 0 0 0 1px var(--borda)}
+[data-theme="dark"] .caixa{border-radius:10px;background:var(--card);border-color:var(--chip-borda);box-shadow:none}
+[data-theme="dark"] .caixa:focus-within{border-color:var(--roxo)}
+/* botões, modais e menus mais retos */
+[data-theme="dark"] .bt{border-radius:7px;background:var(--chip);border-color:var(--chip-borda)}
+[data-theme="dark"] .bt.prim{background:var(--roxo);box-shadow:none;color:#fff}
+[data-theme="dark"] .modal{border-radius:12px;border-color:var(--chip-borda)}
+[data-theme="dark"] .menu{border-radius:10px;border-color:var(--chip-borda)}
+[data-theme="dark"] .previa-link,[data-theme="dark"] .emoji-item,[data-theme="dark"] .soundboard button{border-radius:8px;background:var(--card)}
+/* etiquetas tipo "pílula" (ATIVA, NOVO...) */
+[data-theme="dark"] .tag{border-radius:4px;font-size:10px;letter-spacing:.06em;text-transform:uppercase;background:var(--roxo-suave);color:var(--roxo);border:1px solid var(--roxo-suave)}
+[data-theme="dark"] body::before{display:none}
