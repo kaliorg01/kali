@@ -753,9 +753,11 @@
 
   // ---------- stories de 24h ----------
   const FUNDOS_STORY = { rosa: 'linear-gradient(135deg,#ff4fb8,#8b2fd6)', azul: 'linear-gradient(135deg,#1fa2ff,#1d4ed8)', roxo: 'linear-gradient(135deg,#7c3aed,#c026d3)', verde: 'linear-gradient(135deg,#10b981,#0e7490)', fogo: 'linear-gradient(135deg,#f97316,#dc2626)', noite: 'linear-gradient(135deg,#0f172a,#334155)' };
+  let cacheStories = null;
   async function barraStories() {
     const barra = h('div', { class: 'stories' }, h('button', { class: 'story-bola story-novo', onclick: modalNovoStory, title: 'Postar story' }, h('span', { class: 'sb-av' }, '＋'), h('small', {}, 'Seu story')));
-    api('GET', '/stories').then((lista) => {
+    if (!cacheStories || Date.now() - cacheStories.t > 30000) cacheStories = { t: Date.now(), p: api('GET', '/stories') };
+    cacheStories.p.then((lista) => {
       for (const a of lista) barra.append(h('button', { class: 'story-bola' + (lerVistos().includes(a.stories[a.stories.length - 1].id) ? ' visto' : ''), onclick: () => verStories(lista, lista.indexOf(a)) },
         h('span', { class: 'sb-av' }, avatar(a, '', false)), h('small', {}, a.id === E.eu.id ? 'Você' : a.nome)));
     }).catch(() => {});
@@ -768,7 +770,7 @@
     const prev = h('div', { class: 'story-prev', style: 'background:' + FUNDOS_STORY.rosa }, txt);
     const cores = h('div', { class: 'cores' }, Object.entries(FUNDOS_STORY).map(([k, g]) => { const b = h('button', { type: 'button', class: k === fundo ? 'ativa' : '', title: k, style: 'background:' + g }); b.onclick = () => { fundo = k; prev.style.background = g; cores.querySelectorAll('button').forEach((x) => x.classList.toggle('ativa', x === b)); }; return b; }));
     abrirModal({ titulo: '📸 Novo story', sub: 'Aparece pros seus amigos e pra galera dos seus servidores por 24h.', corpo: [prev, cores], botao: 'Postar',
-      acao: async () => { await api('POST', '/stories', { texto: txt.value, fundo }); toast('📸 Story postado!', 'ok'); if (E.modo === 'painel') renderMain(); } });
+      acao: async () => { await api('POST', '/stories', { texto: txt.value, fundo }); cacheStories = null; toast('📸 Story postado!', 'ok'); if (E.modo === 'painel') renderMain(); } });
   }
   function verStories(lista, ia) {
     let a = ia, i = 0, timer = null;
@@ -785,7 +787,7 @@
       tela.replaceChildren(h('div', { class: 'story-caixa', style: 'background:' + (FUNDOS_STORY[sto.fundo] || FUNDOS_STORY.rosa) },
         h('div', { class: 'story-barras' }, au.stories.map((_, j) => h('i', { class: j < i ? 'cheia' : j === i ? 'andando' : '' }))),
         h('div', { class: 'story-topo' }, avatar(au, '', false), h('b', {}, au.nome), h('small', {}, min < 60 ? min + ' min' : Math.round(min / 60) + ' h'),
-          au.id === E.eu.id ? h('button', { class: 'icbtn', title: 'Apagar story', onclick: async (e) => { e.stopPropagation(); await api('DELETE', '/stories/' + sto.id).catch(() => {}); fechar(); } }, '🗑') : null,
+          au.id === E.eu.id ? h('button', { class: 'icbtn', title: 'Apagar story', onclick: async (e) => { e.stopPropagation(); await api('DELETE', '/stories/' + sto.id).catch(() => {}); cacheStories = null; fechar(); } }, '🗑') : null,
           h('button', { class: 'icbtn', title: 'Fechar', onclick: (e) => { e.stopPropagation(); fechar(); } }, '✕')),
         h('p', { class: 'story-texto' }, sto.texto),
         h('button', { class: 'story-lado esq', 'aria-label': 'Anterior', onclick: ant }), h('button', { class: 'story-lado dir', 'aria-label': 'Próximo', onclick: prox })));
@@ -797,9 +799,11 @@
   }
 
   // ---------- eventos com contagem regressiva (Painel) ----------
+  let cacheEventos = null;
   async function blocoEventos() {
     const box = h('div', { class: 'eventos-painel' });
-    const todos = (await Promise.all(E.servidores.map((s) => api('GET', `/servidores/${s.id}/eventos`).then((l) => l.map((e) => ({ ...e, srv: s }))).catch(() => [])))).flat()
+    if (!cacheEventos || Date.now() - cacheEventos.t > 60000) cacheEventos = { t: Date.now(), p: Promise.all(E.servidores.map((s) => api('GET', `/servidores/${s.id}/eventos`).then((l) => l.map((e) => ({ ...e, srv: s }))).catch(() => []))) };
+    const todos = (await cacheEventos.p).flat()
       .filter((e) => e.inicio > Date.now()).sort((x, y) => x.inicio - y.inicio).slice(0, 6);
     if (!todos.length) return null;
     const relogio = (alvo) => { const el = h('div', { class: 'contagem' }); const tick = () => { const s = Math.max(0, Math.floor((alvo - Date.now()) / 1000)); const p = [Math.floor(s / 86400), Math.floor(s / 3600) % 24, Math.floor(s / 60) % 60, s % 60]; el.replaceChildren(...p.map((n, k) => h('span', {}, h('b', {}, String(n).padStart(2, '0')), h('small', {}, ['dias', 'horas', 'min', 'seg'][k])))); if (!el.isConnected && el.dataset.on) return; el.dataset.on = 1; setTimeout(tick, 1000); }; tick(); return el; };
@@ -808,7 +812,7 @@
         h('div', { class: 'linha-topo' }, h('b', {}, '📅 ' + e.titulo), h('span', { class: 'selos' }, h('span', { class: 'pilula contorno' }, e.srv.nome), h('span', { class: 'pilula destaque' }, 'Em breve'))),
         e.descricao ? h('p', {}, e.descricao) : null, relogio(e.inicio),
         h('div', { class: 'stats' }, h('span', {}, h('b', {}, String(e.interessados)), ' vão'), h('span', {}, new Date(e.inicio).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })),
-          h('button', { class: 'bt' + (e.euVou ? '' : ' prim'), onclick: async (ev) => { ev.stopPropagation(); try { await api('POST', `/eventos/${e.id}/interesse`); renderMain(); } catch (err) { toast(err.message, 'erro'); } } }, e.euVou ? '✓ Vou' : 'Tenho interesse')))))));
+          h('button', { class: 'bt' + (e.euVou ? '' : ' prim'), onclick: async (ev) => { ev.stopPropagation(); try { await api('POST', `/eventos/${e.id}/interesse`); cacheEventos = null; renderMain(); } catch (err) { toast(err.message, 'erro'); } } }, e.euVou ? '✓ Vou' : 'Tenho interesse')))))));
     return box;
   }
 

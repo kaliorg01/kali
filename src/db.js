@@ -421,6 +421,7 @@ export function definirAutomodCfg(sid, cfg) {
   q('UPDATE servidores SET automod_cfg = ? WHERE id = ?').run(JSON.stringify({ links: !!cfg.links, spam: !!cfg.spam }), sid);
 }
 const recentes = new Map(); // `${sid}:${uid}` → [{t, n}]
+setInterval(() => { const ag = Date.now(); for (const [k, l] of recentes) if (!l.length || ag - l[l.length - 1].t > 30000) recentes.delete(k); }, 60000).unref();
 function checarExtras(sid, uid, texto) {
   const cfg = automodCfg(sid);
   if (cfg.links && /(https?:\/\/|www\.|discord\.gg\/)/i.test(texto)) throw erro(400, '🛡️ AutoMod: links estão bloqueados neste servidor.');

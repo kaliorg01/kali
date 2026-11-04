@@ -966,6 +966,87 @@ async function testes() {
     r = await rafa.req('POST', `/lfg/${lfgId}/entrar`);
     check('entrar em post cancelado → 400', r.status === 400, r);
   }
+
+  secao('AutoMod');
+  {
+    const geral = (await lia.req('GET', '/servidores')).json.find((s) => s.id === srv.id).canais.find((c) => c.tipo === 'texto');
+    r = await rafa.req('PUT', `/servidores/${srv.id}/automod`, { palavras: ['x'] });
+    check('membro comum não mexe no AutoMod → 403', r.status === 403, r);
+    r = await lia.req('PUT', `/servidores/${srv.id}/automod`, { palavras: ['proibidona'], links: true, spam: true });
+    check('dono configura AutoMod', r.status === 200 && r.json?.palavras?.[0] === 'proibidona', r);
+    let a = await emitir(sR, 'msg:enviar', { canalId: geral.id, texto: 'olha a PROIBIDÔNA aqui' });
+    check('palavra bloqueada (sem acento/maiúscula) → erro', !!a?.erro, a);
+    a = await emitir(sR, 'msg:enviar', { canalId: geral.id, texto: 'entra aqui https://golpe.exemplo' });
+    check('link bloqueado pra membro comum → erro', !!a?.erro, a);
+    a = await emitir(sL, 'msg:enviar', { canalId: geral.id, texto: 'dono pode https://ok.exemplo' });
+    check('staff passa no AutoMod', a?.ok === true, a);
+    await lia.req('PUT', `/servidores/${srv.id}/automod`, { palavras: [], links: false, spam: false });
+  }
+
+  secao('Apostas 1x1 e torneios');
+  {
+    r = await rafa.req('POST', `/servidores/${srv.id}/apostas`, { valor: 10, jogo: 'Free Fire · 1x1 · Mobile' });
+    check('apostas desligadas por padrão → 403', r.status === 403, r);
+    r = await rafa.req('PUT', `/servidores/${srv.id}/apostas/config`, { ligado: true });
+    check('só o dono liga as apostas', r.status === 403, r);
+    r = await lia.req('PUT', `/servidores/${srv.id}/apostas/config`, { ligado: true });
+    check('dono liga as apostas', r.status === 200, r);
+    r = await rafa.req('POST', `/servidores/${srv.id}/apostas`, { valor: 10 });
+    check('sem adm com Pix → 400', r.status === 400 && temErro(r.json), r);
+    r = await lia.req('PUT', `/servidores/${srv.id}/apostas/pix`, { chave: 'lia@pix.teste' });
+    check('adm cadastra chave Pix', r.status === 200, r);
+    await lia.req('PUT', `/servidores/${srv.id}/apostas/taxa`, { taxa: 10 });
+    r = await lia.req('PUT', `/servidores/${srv.id}/apostas/taxa`, { taxa: 50 });
+    check('taxa acima de 30% → 400', r.status === 400, r);
+    r = await rafa.req('POST', `/servidores/${srv.id}/apostas`, { valor: 0 });
+    check('valor inválido → 400', r.status === 400, r);
+    r = await rafa.req('POST', `/servidores/${srv.id}/apostas`, { valor: 10, jogo: 'Free Fire · 1x1 · Mobile' });
+    const sala = r.json;
+    check('rafa entra na fila → 201 aberta', r.status === 201 && sala?.status === 'aberta' && sala?.canalId === null, r);
+    r = await rafa.req('POST', `/apostas/${sala.id}/entrar`);
+    check('não entra na própria sala → 400', r.status === 400, r);
+    r = await mari.req('POST', `/apostas/${sala.id}/entrar`);
+    check('mari entra → sala fecha com a lia de adm e taxa congelada', r.status === 200 && r.json?.status === 'andamento' && r.json?.adm?.id === U.lia.id && r.json?.taxa === 10 && !!r.json?.canalId, r);
+    const canalSala = r.json.canalId;
+    r = await mari.req('GET', `/canais/${canalSala}/mensagens`);
+    const txt = JSON.stringify(r.json);
+    check('sala privada mostra a chave Pix do adm', r.status === 200 && txt.includes('lia@pix.teste'), r.status);
+    r = await theo.req('GET', `/canais/${canalSala}/mensagens`);
+    check('quem não está na sala não lê', r.status === 403 || r.status === 404, r);
+    r = await theo.req('POST', `/apostas/${sala.id}/paguei`);
+    check('só jogador marca Paguei', r.status === 403, r);
+    r = await rafa.req('POST', `/apostas/${sala.id}/paguei`);
+    check('jogador marca Paguei', r.status === 200, r);
+    r = await rafa.req('POST', `/apostas/${sala.id}/vencedor`, { usuarioId: U.rafa.id });
+    check('jogador não declara vencedor → 403', r.status === 403, r);
+    r = await lia.req('POST', `/apostas/${sala.id}/vencedor`, { usuarioId: U.theo.id });
+    check('vencedor fora da sala → 400', r.status === 400, r);
+    r = await lia.req('POST', `/apostas/${sala.id}/vencedor`, { usuarioId: U.mari.id });
+    check('adm declara vencedor', r.status === 200, r);
+    r = await lia.req('GET', `/servidores/${srv.id}/apostas/ranking`);
+    check('ranking conta vitória e derrota', r.json?.[0]?.id === U.mari.id && r.json[0].v === 1 && r.json.some((x) => x.id === U.rafa.id && x.d === 1), r.json);
+    r = await lia.req('PUT', `/servidores/${srv.id}/apostas/blacklist`, { usuario: 'rafa', motivo: 'teste' });
+    check('staff coloca na blacklist', r.status === 200, r);
+    r = await rafa.req('POST', `/servidores/${srv.id}/apostas`, { valor: 5 });
+    check('quem está na blacklist não entra na fila → 403', r.status === 403, r);
+    await lia.req('PUT', `/servidores/${srv.id}/apostas/blacklist`, { usuario: 'rafa', tirar: true });
+
+    r = await rafa.req('POST', `/servidores/${srv.id}/torneios`, { nome: 'Copa', vagas: 4 });
+    check('membro comum não cria torneio → 403', r.status === 403, r);
+    r = await lia.req('POST', `/servidores/${srv.id}/torneios`, { nome: 'Copa Teste', vagas: 4, valor: 0 });
+    const tor = r.json;
+    check('staff cria torneio', r.status === 201 && tor?.status === 'inscricoes', r);
+    for (const c of [rafa, mari, theo]) await c.req('POST', `/torneios/${tor.id}/inscrever`);
+    r = await lia.req('POST', `/torneios/${tor.id}/iniciar`);
+    check('sorteio cria a 1ª rodada', r.status === 200 && r.json?.status === 'rolando' && r.json.partidas.filter((p) => p.rodada === 1).length === 2, r);
+    let t = r.json;
+    for (let rod = 1; rod <= 2 && t.status === 'rolando'; rod++) {
+      for (const p of t.partidas.filter((x) => x.rodada === rod && !x.vencedor && x.a && x.b)) t = (await lia.req('POST', `/torneios/${tor.id}/partida`, { rodada: rod, idx: p.idx, vencedor: p.a.id })).json;
+    }
+    check('chave anda até o campeão', t?.status === 'finalizado' && !!t?.campeao, t);
+    r = await rafa.req('GET', `/org/${srv.convite}`);
+    check('página pública da org responde sem segredos', r.status === 200 && r.json?.nome && !JSON.stringify(r.json).includes('lia@pix.teste'), r);
+  }
 }
 
 // ---------------- execução ----------------

@@ -1454,9 +1454,9 @@ h3 .verificado{width:18px;height:18px;font-size:11px}
 /* brilho passando nas desbloqueadas */
 .conquista.ok::after{content:"";position:absolute;inset:0;background:linear-gradient(115deg,transparent 40%,rgba(255,255,255,.16) 50%,transparent 60%);transform:translateX(-120%);animation:brilhoBanner 5s ease-in-out infinite;animation-delay:var(--d)}
 /* lendária: borda holográfica girando */
-.conquista.r-lendario.ok{border-color:transparent;background:linear-gradient(var(--chip),var(--chip)) padding-box,conic-gradient(from var(--ang),#fbbf24,#ff4fb8,#8b5cf6,#38bdf8,#34d399,#fbbf24) border-box;border:2px solid transparent;animation:conqEntra .45s both,holo 4s linear infinite}
+.conquista.r-lendario.ok{border-color:transparent;background:linear-gradient(var(--chip),var(--chip)) padding-box,conic-gradient(from var(--ang),#fbbf24,#ff4fb8,#8b5cf6,#38bdf8,#34d399,#fbbf24) border-box;border:2px solid transparent;animation:conqEntra .45s both,holoBorda 4s linear infinite}
 @property --ang{syntax:'<angle>';inherits:false;initial-value:0deg}
-@keyframes holo{to{--ang:360deg}}
+@keyframes holoBorda{to{--ang:360deg}}
 .conquista.r-lendario.ok b{background:linear-gradient(90deg,#fbbf24,#ff4fb8,#8b5cf6);-webkit-background-clip:text;background-clip:text;color:transparent}
 .conquista.r-epico.ok .conq-ic{animation-duration:2.2s}
 .conq-ok{margin-top:6px;font-size:10px;font-weight:700;color:var(--rc);text-transform:uppercase;letter-spacing:.05em}

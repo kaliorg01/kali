@@ -64,6 +64,7 @@ export function sairSala(usuarioId, sala) {
 }
 // Sala de espera: quem a staff liberou, por canal (vale até o servidor reiniciar).
 const liberadosEspera = new Map();
+setInterval(() => liberadosEspera.clear(), 6 * 3600e3).unref(); // liberação vale no máximo 6h
 export const estaOnline = (uid) => (presenca.get(uid)?.size || 0) > 0;
 export const quantosOnline = () => [...presenca.values()].filter((s) => s.size > 0).length;
 
