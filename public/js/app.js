@@ -1547,9 +1547,12 @@
     const v = (u && u.vitrine) || {};
     const banner = h('div', { class: 'banner-perfil' });
     banner.style.background = u && u.bannerImg ? `center/cover no-repeat url("${u.bannerImg}")` : BANNERS[v.banner] || BANNERS.nebulosa;
+    if (!(u && u.bannerImg)) banner.classList.add('banner-vivo');
     const partes = [banner];
-    if (v.bio) partes.push(h('p', { class: 'bio' }, v.bio));
-    if (v.jogos && v.jogos.length) partes.push(h('div', { class: 'jogos' }, v.jogos.map((j) => h('span', { class: 'chip' }, '🎮 ' + j))));
+    const jogo = u && jogoDe(u.statusTexto);
+    if (jogo) partes.push(h('div', { class: 'sec-perfil' }, 'Jogando agora'), h('div', { class: 'jogando-card' }, h('span', { class: 'jogando-ic' }, '🎮'), h('div', {}, h('b', {}, jogo), h('small', {}, 'em partida'))));
+    if (v.bio) partes.push(h('div', { class: 'sec-perfil' }, 'Sobre mim'), h('p', { class: 'bio' }, v.bio));
+    if (v.jogos && v.jogos.length) partes.push(h('div', { class: 'sec-perfil' }, 'Jogos'), h('div', { class: 'jogos' }, v.jogos.map((j) => h('span', { class: 'chip' }, '🎮 ' + j))));
     if (v.links && v.links.length) partes.push(h('div', { class: 'links-bio' }, v.links.map((l) => {
       let host = l; try { host = new URL(l).hostname.replace(/^www\./, ''); } catch (e) {}
       return h('a', { href: l, target: '_blank', rel: 'noopener noreferrer' }, '🔗 ' + host);
@@ -1563,8 +1566,16 @@
 
   function cartaoMembro(ancora, m) {
     const [banner, ...extras] = vitrine(m); // banner → avatar → nome → @ → recado → bio/jogos/links/aniver
-    const conteudo = [banner, avatar(m, 'av-vitrine', true), h('h3', {}, m.nome, fazAniver(m) ? ' 🎂' : ''),
-      h('small', {}, '@' + m.usuario + (m.apelido ? ` (${m.nomeConta})` : '') + ' · ' + st(m.id)[1] + (m.nivel ? ` · ⭐ nível ${m.nivel}` : '')), m.statusTexto ? h('p', {}, m.statusTexto) : null, ...extras];
+    const srvC = servidorAtual();
+    const selos = [m.nivel ? h('span', { class: 'selo-perfil', title: 'Nível no servidor' }, '⭐ ' + m.nivel) : null,
+      srvC && m.id === srvC.donoId ? h('span', { class: 'selo-perfil', title: 'Dono do servidor' }, '👑') : null,
+      m.cargo && m.cargo !== 'dono' && SELO_CARGO[m.cargo] ? h('span', { class: 'selo-perfil', title: m.cargo }, SELO_CARGO[m.cargo]) : null,
+      fazAniver(m) ? h('span', { class: 'selo-perfil', title: 'Aniversário hoje' }, '🎂') : null].filter(Boolean);
+    const recado = m.statusTexto && !jogoDe(m.statusTexto) ? h('div', { class: 'recado-perfil' }, '💬 ' + m.statusTexto) : null;
+    const caixa = h('div', { class: 'caixa-perfil' },
+      h('div', { class: 'nome-linha' }, h('h3', {}, m.nome), selos.length ? h('div', { class: 'selos-perfil' }, selos) : null),
+      h('small', { class: 'arroba' }, '@' + m.usuario + (m.apelido ? ` (${m.nomeConta})` : '') + ' · ' + st(m.id)[1]), recado, h('hr'), ...extras);
+    const conteudo = [banner, h('div', { class: 'av-linha' }, avatar(m, 'av-vitrine', true), h('span', { class: 'bolinha-perfil ' + st(m.id)[0], title: st(m.id)[1] })), caixa];
     const srv = servidorAtual();
     if (srv && E.modo === 'servidor' && (m.id === E.eu.id || souStaffEm(srv.id))) {
       conteudo.push(h('button', { class: 'bt', onclick: () => {
@@ -1615,7 +1626,13 @@
         comum.replaceChildren(...partes);
       }).catch(() => {});
     }
-    abrirMenu(ancora, conteudo, 'menu-perfil');
+    // botões depois da caixa viram uma grade de ações
+    const fixos = conteudo.slice(0, 3), acoes = conteudo.slice(3).flat().filter((x) => x && x.tagName !== 'HR');
+    const emComum = acoes.find((x) => x.classList && x.classList.contains('em-comum'));
+    if (emComum) { acoes.splice(acoes.indexOf(emComum), 1); caixa.append(h('div', { class: 'sec-perfil' }, 'Em comum'), emComum); }
+    abrirMenu(ancora, [...fixos, h('div', { class: 'acoes-perfil' }, acoes)], 'menu-perfil');
+    const menu = document.querySelector('.menu.menu-perfil');
+    if (menu) menu.style.setProperty('--perfil', m.cor || 'var(--roxo)');
   }
   // ---------- missões, XP e ranking ----------
   async function carregarMissoes(sid) {
