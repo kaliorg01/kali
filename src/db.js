@@ -836,7 +836,7 @@ export function marcarImagem(dono, id, tipo, v) {
   q(`UPDATE ${tabela} SET ${coluna} = ? WHERE id = ?`).run(v, id);
 }
 const SELECT_MSG = `SELECT m.*, u.usuario AS a_usuario, u.nome AS a_nome, u.cor AS a_cor, u.avatar_v AS a_avatar,
-                    u.equip_moldura AS a_moldura, u.equip_cor AS a_cor_item, mb.apelido AS a_apelido, u.verificado AS a_verificado
+                    u.equip_moldura AS a_moldura, u.equip_cor AS a_cor_item, mb.apelido AS a_apelido, u.verificado AS a_verificado, u.efeito AS a_efeito
                     FROM mensagens m LEFT JOIN usuarios u ON u.id = m.autor_id
                     LEFT JOIN canais cx ON cx.id = m.canal_id
                     LEFT JOIN membros mb ON mb.servidor_id = cx.servidor_id AND mb.usuario_id = m.autor_id`;
@@ -925,7 +925,7 @@ export function serMensagem(row, reacoes = []) {
     canalId: row.canal_id,
     autor: row.autor_id != null && row.a_usuario != null
       ? { id: row.autor_id, usuario: row.a_usuario, nome: row.a_apelido || row.a_nome, cor: row.a_cor, avatar: urlImagem('u', row.autor_id, 'avatar', row.a_avatar),
-        moldura: urlItem(row.a_moldura), corNome: corDoItem(row.a_cor_item), verificado: !!row.a_verificado }
+        moldura: urlItem(row.a_moldura), corNome: corDoItem(row.a_cor_item), verificado: !!row.a_verificado, efeito: row.a_efeito || '' }
       : null,
     texto: row.texto,
     criadoEm: row.criado_em,

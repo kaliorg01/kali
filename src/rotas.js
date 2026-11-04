@@ -104,7 +104,7 @@ function validarVitrine(c) {
     v.jogos = c.jogos.map((j) => j.trim());
   }
   if (c.efeito !== undefined) {
-    if (!['', 'neve', 'fogo', 'estrelas', 'coracoes', 'raios', 'confete'].includes(c.efeito)) throw erro(400, 'Efeito inválido.');
+    if (!['', 'neve', 'fogo', 'estrelas', 'coracoes', 'raios', 'confete', 'aura', 'holo', 'glitch'].includes(c.efeito)) throw erro(400, 'Efeito inválido.');
     v.efeito = c.efeito;
   }
   return v;

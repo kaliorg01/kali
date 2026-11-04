@@ -349,6 +349,7 @@
     sairAssistir();
     E.verVisao = false; E.verApostas = false;
     aplicarTemaServidor(id);
+    carregarTop1(id);
     E.modo = 'servidor';
     E.servidorId = id;
     salvar('kali-servidor', id);
@@ -689,10 +690,12 @@
   }
 
   // ---------- efeitos de perfil (partículas em volta do avatar) ----------
-  const EFEITOS_PERFIL = { '': 'Nenhum', neve: '❄️ Neve', fogo: '🔥 Fogo', estrelas: '✨ Estrelas', coracoes: '💖 Corações', raios: '⚡ Raios', confete: '🎉 Confete' };
+  const EFEITOS_PERFIL = { '': 'Nenhum', neve: '❄️ Neve', fogo: '🔥 Fogo', estrelas: '✨ Estrelas', coracoes: '💖 Corações', raios: '⚡ Raios', confete: '🎉 Confete', aura: '🌀 Aura de energia', holo: '🌈 Holográfico', glitch: '👾 Glitch hacker' };
   const PARTICULA = { neve: '❄', fogo: '🔥', estrelas: '✦', coracoes: '♥', raios: '⚡', confete: '●' };
   function efeitoPerfil(u) {
     const ef = u && u.vitrine && u.vitrine.efeito;
+    if (ef === 'aura') return h('div', { class: 'aura-anel', 'aria-hidden': 'true' }, h('i'), h('i'));
+    if (ef === 'holo' || ef === 'glitch') return h('div', { class: 'marca-efeito efeito-' + ef, 'aria-hidden': 'true' });
     if (!ef || !PARTICULA[ef]) return null;
     return h('div', { class: 'efeito-perfil efeito-' + ef, 'aria-hidden': 'true' }, Array.from({ length: 12 }, (_, i) => h('i', { style: `--i:${i};--x:${(i * 37) % 100}%` }, PARTICULA[ef])));
   }
@@ -719,6 +722,7 @@
       const RAR = { comum: 'Comum', raro: 'Raro', epico: 'Épico', lendario: 'Lendário' };
       const ORDEM = ['comum', 'raro', 'epico', 'lendario'];
       const feitas = d.conquistas.filter((c) => c.ok).length, pct = Math.round((d.pontos / d.pontosMax) * 100);
+      if (feitas === d.conquistas.length) av.classList.add('moldura-lendaria');
       const maior = d.conquistas.filter((c) => c.ok).sort((a, b) => ORDEM.indexOf(b.raridade) - ORDEM.indexOf(a.raridade))[0];
       const topo = h('div', { class: 'conq-topo' },
         h('div', { class: 'anel-conq', style: `--p:${pct}` }, h('div', {}, h('b', {}, pct + '%'), h('small', {}, 'completo'))),
@@ -820,6 +824,7 @@
     f.classList.add('modal-velha');
   }
   function aoAtividade(d) {
+    if (d && d.estado && d.estado.jogo === 'emote') { const e = d.estado; if (typeof e.emoji === 'string' && e.emoji.length <= 8) emoteGigante(e.emoji, typeof e.nome === 'string' ? e.nome.slice(0, 32) : ''); return; }
     if (d && d.estado && d.estado.jogo === 'duelo') {
       const e = d.estado;
       if (!duelo || duelo.id !== e.id) { duelo = e; toast('⚡ ' + (e.porNome || 'Alguém') + ' chamou um duelo de reflexo!', 'ok'); abrirDuelo(); }
@@ -836,7 +841,8 @@
     abrirMenu(ancora, [h('div', { class: 'sec-menu' }, 'Atividades na call'),
       item('❌⭕ Jogo da velha', () => (velha ? abrirVelha() : novoVelha())),
       item('⚡ Duelo de reflexo', novoDuelo),
-      item('🫧 Bolha flutuante (quem tá falando)', bolhaCall)]);
+      item('🫧 Bolha flutuante (quem tá falando)', bolhaCall),
+      item('😂 Emote gigante', () => menuEmote(ancora))]);
   }
 
   // ---------- bolha flutuante da call (Picture-in-Picture de documento) ----------
@@ -1106,6 +1112,62 @@
       h('div', { class: 'acoes' }, h('button', { class: 'bt prim', onclick: () => { card.remove(); abrirSalaAposta(d.canalId); } }, 'Abrir sala'), h('button', { class: 'bt', onclick: () => card.remove() }, 'Depois')));
     document.body.append(card);
     setTimeout(() => card.remove(), 45000);
+  }
+
+  // ---------- efeitos extras: entrada épica, chuva de emoji, emote gigante, rastro do mouse, nome dourado ----------
+  function entradaEpica(nome) {
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const faixa = h('div', { class: 'entrada-epica', 'aria-hidden': 'true' }, h('span', {}, '⚡ ' + nome + ' entrou na call'));
+    document.body.append(faixa);
+    setTimeout(() => faixa.remove(), 2300);
+  }
+  const RE_SO_EMOJI = /^(?:\p{Extended_Pictographic}(?:️|‍\p{Extended_Pictographic})*\s*){1,3}$/u;
+  function chuvaEmoji(texto) {
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const lista = [...texto.matchAll(/\p{Extended_Pictographic}(?:️|‍\p{Extended_Pictographic})*/gu)].map((m) => m[0]);
+    if (!lista.length) return;
+    const camada = h('div', { class: 'camada-efeito', 'aria-hidden': 'true' });
+    for (let i = 0; i < 28; i++) {
+      const p = h('span', {}, lista[i % lista.length]);
+      p.style.left = (i * 37 % 100) + '%'; p.style.animationDelay = (i % 9) * 0.09 + 's'; p.style.fontSize = 22 + (i * 7 % 22) + 'px';
+      camada.append(p);
+    }
+    document.body.append(camada);
+    setTimeout(() => camada.remove(), 3200);
+  }
+  function emoteGigante(emoji, nome) {
+    const el = h('div', { class: 'emote-gigante', 'aria-hidden': 'true' }, h('span', {}, emoji), nome ? h('small', {}, nome) : null);
+    document.body.append(el);
+    setTimeout(() => el.remove(), 2200);
+  }
+  function menuEmote(ancora) {
+    abrirMenu(ancora, [h('div', { class: 'sec-menu' }, 'Emote gigante pra call toda'),
+      h('div', { class: 'grade-emote' }, ['😂', '🔥', '💀', '😱', '👏', '🫡', '😭', '🤡', '💯', '🎉', 'GG', '👀'].map((e) => h('button', { type: 'button', onclick: () => {
+        fecharMenu(); emoteGigante(e, E.eu.nome);
+        pedir('voz:atividade', { estado: { jogo: 'emote', emoji: e, nome: E.eu.nome } }).then((r) => r.erro && toast(r.erro, 'erro'));
+      } }, e)))]);
+  }
+  // rastro de faíscas atrás do mouse (opcional, em Aparência)
+  let ultimoRastro = 0;
+  addEventListener('mousemove', (e) => {
+    if (ler('kali-rastro') !== '1' || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const t = performance.now(); if (t - ultimoRastro < 28) return; ultimoRastro = t;
+    const f = h('i', { class: 'rastro' }); f.style.left = e.clientX + 'px'; f.style.top = e.clientY + 'px';
+    document.body.append(f); setTimeout(() => f.remove(), 650);
+  }, { passive: true });
+  // top 1 do ranking de cada servidor (nome dourado no chat)
+  async function carregarTop1(sid) {
+    try { const l = await api('GET', `/servidores/${sid}/ranking`); E.top1 = E.top1 || new Map(); const id = l[0] && l[0].usuario && l[0].usuario.id; if (E.top1.get(sid) !== id) { E.top1.set(sid, id); if (E.servidorId === sid) renderLista(); } } catch (e) {}
+  }
+  // parallax do banner no cartão de perfil
+  function parallaxBanner(menu) {
+    const ban = menu && menu.querySelector('.banner-perfil');
+    if (!ban || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    menu.addEventListener('mousemove', (e) => {
+      const r = menu.getBoundingClientRect(), x = (e.clientX - r.left) / r.width - 0.5, y = (e.clientY - r.top) / r.height - 0.5;
+      ban.style.transform = `scale(1.12) translate(${-x * 14}px, ${-y * 10}px)`;
+    });
+    menu.addEventListener('mouseleave', () => { ban.style.transform = ''; });
   }
 
   // ---------- render geral ----------
@@ -1406,7 +1468,7 @@
       h('div', { class: 'digitando', id: 'digitando' }),
       h('div', { class: 'respondendo', id: 'respondendo', hidden: true }),
       h('div', { class: 'caixa' }, bAnexo, arq, ta, info, bGif, emoji, bGrav, bEnviar),
-      h('div', { class: 'dica' }, '@usuario menciona · /time 5 Valorant · /pomodoro 25 · /confete /fogo /explosao')));
+      h('div', { class: 'dica' }, '@usuario menciona · /time 5 Valorant · /confete /fogo /explosao /terremoto /neon /arcoiris')));
     main.replaceChildren(topo, c.tipo === 'assistir' ? h('section', { class: 'palco', id: 'palco' }) : '', msgs, compositor);
     // Arrastar e soltar arquivos em qualquer lugar do chat.
     const soltar = h('div', { class: 'soltar-aqui' }, h('div', {}, ic('mais', 34), h('b', {}, 'Solta pra enviar'), h('small', {}, (c.dm ? '@' + c.dm.outro.usuario : '#' + c.nome) + ' · até 10 arquivos')));
@@ -1561,7 +1623,8 @@
       else {
         const dono = s && s.donoId === m.autor.id, cor = s && !dono ? corCargo(s.id, m.autor.id) : null;
         const anim = s && !dono && !m.autor.corNome && cor && cargoAnimado(s.id, m.autor.id);
-        corpo.append(h('b', { class: 'autor' + (dono && !m.autor.corNome ? ' nome-dono' : '') + (anim ? ' nome-cargo-anim' : ''), style: anim ? `--c:${cor}` : estiloNome(m.autor.corNome) || (cor ? `color:${cor}` : null) }, m.autor.nome), seloVerif(m.autor) || '');
+        const ouro = s && E.top1 && E.top1.get(s.id) === m.autor.id, glitch = m.autor.efeito === 'glitch';
+        corpo.append(h('b', { class: 'autor' + (dono && !m.autor.corNome ? ' nome-dono' : '') + (anim ? ' nome-cargo-anim' : '') + (ouro ? ' nome-ouro' : '') + (glitch ? ' nome-glitch' : ''), 'data-nome': m.autor.nome, title: ouro ? '🏆 Top 1 do ranking' : null, style: anim ? `--c:${cor}` : estiloNome(m.autor.corNome) || (cor ? `color:${cor}` : null) }, m.autor.nome), seloVerif(m.autor) || '');
       }
       corpo.append(h('time', { title: new Date(m.criadoEm).toLocaleString('pt-BR') }, hora(m.criadoEm)));
     }
@@ -1618,7 +1681,7 @@
       corpo.append(cartaoComando(m, comandoDe(m.texto)));
     } else if (m.texto) {
       const ef = efeitoDe(m.texto);
-      const tx = h('div', { class: 'texto' }, ef ? h('span', { class: 'tag-efeito' }, EFEITOS[ef][0] + ' ') : null, formatarRico(ef ? m.texto.replace(RE_EFEITO, '') : m.texto));
+      const tx = h('div', { class: 'texto' + (ef === 'neon' ? ' tx-neon' : ef === 'arcoiris' ? ' tx-arcoiris' : ef === 'terremoto' ? ' tx-terremoto' : '') }, ef ? h('span', { class: 'tag-efeito' }, EFEITOS[ef][0] + ' ') : null, formatarRico(ef ? m.texto.replace(RE_EFEITO, '') : m.texto));
       if (m.editadoEm) {
         const podeVer = minha || (s && souStaffEm(s.id));
         tx.append(h(podeVer ? 'button' : 'span', { class: 'editado', type: podeVer ? 'button' : null, title: new Date(m.editadoEm).toLocaleString('pt-BR') + (podeVer ? ' · clica pra ver as versões' : ''),
@@ -2071,7 +2134,7 @@
     if (emComum) { acoes.splice(acoes.indexOf(emComum), 1); caixa.append(h('div', { class: 'sec-perfil' }, 'Em comum'), emComum); }
     abrirMenu(ancora, [...fixos, h('div', { class: 'acoes-perfil' }, acoes)], 'menu-perfil');
     const menu = document.querySelector('.menu.menu-perfil');
-    if (menu) menu.style.setProperty('--perfil', m.cor || 'var(--roxo)');
+    if (menu) { menu.style.setProperty('--perfil', m.cor || 'var(--roxo)'); parallaxBanner(menu); }
   }
   // ---------- missões, XP e ranking ----------
   async function carregarMissoes(sid) {
@@ -3099,6 +3162,7 @@
           onclick: () => { if (v) document.documentElement.dataset.fonte = v; else delete document.documentElement.dataset.fonte; salvar('kali-fonte', v); re(); } }, t))),
         linhaCfg('Fundo', 'Só no tema escuro.', ...[['', 'Liso'], ['grade', 'Grade'], ['estrelas', 'Estrelas'], ['aurora', 'Aurora']].map(([v, t]) => h('button', { type: 'button', class: 'bt' + ((document.documentElement.dataset.fundo || '') === v ? ' prim' : ''),
           onclick: () => { if (v) document.documentElement.dataset.fundo = v; else delete document.documentElement.dataset.fundo; salvar('kali-fundo', v); re(); } }, t))),
+        linhaCfg('Rastro do mouse', 'Faíscas na cor de destaque seguindo o mouse.', chave(ler('kali-rastro') === '1', () => { salvar('kali-rastro', ler('kali-rastro') === '1' ? '' : '1'); re(); })),
         linhaCfg('Modo compacto', 'Mensagens mais juntinhas.', chave(cls('compacto'), () => { alternarAcess('compacto', 'Modo compacto'); re(); })),
       ]],
       ['Acessibilidade', (re) => [
@@ -3518,10 +3582,12 @@
   }, 15000);
 
   // ---------- mensagem com efeito: /confete, /fogo, /explosao no começo da mensagem ----------
-  const EFEITOS = { confete: ['🎉', ['🎉', '🎊', '✨', '🥳']], fogo: ['🔥', ['🔥', '🔥', '💥']], explosao: ['💥', ['💥', '✨', '💫']] };
-  const RE_EFEITO = /^\/(confete|fogo|explosao)\s*/i;
+  const EFEITOS = { confete: ['🎉', ['🎉', '🎊', '✨', '🥳']], fogo: ['🔥', ['🔥', '🔥', '💥']], explosao: ['💥', ['💥', '✨', '💫']], terremoto: ['🌋', null], neon: ['💡', null], arcoiris: ['🌈', null] };
+  const RE_EFEITO = /^\/(confete|fogo|explosao|terremoto|neon|arcoiris)\s*/i;
   const efeitoDe = (t) => { const r = RE_EFEITO.exec(t || ''); return r ? r[1].toLowerCase() : null; };
   function dispararEfeito(ef) {
+    if (ef === 'neon' || ef === 'arcoiris') return;
+    if (ef === 'terremoto') { if (!matchMedia('(prefers-reduced-motion: reduce)').matches) { document.body.classList.remove('terremoto'); void document.body.offsetWidth; document.body.classList.add('terremoto'); setTimeout(() => document.body.classList.remove('terremoto'), 900); } return; }
     const camada = h('div', { class: 'camada-efeito', 'aria-hidden': 'true' });
     const lista = EFEITOS[ef][1];
     for (let i = 0; i < 36; i++) {
@@ -3786,6 +3852,7 @@
     const arr = E.msgs.get(m.canalId);
     const nova = !arr || !arr.some((x) => x.id === m.id);
     if (nova && m.texto && efeitoDe(m.texto) && (m.canalId === E.canalId)) dispararEfeito(efeitoDe(m.texto));
+    else if (nova && m.texto && m.canalId === E.canalId && RE_SO_EMOJI.test(m.texto.trim())) chuvaEmoji(m.texto);
     if (nova && m.autor && m.autor.id !== E.eu.id && alertaDe(m)) {
       toast('🚨 Alerta da staff: ' + corta(alertaDe(m), 90), 'erro');
       tocarSom('zap');
@@ -4063,7 +4130,7 @@
       if (canalId === Voz.estado.canalId) {
         const agora = new Set((membros || []).map((m) => m.usuarioId));
         if (!antes.has(E.eu.id) && agora.has(E.eu.id)) tocarSom('entrou');
-        else if (antes.size && [...agora].some((id) => !antes.has(id) && id !== E.eu.id)) tocarSom('entrou');
+        else if (antes.size && [...agora].some((id) => !antes.has(id) && id !== E.eu.id)) { tocarSom('entrou'); const nv = (membros || []).find((m) => !antes.has(m.usuarioId) && m.usuarioId !== E.eu.id); if (nv) entradaEpica(nv.nome); }
         else if ([...antes].some((id) => !agora.has(id) && id !== E.eu.id)) tocarSom('saiu');
       }
       if (membros && membros.length) E.voz.set(canalId, membros); else E.voz.delete(canalId);
