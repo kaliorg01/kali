@@ -3470,7 +3470,7 @@
     const fundo = h('div', { class: 'fundo-modal', id: 'troca-rapida' }, h('div', { class: 'modal troca-rapida', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Troca rápida' },
       h('h2', {}, 'Ir para…'), inp, lista, h('small', { class: 'tr-dica' }, '↑↓ escolher · Enter abrir · Esc fechar')));
     const fechar = () => sair(fundo);
-    const escolher = (k) => { const it = achados[k]; fechar(); if (it) it.ir(); };
+    const escolher = (k) => { const it = achados[k]; fechar(); if (it) setTimeout(() => it.ir(), 60); }; // espera o Enter terminar pra não fechar a janela que o comando abre
     inp.oninput = () => { sel = 0; desenhar(); };
     inp.onkeydown = (e) => {
       if (e.key === 'ArrowDown') { e.preventDefault(); sel = (sel + 1) % Math.max(1, achados.length); desenhar(); }
