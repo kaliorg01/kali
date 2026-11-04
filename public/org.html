@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="pt-BR" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Org — KALI</title>
+<link rel="icon" href="/img/icone.png">
+<style>
+  :root{--bg:#0b0b0d;--card:#151518;--chip:#1b1b1f;--borda:#26262b;--texto:#f2f4f8;--fraco:#8b93a3;--roxo:#ff4fb8;--ok:#3ee6a8}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--texto);font-family:"Segoe UI",system-ui,sans-serif;min-height:100vh}
+  .capa{height:220px;background:linear-gradient(135deg,#b0177a,#d62f93 55%,#8b2fd6);background-size:cover;background-position:center;position:relative}
+  .capa::after{content:"";position:absolute;inset:0;background:linear-gradient(transparent 30%,var(--bg))}
+  main{max-width:900px;margin:-80px auto 40px;padding:0 16px;position:relative;z-index:1}
+  .topo{display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap}
+  .ic{width:110px;height:110px;border-radius:22px;background:var(--card);border:5px solid var(--bg);display:grid;place-items:center;font-size:40px;font-weight:800;overflow:hidden}
+  .ic img{width:100%;height:100%;object-fit:cover}
+  h1{font-size:30px}
+  .sub{color:var(--fraco);margin-top:4px}
+  .entrar{margin-left:auto;padding:14px 28px;border-radius:10px;background:var(--roxo);color:#fff;font-weight:700;font-size:16px;text-decoration:none;box-shadow:0 8px 30px rgba(255,79,184,.4);transition:transform .15s}
+  .entrar:hover{transform:translateY(-2px)}
+  .nums{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:22px 0}
+  .num{background:var(--card);border:1px solid var(--borda);border-radius:10px;padding:14px}
+  .num b{display:block;font-size:24px;color:var(--roxo)}.num small{color:var(--fraco)}
+  h2{font-size:12px;letter-spacing:.12em;text-transform:uppercase;margin:24px 0 10px}
+  .lista{display:flex;flex-direction:column;gap:6px}
+  .item{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;background:var(--card);border:1px solid var(--borda)}
+  .item.rei{border-color:#fbbf24;background:linear-gradient(90deg,rgba(251,191,36,.15),var(--card))}
+  .item small{margin-left:auto;color:var(--fraco)}
+  .chips{display:flex;flex-wrap:wrap;gap:6px}
+  .chip{padding:6px 12px;border-radius:999px;background:var(--chip);border:1px solid var(--borda);font-size:13px}
+  .vazio{color:var(--fraco);font-size:14px}
+  .erro{text-align:center;padding:120px 16px;color:var(--fraco)}
+  @media (max-width:600px){.entrar{width:100%;text-align:center;margin-left:0}}
+</style>
+</head>
+<body>
+<div class="capa" id="capa"></div>
+<main id="app"><p class="vazio">Carregando…</p></main>
+<script>
+(async () => {
+  const app = document.getElementById('app');
+  const esc = (t) => String(t ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const c = new URLSearchParams(location.search).get('c') || '';
+  let d;
+  try { const r = await fetch('/api/org/' + encodeURIComponent(c)); if (!r.ok) throw 0; d = await r.json(); }
+  catch (e) { document.getElementById('capa').remove(); app.innerHTML = '<div class="erro"><h1>Org não encontrada</h1><p>Confere o link com quem te mandou.</p></div>'; return; }
+  document.title = d.nome + ' — KALI';
+  if (d.banner) document.getElementById('capa').style.backgroundImage = `url("${d.banner}")`;
+  const ini = d.nome.split(/\s+/).map((p) => p[0]).join('').slice(0, 2).toUpperCase();
+  app.innerHTML = `
+    <div class="topo">
+      <div class="ic">${d.icone ? `<img src="${esc(d.icone)}" alt="">` : esc(ini)}</div>
+      <div><h1>${esc(d.nome)}</h1><p class="sub">${d.membros} membros${d.apostas ? ' · 🎲 apostas ligadas' + (d.taxa ? ` · taxa ${d.taxa}%` : '') : ''}</p></div>
+      <a class="entrar" href="/?convite=${encodeURIComponent(d.convite)}">Entrar na org</a>
+    </div>
+    <div class="nums">
+      <div class="num"><b>${d.membros}</b><small>membros</small></div>
+      <div class="num"><b>${d.aoVivo.salas}</b><small>salas rolando agora</small></div>
+      <div class="num"><b>R$ ${d.aoVivo.emJogo}</b><small>em jogo agora</small></div>
+      <div class="num"><b>${d.adms.length}</b><small>adms/mediadores</small></div>
+    </div>
+    <h2>👑 Ranking</h2>
+    <div class="lista">${d.ranking.length ? d.ranking.map((x, i) => `<div class="item ${i === 0 ? 'rei' : ''}">${['👑', '🥈', '🥉'][i] || (i + 1) + 'º'} <b>${esc(x.nome)}</b><small>${x.v}V ${x.d}D · 🔥${x.melhor} seguidas</small></div>`).join('') : '<p class="vazio">Ninguém no ranking ainda.</p>'}</div>
+    <h2>🏆 Torneios com inscrição aberta</h2>
+    <div class="lista">${d.torneios.length ? d.torneios.map((t) => `<div class="item"><b>${esc(t.nome)}</b> ${esc(t.jogo || '')}<small>${t.inscritos}/${t.vagas} · ${t.valor ? 'R$ ' + t.valor : 'grátis'}</small></div>`).join('') : '<p class="vazio">Nenhum torneio aberto agora.</p>'}</div>
+    <h2>🛡️ Adms / mediadores</h2>
+    <div class="chips">${d.adms.length ? d.adms.map((n) => `<span class="chip">🛡️ ${esc(n)}</span>`).join('') : '<p class="vazio">—</p>'}</div>`;
+})();
+</script>
+</body>
+</html>

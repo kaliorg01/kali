@@ -1075,6 +1075,7 @@
       if (a.status === 'aberta' && a.p1.id === E.eu.id) acoes.push(h('button', { class: 'bt', onclick: async () => { await api('POST', `/apostas/${a.id}/cancelar`).catch((e) => toast(e.message, 'erro')); re(); } }, 'Sair da fila'));
       if (a.canalId && a.status !== 'aberta') acoes.push(h('button', { class: 'bt prim', onclick: () => abrirSalaAposta(a.canalId) }, '💬 Abrir sala'));
       const pagoEu = a.p1?.id === E.eu.id ? a.pago1 : a.p2?.id === E.eu.id ? a.pago2 : null;
+      if (souJog && a.status !== 'aberta') acoes.push(h('button', { class: 'bt', onclick: () => modalDenunciaAposta(a) }, '🚩 Denunciar'));
       if (a.status === 'andamento' && souJog && !pagoEu) acoes.push(h('button', { class: 'bt', onclick: async () => { await api('POST', `/apostas/${a.id}/paguei`).catch((e) => toast(e.message, 'erro')); re(); } }, '✅ Paguei'));
       if (a.status === 'andamento' && (souAdm || d.staff)) {
         acoes.push(h('button', { class: 'bt', onclick: async () => { if (!confirm(`${a.p1.nome} venceu?`)) return; await api('POST', `/apostas/${a.id}/vencedor`, { usuarioId: a.p1.id }).catch((e) => toast(e.message, 'erro')); re(); } }, '🏆 ' + a.p1.nome),
@@ -1107,7 +1108,7 @@
       d.staff && d.minhaChave ? h('div', { class: 'aviso-aposta' }, h('div', {}, h('b', {}, '🛡️ Sua escala'), h('small', {}, `Você apitou ${d.admStats.apitadas} sala(s) · R$ ${d.admStats.volume} passaram pela sua chave.`)),
         h('div', { class: 'abas-painel' }, [['disponivel', '🟢 Disponível'], ['ocupado', '🟡 Ocupado'], ['off', '⚫ Off']].map(([v, t]) => h('button', { class: 'aba-painel' + (d.minhaEscala === v ? ' ativo' : ''), onclick: async () => { await api('PUT', `/servidores/${s.id}/apostas/escala`, { escala: v }).catch((e) => toast(e.message, 'erro')); re(); } }, t)))) : null,
       d.dono && d.ligado ? h('div', { class: 'aviso-aposta' }, h('div', {}, h('b', {}, '💼 Taxa da org'), h('small', {}, 'Porcentagem do pote que fica com a org/adm. Aparece na conta da sala.')),
-        (() => { const t = h('select', { class: 'busca-painel', style: 'flex:0 0 110px' }, [0, 5, 10, 15, 20].map((v) => h('option', { value: v }, v + '%'))); t.value = String(d.taxa); t.onchange = async () => { await api('PUT', `/servidores/${s.id}/apostas/taxa`, { taxa: Number(t.value) }).catch((e) => toast(e.message, 'erro')); toast('💼 Taxa: ' + t.value + '%', 'ok'); }; return t; })()) : null,
+        (() => { const t = h('input', { type: 'number', min: 0, max: 30, step: 1, class: 'busca-painel', style: 'flex:0 0 90px', value: d.taxa, 'aria-label': 'Taxa da org em %' }); const bt = h('button', { class: 'bt prim', onclick: async () => { const v = Math.round(Number(t.value)); if (!(v >= 0 && v <= 30)) return toast('Taxa de 0% a 30%.', 'erro'); try { await api('PUT', `/servidores/${s.id}/apostas/taxa`, { taxa: v }); toast('💼 Taxa da org: ' + v + '%', 'ok'); } catch (e) { toast(e.message, 'erro'); } } }, 'Salvar'); return h('div', { style: 'display:flex;gap:6px;align-items:center' }, t, h('b', {}, '%'), bt); })()) : null,
       !d.ligado ? h('p', { class: 'vazio-painel' }, 'As apostas estão desligadas aqui. Só o dono do servidor liga.') : [
         h('div', { class: 'barra-painel' }, selJogo, selModo, selFmt, valor, h('button', { class: 'bt prim', style: 'padding:9px 18px', onclick: fila }, '🎲 Entrar na fila')),
         h('small', { class: 'conta' }, '🔥 Free Fire · 🎯 Valorant · 🚗 GTA RP — as regras do jogo aparecem na sala quando ela fecha. Modos em time (X4, 5v5): o capitão entra na fila e paga pelo time.'),
@@ -1115,6 +1116,9 @@
         h('div', { class: 'sec-painel' }, h('b', {}, 'Filas abertas'), h('small', {}, '· clica pra enfrentar')),
         abertas.length ? h('div', { class: 'grade-painel' }, abertas.map(card)) : h('p', { class: 'vazio-painel' }, 'Ninguém na fila agora. Entra você!'),
         minhas.length ? [h('div', { class: 'sec-painel' }, h('b', {}, 'Minhas salas'), h('small', {}, '· últimas 24h')), h('div', { class: 'grade-painel' }, minhas.map(card))] : null]));
+    const pg = main.querySelector('.painel.apostas');
+    blocoTorneios(s, d.staff).then((b) => pg && pg.isConnected && pg.append(b));
+    if (s.convite) pg.querySelector('.ao-vivo-apostas')?.append(h('button', { class: 'bt', onclick: () => { const url = location.origin + '/org?c=' + s.convite; navigator.clipboard?.writeText(url).then(() => toast('🔗 Link da página pública copiado', 'ok')).catch(() => window.open(url, '_blank')); } }, '🔗 Página pública'));
   }
   function aoChamadoAposta(d) {
     tocarSom('zap');
@@ -1254,6 +1258,67 @@
         staff ? h('button', { type: 'button', class: 'bt', style: 'margin-left:auto;padding:3px 10px', onclick: async () => { await api('PUT', `/servidores/${s.id}/apostas/blacklist`, { usuario: b.usuario, tirar: true }).catch((e) => toast(e.message, 'erro')); modalBlacklist(s, staff); } }, 'Tirar') : null), h('div', { class: 'rb-txt' }, b.motivo || ''))) : h('p', { class: 'vazio-painel' }, 'Ninguém na blacklist. 🙏')),
       staff ? [h('div', { class: 'sec-menu' }, 'Adicionar'), campo('Usuário', quem), campo('Motivo', motivo)] : null].flat().filter(Boolean),
       botao: staff ? 'Colocar na blacklist' : null, acao: staff ? async () => { await api('PUT', `/servidores/${s.id}/apostas/blacklist`, { usuario: quem.value.trim(), motivo: motivo.value }); toast('⛔ Adicionado na blacklist', 'ok'); } : null });
+  }
+
+  // ---------- torneios por chave ----------
+  async function blocoTorneios(s, staff) {
+    const box = h('div', {});
+    let l = [];
+    try { l = await api('GET', `/servidores/${s.id}/torneios`); } catch (e) { return box; }
+    const novo = staff ? h('button', { class: 'bt', onclick: () => modalNovoTorneio(s) }, '＋ Criar torneio') : null;
+    box.append(h('div', { class: 'sec-painel' }, h('b', {}, 'Torneios'), h('small', {}, '· chaveamento automático'), novo ? h('span', { style: 'margin-left:auto' }, novo) : null),
+      l.length ? h('div', { class: 'grade-painel' }, l.map((t) => {
+        const dentro = t.inscritos.some((i) => i.id === E.eu.id);
+        const st = { inscricoes: ['Inscrições abertas', 'ok'], rolando: ['Rolando', 'vivo'], finalizado: ['Finalizado', 'contorno'] }[t.status];
+        return h('div', { class: 'card-srv card-aposta' + (dentro ? ' sou-jog' : '') },
+          h('div', { class: 'capa capa-torneio' }, h('span', {}, '🏆'), h('small', {}, t.vagas + ' vagas')),
+          h('div', { class: 'info' },
+            h('div', { class: 'linha-topo' }, h('b', {}, t.nome), h('span', { class: 'selos' }, h('span', { class: 'pilula ' + st[1] }, st[0]))),
+            h('p', {}, (t.jogo || 'Torneio') + (t.valor ? ` · inscrição R$ ${t.valor}` : ' · grátis')),
+            h('div', { class: 'conq-barra' }, h('i', { style: `width:${Math.round((t.inscritos.length / t.vagas) * 100)}%` }), h('small', {}, `${t.inscritos.length}/${t.vagas} inscritos`)),
+            t.campeao ? h('div', { class: 'stats' }, h('span', {}, '👑 Campeão: ', h('b', {}, t.campeao.nome))) : null,
+            h('div', { class: 'acoes-aposta' },
+              t.status === 'inscricoes' ? h('button', { class: 'bt' + (dentro ? '' : ' prim'), onclick: async () => { if (!dentro && t.valor && !confirmou18()) return; try { const r = await api('POST', `/torneios/${t.id}/inscrever`); toast(r.entrou ? `🏆 Inscrito no ${t.nome}!${t.valor ? ' Paga a inscrição pro adm.' : ''}` : 'Inscrição cancelada', 'ok'); } catch (e) { toast(e.message, 'erro'); } } }, dentro ? 'Sair' : 'Me inscrever') : null,
+              h('button', { class: 'bt', onclick: () => modalChave(s, t, staff) }, t.status === 'inscricoes' ? '👥 Inscritos' : '🗂️ Ver chave'),
+              staff && t.status === 'inscricoes' ? h('button', { class: 'bt', onclick: async () => { if (!confirm('Fechar inscrições e sortear a chave?')) return; try { const r = await api('POST', `/torneios/${t.id}/iniciar`); modalChave(s, r, staff); } catch (e) { toast(e.message, 'erro'); } } }, '🎲 Sortear chave') : null)));
+      })) : h('p', { class: 'vazio-painel' }, staff ? 'Nenhum torneio ainda. Cria um!' : 'Nenhum torneio aberto agora.'));
+    return box;
+  }
+  function modalNovoTorneio(s) {
+    const nome = h('input', { maxlength: 50, placeholder: 'Ex: Copa Mobilador 3x3' }), jogo = h('input', { maxlength: 60, placeholder: 'Ex: Free Fire · 1x1 · Mobile' });
+    const vagas = h('select', {}, [4, 8, 16].map((v) => h('option', { value: v }, v + ' jogadores/times'))); vagas.value = '8';
+    const valor = h('input', { type: 'number', min: 0, max: 10000, value: 0 });
+    abrirModal({ titulo: '🏆 Novo torneio', sub: 'Quando lotar (ou quando você quiser), sorteia a chave e vai apitando as partidas.', corpo: [campo('Nome', nome), campo('Jogo / modo', jogo), campo('Vagas', vagas), campo('Inscrição (R$, 0 = grátis)', valor)], botao: 'Criar',
+      acao: async () => { await api('POST', `/servidores/${s.id}/torneios`, { nome: nome.value, jogo: jogo.value, vagas: Number(vagas.value), valor: Number(valor.value) || 0 }); toast('🏆 Torneio criado!', 'ok'); if (E.verApostas) renderMain(); } });
+  }
+  function modalChave(s, t, staff) {
+    const rodadas = Math.log2(t.vagas);
+    const nomeRodada = (r) => (r === rodadas ? 'Final' : r === rodadas - 1 ? 'Semifinal' : r === rodadas - 2 ? 'Quartas' : 'Oitavas');
+    let corpo;
+    if (t.status === 'inscricoes') {
+      corpo = h('div', { class: 'lista-busca' }, t.inscritos.length ? t.inscritos.map((i) => h('div', { class: 'res-busca' }, h('div', { class: 'rb-topo' }, h('b', {}, i.nome), h('small', {}, t.valor ? (i.pago ? '✅ pago' : '⏳ não pagou') : ''),
+        staff && t.valor ? h('button', { type: 'button', class: 'bt', style: 'margin-left:auto;padding:3px 10px', onclick: async () => { await api('POST', `/torneios/${t.id}/pago`, { usuarioId: i.id, pago: !i.pago }).catch((e) => toast(e.message, 'erro')); fecharModal(); } }, i.pago ? 'Desmarcar' : 'Confirmar pago') : null))) : h('p', { class: 'vazio-painel' }, 'Ninguém inscrito ainda.'));
+    } else {
+      const porRodada = Array.from({ length: rodadas }, (_, r) => t.partidas.filter((p) => p.rodada === r + 1));
+      corpo = h('div', { class: 'chave-torneio' }, porRodada.map((ps, r) => h('div', { class: 'chave-col' }, h('small', { class: 'chave-tit' }, nomeRodada(r + 1)),
+        Array.from({ length: t.vagas / 2 ** (r + 1) }, (_, i) => {
+          const p = ps.find((x) => x.idx === i) || { a: null, b: null };
+          const lado = (j) => {
+            const ok = p.vencedor && j && p.vencedor === j.id;
+            return h('button', { type: 'button', class: 'chave-jog' + (ok ? ' venceu' : p.vencedor ? ' perdeu' : ''), disabled: !staff || !!p.vencedor || !p.a || !p.b || !j || null,
+              onclick: async () => { if (!confirm(`${j.nome} venceu essa partida?`)) return; try { const nt = await api('POST', `/torneios/${t.id}/partida`, { rodada: r + 1, idx: i, vencedor: j.id }); modalChave(s, nt, staff); } catch (e) { toast(e.message, 'erro'); } } }, j ? j.nome : '—');
+          };
+          return h('div', { class: 'chave-partida' }, lado(p.a), lado(p.b));
+        }))),
+        t.campeao ? h('div', { class: 'chave-col' }, h('small', { class: 'chave-tit' }, 'Campeão'), h('div', { class: 'chave-campeao' }, '👑 ', t.campeao.nome)) : null);
+    }
+    const f = abrirModal({ titulo: '🏆 ' + t.nome, sub: t.status === 'rolando' && staff ? 'Clica no nome de quem venceu cada partida pra avançar a chave.' : (t.jogo || ''), corpo });
+    f.classList.add('modal-chave');
+  }
+  function modalDenunciaAposta(a) {
+    const motivo = h('textarea', { rows: 4, maxlength: 400, placeholder: 'O que aconteceu? Ex.: não pagou, saiu no meio, usou hack, adm sumiu…', style: 'width:100%' });
+    abrirModal({ titulo: '🚩 Denunciar sala #' + a.id, sub: 'Vai direto pro canal #mediadores e pra staff, com os dados da sala.', corpo: motivo, botao: 'Enviar denúncia', perigo: true,
+      acao: async () => { const r = await api('POST', `/apostas/${a.id}/denunciar`, { motivo: motivo.value }); toast('🚩 Denúncia enviada pra ' + r.foiPara, 'ok'); } });
   }
 
   // ---------- render geral ----------
@@ -2579,6 +2644,15 @@
           const cod = codigoDoConvite(codigo.value);
           if (!cod) throw new Error('Cola o código do convite.');
           s = await api('POST', '/convites/' + encodeURIComponent(cod));
+        }
+        if (aba === 'criar' && modelo.value === 'apostas') {
+          try {
+            const ids = [];
+            for (const [n, cor] of [['Free Fire', '#f97316'], ['Valorant', '#ef4444'], ['GTA RP', '#22c55e']]) ids.push((await api('POST', `/servidores/${s.id}/cargos`, { nome: n, cor })).id);
+            const canaisFF = s.canais.filter((c) => /-(mobile|mobilador|emulador|misto)$/.test(c.nome)).map((c) => c.id);
+            await api('PUT', `/cargos/${ids[0]}/canais`, { canalIds: canaisFF });
+            await api('PUT', `/servidores/${s.id}/boas-vindas`, { texto: 'Bem-vindo à org! Escolhe seus jogos pra liberar as filas.', regras: 'Sem golpe: não pagou, blacklist\nRespeita o adm da sala\nPrint de tudo no chat da sala\nProibido hack, macro e painel', cargos: ids });
+          } catch (e) { /* org criada mesmo assim */ }
         }
         adicionarServidor(s);
         E.membros.delete(s.id);
@@ -4213,6 +4287,8 @@
     sock.on('aposta:chamado', aoChamadoAposta);
     sock.on('aposta:fechou', aoFechouAposta);
     sock.on('aposta:fim', telaVitoria);
+    sock.on('torneios:atualizado', (d) => { if (d && d.servidorId === E.servidorId && E.verApostas && !document.querySelector('.modal')) renderMain(); });
+    sock.on('aposta:denuncia', (d) => { if (d && souStaffEm(d.servidorId)) toast(`🚩 ${d.de} denunciou a sala #${d.id} — confere em #mediadores`, 'erro'); });
     sock.on('apostas:atualizado', (d) => { if (!d || d.servidorId !== E.servidorId) return; if (E.verApostas) renderMain(); else document.querySelector('.fila-canal')?._redesenhar?.(); });
     sock.on('voz:atividade', aoAtividade);
     sock.on('voz:pedido-fim', (d) => $('#pedido-' + d.canalId + '-' + d.usuarioId)?.remove());

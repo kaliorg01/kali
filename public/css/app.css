@@ -1610,3 +1610,19 @@ body.terremoto{animation:terremoto .8s cubic-bezier(.36,.07,.19,.97)}
 .tv-caixa p{color:#fff;font-size:18px;margin-bottom:16px}
 .tv-confete{position:absolute;top:-20px;left:var(--x);width:9px;height:14px;background:var(--c);border-radius:2px;animation:confeteCai 2.8s linear var(--d) infinite}
 @keyframes confeteCai{to{transform:translateY(110vh) rotate(720deg)}}
+
+/* ===== Torneios ===== */
+.capa-torneio{flex-direction:column;background:linear-gradient(135deg,#f59e0b,#b45309)!important}
+.capa-torneio span{font-size:34px}.capa-torneio small{font-size:11px;opacity:.9}
+.modal.modal-chave{width:min(980px,100%)}
+.chave-torneio{display:flex;gap:18px;overflow-x:auto;padding:6px 2px 10px}
+.chave-col{display:flex;flex-direction:column;justify-content:space-around;gap:12px;min-width:170px}
+.chave-tit{text-align:center;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--roxo);font-size:10.5px}
+.chave-partida{display:flex;flex-direction:column;border:1px solid var(--borda);border-radius:8px;overflow:hidden;background:var(--chip)}
+.chave-jog{padding:8px 10px;text-align:left;font-size:13px;border-bottom:1px solid var(--borda);transition:background .15s}
+.chave-jog:last-child{border-bottom:0}
+.chave-jog:not(:disabled):hover{background:var(--roxo-suave)}
+.chave-jog.venceu{background:color-mix(in srgb,var(--ok) 18%,transparent);font-weight:700}
+.chave-jog.venceu::after{content:" ✓";color:var(--ok)}
+.chave-jog.perdeu{opacity:.45;text-decoration:line-through}
+.chave-campeao{padding:14px;border-radius:10px;text-align:center;font-weight:800;font-size:16px;background:linear-gradient(135deg,rgba(251,191,36,.25),var(--chip));border:1px solid #fbbf24;box-shadow:0 0 22px rgba(251,191,36,.3)}

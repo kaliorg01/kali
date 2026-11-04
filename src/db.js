@@ -664,6 +664,46 @@ export function rankingApostas(sid, desde = 0) {
 export const resumoAoVivo = (sid) => q("SELECT COUNT(*) AS salas, COALESCE(SUM(valor * 2), 0) AS emJogo FROM apostas WHERE servidor_id = ? AND status = 'andamento'").get(sid);
 export const statsDoAdm = (sid, uid) => q("SELECT COUNT(*) AS apitadas, COALESCE(SUM(valor * 2), 0) AS volume FROM apostas WHERE servidor_id = ? AND adm = ? AND status = 'finalizada'").get(sid, uid);
 export const canalPorNome = (sid, nome) => q("SELECT * FROM canais WHERE servidor_id = ? AND nome = ? AND tipo = 'texto'").get(sid, nome) || null;
+// ---------------------------------------------------------------- torneios por chave (8 ou 16)
+db.exec(`
+CREATE TABLE IF NOT EXISTS torneios (id INTEGER PRIMARY KEY AUTOINCREMENT, servidor_id INTEGER NOT NULL REFERENCES servidores(id) ON DELETE CASCADE,
+  nome TEXT NOT NULL, jogo TEXT, valor INTEGER NOT NULL DEFAULT 0, vagas INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'inscricoes',
+  criado_por INTEGER, campeao INTEGER, criado_em INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS torneio_inscritos (torneio_id INTEGER NOT NULL REFERENCES torneios(id) ON DELETE CASCADE, usuario_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+  pago INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (torneio_id, usuario_id));
+CREATE TABLE IF NOT EXISTS torneio_partidas (torneio_id INTEGER NOT NULL REFERENCES torneios(id) ON DELETE CASCADE, rodada INTEGER NOT NULL, idx INTEGER NOT NULL,
+  a INTEGER, b INTEGER, vencedor INTEGER, PRIMARY KEY (torneio_id, rodada, idx));`);
+export const torneioPorId = (id) => q('SELECT * FROM torneios WHERE id = ?').get(id) || null;
+export const torneiosDoServidor = (sid) => q("SELECT * FROM torneios WHERE servidor_id = ? AND (status != 'finalizado' OR criado_em > ?) ORDER BY id DESC LIMIT 20").all(sid, Date.now() - 7 * 86400000);
+export const criarTorneio = (sid, uid, nome, jogo, valor, vagas) => Number(q('INSERT INTO torneios (servidor_id, nome, jogo, valor, vagas, criado_por, criado_em) VALUES (?, ?, ?, ?, ?, ?, ?)').run(sid, nome, jogo, valor, vagas, uid, Date.now()).lastInsertRowid);
+export const inscritosTorneio = (tid) => q('SELECT usuario_id, pago FROM torneio_inscritos WHERE torneio_id = ?').all(tid);
+export function alternarInscricao(tid, uid) {
+  if (q('SELECT 1 FROM torneio_inscritos WHERE torneio_id = ? AND usuario_id = ?').get(tid, uid)) { q('DELETE FROM torneio_inscritos WHERE torneio_id = ? AND usuario_id = ?').run(tid, uid); return false; }
+  q('INSERT INTO torneio_inscritos (torneio_id, usuario_id) VALUES (?, ?)').run(tid, uid); return true;
+}
+export const marcarPagoTorneio = (tid, uid, pago) => q('UPDATE torneio_inscritos SET pago = ? WHERE torneio_id = ? AND usuario_id = ?').run(pago ? 1 : 0, tid, uid);
+export const partidasTorneio = (tid) => q('SELECT rodada, idx, a, b, vencedor FROM torneio_partidas WHERE torneio_id = ? ORDER BY rodada, idx').all(tid);
+/** Sorteia a chave: rodada 1 com todos os inscritos (vaga vazia = passa direto). */
+export function iniciarTorneio(t) {
+  const ids = inscritosTorneio(t.id).map((r) => r.usuario_id);
+  for (let i = ids.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [ids[i], ids[j]] = [ids[j], ids[i]]; }
+  while (ids.length < t.vagas) ids.push(null);
+  transacao(() => {
+    for (let i = 0; i < t.vagas / 2; i++) q('INSERT INTO torneio_partidas (torneio_id, rodada, idx, a, b) VALUES (?, 1, ?, ?, ?)').run(t.id, i, ids[i * 2], ids[i * 2 + 1]);
+    q("UPDATE torneios SET status = 'rolando' WHERE id = ?").run(t.id);
+  });
+  for (let i = 0; i < t.vagas / 2; i++) { const p = q('SELECT * FROM torneio_partidas WHERE torneio_id = ? AND rodada = 1 AND idx = ?').get(t.id, i); if (!p.a || !p.b) definirVencedorPartida(t, 1, i, p.a || p.b); }
+}
+/** Marca o vencedor e leva ele pra próxima rodada; na final, vira campeão. Devolve o campeão (ou null). */
+export function definirVencedorPartida(t, rodada, idx, vencedor) {
+  q('UPDATE torneio_partidas SET vencedor = ? WHERE torneio_id = ? AND rodada = ? AND idx = ?').run(vencedor, t.id, rodada, idx);
+  const total = Math.log2(t.vagas);
+  if (rodada >= total) { q("UPDATE torneios SET status = 'finalizado', campeao = ? WHERE id = ?").run(vencedor, t.id); return vencedor; }
+  const prox = Math.floor(idx / 2), lado = idx % 2 === 0 ? 'a' : 'b';
+  q('INSERT OR IGNORE INTO torneio_partidas (torneio_id, rodada, idx) VALUES (?, ?, ?)').run(t.id, rodada + 1, prox);
+  q(`UPDATE torneio_partidas SET ${lado} = ? WHERE torneio_id = ? AND rodada = ? AND idx = ?`).run(vencedor, t.id, rodada + 1, prox);
+  return null;
+}
 export const apostasLigadas = (sid) => !!q('SELECT apostas_on FROM servidores WHERE id = ?').get(sid)?.apostas_on;
 export const ligarApostas = (sid, on) => q('UPDATE servidores SET apostas_on = ? WHERE id = ?').run(on ? 1 : 0, sid);
 export const pixDoAdm = (sid, uid) => q('SELECT chave FROM apostas_pix WHERE servidor_id = ? AND usuario_id = ?').get(sid, uid)?.chave || null;

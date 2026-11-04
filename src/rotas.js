@@ -1257,6 +1257,17 @@ export function criarRotas() {
       taxa: db.taxaApostas(s.id), aoVivo: db.resumoAoVivo(s.id), admStats: staff ? db.statsDoAdm(s.id, uid) : null, bloqueado: !!db.naBlacklist(s.id, uid),
       salas: db.apostasDoServidor(s.id, uid).map((a) => apostaPublica(a, uid)) });
   });
+  r.get('/org/:convite', (req, res) => {
+    const codigo = String(req.params.convite || '');
+    const s = RE_CONVITE.test(codigo) ? db.servidorPorConvite(codigo) : null;
+    if (!s) throw erro(404, 'Org não encontrada.');
+    const membros = db.membrosDoServidor(s.id);
+    const adms = db.admsComPix(s.id).filter((id) => db.ehStaff(s.id, id)).map((id) => nomeDe(id)?.nome).filter(Boolean);
+    res.json({ nome: s.nome, convite: s.convite, icone: db.urlImagem('s', s.id, 'icone', s.icone_v), banner: db.urlImagem('s', s.id, 'banner', s.banner_v),
+      membros: membros.length, apostas: db.apostasLigadas(s.id), taxa: db.taxaApostas(s.id), aoVivo: db.resumoAoVivo(s.id), adms,
+      ranking: db.rankingApostas(s.id).slice(0, 10).map((x) => ({ nome: nomeDe(x.id)?.nome, v: x.v, d: x.d, melhor: x.melhor })),
+      torneios: db.torneiosDoServidor(s.id).filter((t) => t.status === 'inscricoes').map((t) => ({ nome: t.nome, jogo: t.jogo, valor: t.valor, vagas: t.vagas, inscritos: db.inscritosTorneio(t.id).length })) });
+  });
   r.get('/servidores/:id/apostas/ranking', exigirLogin, (req, res) => {
     const s = servidorComoMembro(req.usuario.id, idDe(req.params.id));
     const desde = req.query.periodo === 'semana' ? Date.now() - 7 * 86400000 : 0;
@@ -1291,6 +1302,99 @@ export function criarRotas() {
     avisarApostas(s.id);
     res.json({ ok: true });
   });
+  // ---- denúncia ligada à sala: vai pro canal #mediadores e pra staff
+  r.post('/apostas/:id/denunciar', exigirLogin, (req, res) => {
+    const uid = req.usuario.id;
+    const a = db.apostaPorId(idDe(req.params.id));
+    if (!a || ![a.p1, a.p2].includes(uid)) throw erro(404, 'Sala não encontrada.');
+    const motivo = typeof corpoDe(req).motivo === 'string' ? corpoDe(req).motivo.trim().slice(0, 400) : '';
+    if (motivo.length < 5) throw erro(400, 'Conta o que aconteceu (pelo menos 5 letras).');
+    const quem = db.usuarioPorId(uid);
+    const texto = `🚩 DENÚNCIA · sala #${a.id} (${a.jogo || 'aposta'} · R$ ${a.valor})\nDe: ${quem.nome} (@${quem.usuario})\nJogadores: ${db.usuarioPorId(a.p1)?.nome} x ${db.usuarioPorId(a.p2)?.nome} · adm ${db.usuarioPorId(a.adm)?.nome || '—'}\nMotivo: ${motivo}`;
+    const med = db.canalPorNome(a.servidor_id, 'mediadores');
+    if (med) publicarMensagem(med, { autorId: null, sistema: true, texto });
+    const sala = a.canal_id && db.canalPorId(a.canal_id);
+    if (sala) publicarMensagem(sala, { autorId: null, sistema: true, texto: '🚩 ' + quem.nome + ' abriu uma denúncia desta sala. A staff vai analisar.' });
+    db.registrarAuditoria(a.servidor_id, uid, 'denuncia-aposta', null, `sala #${a.id}: ${motivo}`);
+    emitir(`s:${a.servidor_id}`, 'aposta:denuncia', { servidorId: a.servidor_id, id: a.id, de: quem.nome });
+    res.json({ ok: true, foiPara: med ? '#mediadores' : 'registro da staff' });
+  });
+
+  // ---- torneios por chave
+  const torneioPublico = (t) => ({ id: t.id, nome: t.nome, jogo: t.jogo, valor: t.valor, vagas: t.vagas, status: t.status, campeao: nomeDe(t.campeao),
+    inscritos: db.inscritosTorneio(t.id).map((r) => ({ ...nomeDe(r.usuario_id), pago: !!r.pago })),
+    partidas: db.partidasTorneio(t.id).map((p) => ({ ...p, a: nomeDe(p.a), b: nomeDe(p.b) })) });
+  const avisarTorneios = (sid) => emitir(`s:${sid}`, 'torneios:atualizado', { servidorId: sid });
+  r.get('/servidores/:id/torneios', exigirLogin, (req, res) => {
+    const s = servidorComoMembro(req.usuario.id, idDe(req.params.id));
+    res.json(db.torneiosDoServidor(s.id).map(torneioPublico));
+  });
+  r.post('/servidores/:id/torneios', exigirLogin, (req, res) => {
+    const uid = req.usuario.id;
+    const s = servidorComoStaff(uid, idDe(req.params.id));
+    const c = corpoDe(req);
+    const nome = typeof c.nome === 'string' ? c.nome.trim().slice(0, 50) : '';
+    if (nome.length < 3) throw erro(400, 'Dá um nome pro torneio.');
+    const vagas = Number(c.vagas), valor = Number(c.valor || 0);
+    if (![4, 8, 16].includes(vagas)) throw erro(400, 'Vagas: 4, 8 ou 16.');
+    if (!Number.isInteger(valor) || valor < 0 || valor > 10000) throw erro(400, 'Inscrição de R$ 0 a R$ 10.000.');
+    const id = db.criarTorneio(s.id, uid, nome, typeof c.jogo === 'string' ? c.jogo.slice(0, 60) : '', valor, vagas);
+    avisarTorneios(s.id);
+    res.status(201).json(torneioPublico(db.torneioPorId(id)));
+  });
+  r.post('/torneios/:id/inscrever', exigirLogin, (req, res) => {
+    const uid = req.usuario.id;
+    const t = db.torneioPorId(idDe(req.params.id));
+    if (!t) throw erro(404, 'Torneio não encontrado.');
+    servidorComoMembro(uid, t.servidor_id);
+    if (t.status !== 'inscricoes') throw erro(400, 'As inscrições fecharam.');
+    if (db.naBlacklist(t.servidor_id, uid)) throw erro(403, '⛔ Você está na blacklist deste servidor.');
+    const dentro = db.inscritosTorneio(t.id).some((r) => r.usuario_id === uid);
+    if (!dentro && db.inscritosTorneio(t.id).length >= t.vagas) throw erro(400, 'Torneio lotado.');
+    const entrou = db.alternarInscricao(t.id, uid);
+    avisarTorneios(t.servidor_id);
+    res.json({ ok: true, entrou });
+  });
+  r.post('/torneios/:id/pago', exigirLogin, (req, res) => {
+    const uid = req.usuario.id;
+    const t = db.torneioPorId(idDe(req.params.id));
+    if (!t || !db.ehStaff(t.servidor_id, uid)) throw erro(403, 'Só a staff confirma pagamento.');
+    db.marcarPagoTorneio(t.id, Number(corpoDe(req).usuarioId), corpoDe(req).pago !== false);
+    avisarTorneios(t.servidor_id);
+    res.json({ ok: true });
+  });
+  r.post('/torneios/:id/iniciar', exigirLogin, (req, res) => {
+    const uid = req.usuario.id;
+    const t = db.torneioPorId(idDe(req.params.id));
+    if (!t || !db.ehStaff(t.servidor_id, uid)) throw erro(403, 'Só a staff inicia o torneio.');
+    if (t.status !== 'inscricoes') throw erro(400, 'Esse torneio já começou.');
+    if (db.inscritosTorneio(t.id).length < 2) throw erro(400, 'Precisa de pelo menos 2 inscritos.');
+    db.iniciarTorneio(t);
+    const canal = db.canalPorNome(t.servidor_id, 'chat-geral');
+    if (canal) publicarMensagem(canal, { autorId: null, sistema: true, texto: `🏆 O torneio ${t.nome} começou! A chave foi sorteada — confere em Apostas → Torneios.` });
+    avisarTorneios(t.servidor_id);
+    res.json(torneioPublico(db.torneioPorId(t.id)));
+  });
+  r.post('/torneios/:id/partida', exigirLogin, (req, res) => {
+    const uid = req.usuario.id;
+    const t = db.torneioPorId(idDe(req.params.id));
+    if (!t || !db.ehStaff(t.servidor_id, uid)) throw erro(403, 'Só a staff apita o torneio.');
+    if (t.status !== 'rolando') throw erro(400, 'O torneio não está rolando.');
+    const { rodada, idx, vencedor } = corpoDe(req);
+    const p = db.partidasTorneio(t.id).find((x) => x.rodada === rodada && x.idx === idx);
+    if (!p || p.vencedor) throw erro(400, 'Partida inválida ou já decidida.');
+    if (vencedor !== p.a && vencedor !== p.b) throw erro(400, 'O vencedor precisa estar na partida.');
+    const campeao = db.definirVencedorPartida(t, rodada, idx, vencedor);
+    if (campeao) {
+      const n = db.usuarioPorId(campeao).nome;
+      const pote = t.valor * db.inscritosTorneio(t.id).length;
+      for (const nomeCanal of ['hall-da-gloria', 'chat-geral']) { const c = db.canalPorNome(t.servidor_id, nomeCanal); if (c) publicarMensagem(c, { autorId: null, sistema: true, texto: `👑 ${n} é o CAMPEÃO do torneio ${t.nome}!${pote ? ' Pote: R$ ' + pote : ''}` }); }
+      emitir(`u:${campeao}`, 'aposta:fim', { id: t.id, vencedor: n, euVenci: true, premio: pote });
+    }
+    avisarTorneios(t.servidor_id);
+    res.json(torneioPublico(db.torneioPorId(t.id)));
+  });
+
   r.post('/apostas/:id/paguei', exigirLogin, (req, res) => {
     const uid = req.usuario.id;
     const a = db.apostaPorId(idDe(req.params.id));
