@@ -180,6 +180,7 @@ for (const [tabela, coluna, def] of [
   ['usuarios', 'aniv_ano', 'INTEGER'],
   ['servidores', 'automod', 'TEXT'],
   ['servidores', 'automod_cfg', 'TEXT'],
+  ['canais', 'sala_espera', 'INTEGER NOT NULL DEFAULT 0'],
   ['servidores', 'boas_vindas', 'TEXT'],
 ]) {
   if (!db.prepare(`PRAGMA table_info(${tabela})`).all().some((c) => c.name === coluna)) {
@@ -974,6 +975,7 @@ export function serCanal(row) {
     ticket: row.ticket_de ?? null,
     categoria: row.categoria || null,
     modoLento: row.modo_lento || 0,
+    salaEspera: !!row.sala_espera,
     paiCanal: row.pai_canal ?? null,
     paiMsg: row.pai_msg ?? null,
     soStaff: !!row.so_staff,
@@ -981,6 +983,12 @@ export function serCanal(row) {
     forum: !!row.forum,
   };
 }
+export const definirSalaEspera = (id, on) => q('UPDATE canais SET sala_espera = ? WHERE id = ?').run(on ? 1 : 0, id);
+// Push: uma linha por aparelho inscrito.
+db.exec('CREATE TABLE IF NOT EXISTS push_inscricoes (endpoint TEXT PRIMARY KEY, usuario_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE, json TEXT NOT NULL, criado_em INTEGER NOT NULL)');
+export const inscricoesPush = (uid) => q('SELECT endpoint, json FROM push_inscricoes WHERE usuario_id = ?').all(uid);
+export const salvarPush = (uid, sub) => q('INSERT OR REPLACE INTO push_inscricoes (endpoint, usuario_id, json, criado_em) VALUES (?, ?, ?, ?)').run(sub.endpoint, uid, JSON.stringify(sub), Date.now());
+export const removerPush = (endpoint) => q('DELETE FROM push_inscricoes WHERE endpoint = ?').run(endpoint);
 export const configurarCanal = (id, categoria, modoLento) =>
   q('UPDATE canais SET categoria = ?, modo_lento = ? WHERE id = ?').run(categoria, modoLento, id);
 export const definirApelido = (sid, uid, apelido) => q('UPDATE membros SET apelido = ? WHERE servidor_id = ? AND usuario_id = ?').run(apelido, sid, uid);
@@ -1127,12 +1135,17 @@ export const trocarSenha = (uid, hash, salt) => q('UPDATE usuarios SET senha_has
 export const apagarOutrasSessoes = (uid, token) => q('DELETE FROM sessoes WHERE usuario_id = ? AND token != ?').run(uid, String(token || '')).changes;
 export function trocarConvite(sid) { const c = novoConvite(); q('UPDATE servidores SET convite = ? WHERE id = ?').run(c, sid); return c; }
 /** Busca em texto nos canais informados (o chamador já filtrou os que a pessoa enxerga). */
-export function buscarMensagens(canalIds, { termo, de, limite = 25, offset = 0 }) {
+export function buscarMensagens(canalIds, { termo, de, tem, antes, depois, limite = 25, offset = 0 }) {
   if (!canalIds.length) return [];
   const marcas = canalIds.map(() => '?').join(',');
-  const args = [...canalIds, '%' + escLike(termo) + '%', Date.now()];
+  const args = [...canalIds, '%' + escLike(termo || '') + '%', Date.now()];
   let extra = '';
   if (de) { extra = ' AND u.usuario = ?'; args.push(de); }
+  if (tem === 'imagem') extra += " AND m.anexo_tipo LIKE 'image/%'";
+  else if (tem === 'arquivo') extra += ' AND m.anexo_nome IS NOT NULL';
+  else if (tem === 'link') extra += " AND (m.texto LIKE '%http://%' OR m.texto LIKE '%https://%')";
+  if (antes) { extra += ' AND m.criado_em < ?'; args.push(antes); }
+  if (depois) { extra += ' AND m.criado_em >= ?'; args.push(depois); }
   args.push(limite, offset);
   return q(`${SELECT_MSG} WHERE m.canal_id IN (${marcas}) AND m.texto LIKE ? ESCAPE '\\' AND (m.expira_em IS NULL OR m.expira_em > ?)${extra}
             ORDER BY m.id DESC LIMIT ? OFFSET ?`).all(...args);

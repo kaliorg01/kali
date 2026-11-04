@@ -599,6 +599,87 @@
     };
   }
 
+  // ---------- push (notificação com o app fechado) ----------
+  const b64ParaBytes = (b) => { const p = '='.repeat((4 - (b.length % 4)) % 4); const s = atob((b + p).replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from(s, (c) => c.charCodeAt(0)); };
+  async function ativarPush() {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) throw new Error(/iPhone|iPad/i.test(navigator.userAgent) ? 'No iPhone: adiciona a KALI na tela de início (Compartilhar → Adicionar à Tela de Início) e abre por lá.' : 'Seu navegador não suporta notificação push.');
+    if ((await Notification.requestPermission()) !== 'granted') throw new Error('Você bloqueou as notificações. Libera nas configurações do navegador.');
+    const reg = await navigator.serviceWorker.ready;
+    const { chave } = await api('GET', '/push/chave');
+    const sub = (await reg.pushManager.getSubscription()) || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ParaBytes(chave) });
+    await api('POST', '/push/inscrever', { inscricao: sub.toJSON() });
+    salvar('kali-push', '1');
+    await api('POST', '/push/teste');
+  }
+  async function desativarPush() {
+    try { const reg = await navigator.serviceWorker.ready; const sub = await reg.pushManager.getSubscription(); if (sub) { await api('POST', '/push/sair', { endpoint: sub.endpoint }); await sub.unsubscribe(); } } catch (e) {}
+    salvar('kali-push', '');
+  }
+
+  // ---------- sala de espera da call ----------
+  function cardPedidoVoz(d) {
+    if (!souStaffEm(d.servidorId) || $('#pedido-' + d.canalId + '-' + d.usuario.id)) return;
+    const c = acharCanal(d.canalId);
+    const responder = async (aceitar) => { const r = await pedir('voz:aceitar', { canalId: d.canalId, usuarioId: d.usuario.id, aceitar }); if (r.erro) toast(r.erro, 'erro'); card.remove(); };
+    const card = h('div', { class: 'chamada pedido-voz', id: 'pedido-' + d.canalId + '-' + d.usuario.id },
+      h('b', {}, '🚪 ' + (d.usuario.nome || 'Alguém') + ' quer entrar'), h('small', {}, 'Sala de espera · 🔊 ' + (c ? c.nome : 'call')),
+      h('div', { class: 'acoes' }, h('button', { class: 'bt prim', onclick: () => responder(true) }, 'Aceitar'), h('button', { class: 'bt', onclick: () => responder(false) }, 'Recusar')));
+    document.body.append(card);
+    tocarSom('plim');
+    setTimeout(() => card.remove(), 60000);
+  }
+
+  // ---------- status de jogo ----------
+  const jogoDe = (statusTexto) => { const m = /^🎮\s*(?:jogando\s+)?(.+)$/i.exec(statusTexto || ''); return m ? m[1].trim() : null; };
+  async function definirJogo() {
+    const atual = jogoDe(E.eu.statusTexto) || '';
+    const jogo = prompt('🎮 Tá jogando o quê? (vazio = parar)', atual);
+    if (jogo === null) return;
+    try {
+      E.eu = Object.assign(E.eu, await api('PATCH', '/eu', { statusTexto: jogo.trim() ? '🎮 Jogando ' + jogo.trim().slice(0, 60) : '' }));
+      toast(jogo.trim() ? '🎮 Agora todo mundo vê que você tá jogando ' + jogo.trim() : 'Status de jogo removido', 'ok'); renderSide(); renderMembros();
+    } catch (err) { toast(err.message, 'erro'); }
+  }
+  async function chamarPraJogar(u, jogo) {
+    try {
+      await abrirDmCom(u.usuario);
+      const ta = document.querySelector('.caixa textarea');
+      if (ta) { ta.value = `🎮 Bora jogar ${jogo}? Me chama!`; ta.focus(); }
+    } catch (err) { toast(err.message, 'erro'); }
+  }
+
+  // ---------- tela cheia girando no celular ----------
+  function telaCheia(el) {
+    if (!el || !el.requestFullscreen) return;
+    el.requestFullscreen().then(() => { try { screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape').catch(() => {}); } catch (e) {} }).catch(() => {});
+  }
+  document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement) { try { screen.orientation && screen.orientation.unlock && screen.orientation.unlock(); } catch (e) {} } });
+
+  // ---------- tour de boas-vindas (primeira vez) ----------
+  function tourInicial() {
+    if (ler('kali-tour') === '1') return;
+    const passos = [
+      ['👋', 'Bem-vindo à KALI!', 'Aqui é tipo o Discord, só que da galera. Bora num tour de 20 segundos.'],
+      ['▦', 'Painel', 'Na lateral, o Painel mostra todos os seus servidores em cards e quem tá na call agora.'],
+      ['＋', 'Crie ou entre num servidor', 'Use "Criar ou entrar" — dá pra começar com um modelo pronto (FPS, RP, estudo, amigos…).'],
+      ['🎮', 'Status de jogo', 'Clica no seu nome lá embaixo → "Jogando…" e os amigos podem te chamar pra jogar.'],
+      ['⌨️', 'Ctrl + K', 'Pula pra qualquer canal, pessoa ou comando. Digita > pra ver só comandos.'],
+      ['🔔', 'Notificações', 'Em Configurações → Notificações, liga o push pra receber DM e @menção com o app fechado.'],
+    ];
+    let i = 0;
+    const corpo = h('div', { class: 'tour' });
+    const desenhar = () => {
+      const [ic, t, d] = passos[i];
+      corpo.replaceChildren(h('div', { class: 'tour-ic' }, ic), h('h3', {}, t), h('p', {}, d),
+        h('div', { class: 'tour-pontos' }, passos.map((_, j) => h('i', { class: j === i ? 'ativo' : '' }))),
+        h('div', { class: 'acoes' },
+          h('button', { type: 'button', class: 'bt', onclick: () => { salvar('kali-tour', '1'); fecharModal(); } }, 'Pular'),
+          h('button', { type: 'button', class: 'bt prim', onclick: () => { if (++i >= passos.length) { salvar('kali-tour', '1'); fecharModal(); } else desenhar(); } }, i === passos.length - 1 ? 'Começar!' : 'Próximo')));
+    };
+    desenhar();
+    abrirModal({ titulo: 'Tour rápido', corpo });
+  }
+
   // ---------- render geral ----------
   function render() { $('#app').classList.toggle('modo-painel', E.modo === 'painel'); renderRail(); renderSide(); renderMain(); renderMembros(); }
 
@@ -1349,9 +1430,13 @@
     let q = (texto || '').trim(), de = '';
     const md = /(?:^|\s)de:@?([a-z0-9_.]{3,20})/i.exec(q);
     if (md) { de = md[1].toLowerCase(); q = q.replace(md[0], '').trim(); }
-    if (!s || q.length < 2) return toast('Digita pelo menos 2 letras pra buscar.', 'erro');
+    const filtros = [];
+    for (const [re, k] of [[/(?:^|\s)tem:(imagem|link|arquivo)/i, 'tem'], [/(?:^|\s)antes:(\d{4}-\d{2}-\d{2})/i, 'antes'], [/(?:^|\s)depois:(\d{4}-\d{2}-\d{2})/i, 'depois']]) {
+      const mm = re.exec(q); if (mm) { filtros.push(k + '=' + mm[1].toLowerCase()); q = q.replace(mm[0], '').trim(); }
+    }
+    if (!s || (q.length < 2 && !de && !filtros.length)) return toast('Digita 2 letras ou usa um filtro: de:@fulano tem:imagem tem:link antes:2026-11-01', 'erro');
     let d;
-    try { d = await api('GET', `/servidores/${s.id}/busca?q=${encodeURIComponent(q)}${de ? '&de=' + de : ''}&pagina=${pagina}`); } catch (err) { return toast(err.message, 'erro'); }
+    try { d = await api('GET', `/servidores/${s.id}/busca?q=${encodeURIComponent(q)}${de ? '&de=' + de : ''}${filtros.length ? '&' + filtros.join('&') : ''}&pagina=${pagina}`); } catch (err) { return toast(err.message, 'erro'); }
     const res = d.resultados.map((m) => h('button', { type: 'button', class: 'res-busca', onclick: () => { fecharModal(); irPara(m.id, m.canalId); } },
       h('div', { class: 'rb-topo' }, h('b', {}, m.autor ? m.autor.nome : 'KALI'), h('small', {}, '#' + m.canalNome + ' · ' + new Date(m.criadoEm).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }))),
       h('div', { class: 'rb-txt' }, corta(m.texto || '', 220))));
@@ -1503,6 +1588,7 @@
           toast(vigia ? `Não vou mais avisar sobre ${m.nome}.` : `🔔 Te aviso quando ${m.nome} ficar online.`, 'ok');
         } }, vigia ? '🔕 Parar de avisar' : '🔔 Avisar quando ficar online'));
       const s = servidorAtual();
+      if (m.id !== E.eu.id && jogoDe(m.statusTexto)) conteudo.push(h('button', { class: 'bt prim', onclick: () => { fecharMenu(); chamarPraJogar(m, jogoDe(m.statusTexto)); } }, '🎮 Chamar pra jogar ' + jogoDe(m.statusTexto)));
       if (s && E.modo === 'servidor') {
         const meu = nivelDe(s.id, E.eu.id), dele = nivelDe(s.id, m.id);
         if (meu === 4) conteudo.push(h('hr'), ['adm', 'mod', 'membro'].filter((c) => c !== m.cargo).map((c) =>
@@ -1510,7 +1596,9 @@
         if (meu >= 2 && meu > dele) conteudo.push(
           h('button', { class: 'bt', onclick: (e) => abrirMenu(e.currentTarget, [h('div', { style: 'padding:6px 10px;color:var(--fraco);font-size:12px' }, `Castigo pra ${m.nome} (não manda mensagem)`),
             [[1, '1 minuto'], [5, '5 minutos'], [10, '10 minutos'], [60, '1 hora'], [1440, '1 dia'], [10080, '1 semana'], [0, 'Tirar castigo']].map(([min, rot]) => item(rot, async () => {
-              try { await api('POST', `/servidores/${servidorAtual().id}/membros/${m.id}/castigo`, { minutos: min }); toast(min ? `⏳ ${m.nome} de castigo por ${rot}` : `Castigo de ${m.nome} retirado`, 'ok'); } catch (err) { toast(err.message, 'erro'); }
+              const motivo = min ? prompt('Motivo do castigo (opcional, fica no registro):') : '';
+              if (motivo === null) return;
+              try { await api('POST', `/servidores/${servidorAtual().id}/membros/${m.id}/castigo`, { minutos: min, motivo: motivo || '' }); toast(min ? `⏳ ${m.nome} de castigo por ${rot}` : `Castigo de ${m.nome} retirado`, 'ok'); } catch (err) { toast(err.message, 'erro'); }
             }))]) }, '⏳ Castigo'),
           h('button', { class: 'bt', onclick: () => { fecharMenu(); moderar('expulsar', m); } }, '👢 Expulsar'),
           h('button', { class: 'bt perigo', onclick: () => { fecharMenu(); moderar('banir', m); } }, '⛔ Banir'),
@@ -1713,8 +1801,9 @@
     const s = servidorAtual();
     try {
       if (acao === 'expulsar') {
-        if (!confirm(`Expulsar ${m.nome} do servidor?`)) return;
-        await api('DELETE', `/servidores/${s.id}/membros/${m.id}`);
+        const motivo = prompt(`Expulsar ${m.nome}? Motivo (opcional, fica no registro):`);
+        if (motivo === null) return;
+        await api('DELETE', `/servidores/${s.id}/membros/${m.id}?motivo=${encodeURIComponent(motivo.slice(0, 300))}`);
         toast(`👢 ${m.nome} foi expulso.`, 'ok');
       } else if (acao === 'banir') {
         const motivo = prompt(`Banir ${m.nome}? Motivo (opcional):`);
@@ -1809,6 +1898,9 @@
     fps: { nome: '🎯 FPS / competitivo', canais: [['partidas', 'texto'], ['clipes', 'texto'], ['Squad 1', 'voz'], ['Squad 2', 'voz']] },
     rp: { nome: '🎭 RP', canais: [['regras', 'texto'], ['personagens', 'texto'], ['off-rp', 'texto'], ['Cidade', 'voz']] },
     estudo: { nome: '📚 Estudo', canais: [['tarefas', 'texto'], ['duvidas', 'texto'], ['Sala de estudo', 'voz']] },
+    jogo: { nome: '🎮 Comunidade de jogo', canais: [['anuncios', 'texto'], ['regras', 'texto'], ['procurando-time', 'texto'], ['clipes', 'texto'], ['Lobby', 'voz'], ['Ranked', 'voz'], ['Assistir partida', 'assistir']] },
+    streamer: { nome: '📺 Comunidade de streamer', canais: [['avisos-da-live', 'texto'], ['chat-geral', 'texto'], ['clipes-e-cortes', 'texto'], ['sugestoes', 'texto'], ['Sala VIP', 'voz'], ['Watch party', 'assistir']] },
+    trabalho: { nome: '💼 Equipe / trabalho', canais: [['avisos', 'texto'], ['tarefas', 'texto'], ['ideias', 'texto'], ['Reunião', 'voz']] },
   };
   const NOVIDADES = [
     ['🌌', 'Sala 3D', 'Voz com áudio espacial: arrasta seu avatar no mapa.'],
@@ -1966,12 +2058,13 @@
     const [cAnun, lAnun] = marca('📢 Canal de anúncios (só a staff posta)', c.soStaff);
     const [cForum, lForum] = marca('💬 Fórum (cada mensagem vira um post com discussão própria)', c.forum);
     const [cPalco, lPalco] = marca('🎤 Palco (só fala quem a staff der a vez; plateia levanta a mão)', c.palco);
-    const extras = c.tipo === 'voz' ? [lPalco] : c.tipo === 'texto' ? [lAnun, lForum] : [];
+    const [cEspera, lEspera] = marca('🚪 Sala de espera (a staff aceita quem entra na call)', c.salaEspera);
+    const extras = c.tipo === 'voz' ? [lPalco, lEspera] : c.tipo === 'texto' ? [lAnun, lForum] : [];
     abrirModal({ titulo: 'Editar canal', sub: (c.tipo === 'texto' ? '# ' : '') + c.nome, corpo: [cat.campo, campo('🐢 Modo lento (cada pessoa espera entre mensagens)', lento), ...extras,
       c.tipo === 'texto' ? h('button', { type: 'button', class: 'bt', style: 'margin:6px 0 10px', onclick: () => modalWebhooks(c) }, '🤖 Webhooks (bots e alertas)') : null], botao: 'Salvar',
       acao: async () => {
-        await api('PATCH', `/canais/${c.id}/config`, { categoria: cat.input.value.trim(), modoLento: Number(lento.value), soStaff: cAnun.checked, forum: cForum.checked, palco: cPalco.checked });
-        Object.assign(c, { soStaff: c.tipo === 'texto' && cAnun.checked, forum: c.tipo === 'texto' && cForum.checked, palco: c.tipo === 'voz' && cPalco.checked });
+        await api('PATCH', `/canais/${c.id}/config`, { categoria: cat.input.value.trim(), modoLento: Number(lento.value), soStaff: cAnun.checked, forum: cForum.checked, palco: cPalco.checked, ...(c.tipo === 'voz' ? { salaEspera: cEspera.checked } : {}) });
+        Object.assign(c, { salaEspera: c.tipo === 'voz' && cEspera.checked, soStaff: c.tipo === 'texto' && cAnun.checked, forum: c.tipo === 'texto' && cForum.checked, palco: c.tipo === 'voz' && cPalco.checked });
         renderSide(); if (c.id === E.canalId) renderMain();
         toast('Canal atualizado ✓', 'ok');
       } });
@@ -2545,6 +2638,10 @@
           onclick: () => { if (document.documentElement.dataset.theme !== t) alternarTema(); re(); } }, t === 'dark' ? 'Escuro' : 'Claro'))),
         linhaCfg('Cor de destaque', 'Muda botões, seleção e brilhos do app inteiro.', ...[['', 'Azul'], ['rosa', 'Rosa'], ['roxo', 'Roxo'], ['verde', 'Verde']].map(([v, t]) => h('button', { type: 'button', class: 'bt' + ((document.documentElement.dataset.acento || '') === v ? ' prim' : ''),
           onclick: () => { if (v) document.documentElement.dataset.acento = v; else delete document.documentElement.dataset.acento; salvar('kali-acento', v); aplicarTemaServidor(E.modo === 'servidor' ? E.servidorId : null); re(); } }, t))),
+        linhaCfg('Fonte', null, ...[['', 'Padrão'], ['redonda', 'Arredondada'], ['mono', 'Hacker (mono)']].map(([v, t]) => h('button', { type: 'button', class: 'bt' + ((document.documentElement.dataset.fonte || '') === v ? ' prim' : ''),
+          onclick: () => { if (v) document.documentElement.dataset.fonte = v; else delete document.documentElement.dataset.fonte; salvar('kali-fonte', v); re(); } }, t))),
+        linhaCfg('Fundo', 'Só no tema escuro.', ...[['', 'Liso'], ['grade', 'Grade'], ['estrelas', 'Estrelas'], ['aurora', 'Aurora']].map(([v, t]) => h('button', { type: 'button', class: 'bt' + ((document.documentElement.dataset.fundo || '') === v ? ' prim' : ''),
+          onclick: () => { if (v) document.documentElement.dataset.fundo = v; else delete document.documentElement.dataset.fundo; salvar('kali-fundo', v); re(); } }, t))),
         linhaCfg('Modo compacto', 'Mensagens mais juntinhas.', chave(cls('compacto'), () => { alternarAcess('compacto', 'Modo compacto'); re(); })),
       ]],
       ['Acessibilidade', (re) => [
@@ -2552,6 +2649,9 @@
         linhaCfg('Fonte grande', null, chave(cls('fonte-grande'), () => { alternarAcess('fonte-grande', 'Fonte grande'); re(); })),
       ]],
       ['Notificações', (re) => {
+        const pushOn = ler('kali-push') === '1';
+        const linhaPush = linhaCfg('🔔 Notificação com o app fechado', pushOn ? 'Ligada neste aparelho: DM e @menção chegam mesmo com a KALI fechada.' : 'Receba DM e @menção no celular/PC mesmo com a KALI fechada.',
+          h('button', { type: 'button', class: 'bt' + (pushOn ? '' : ' prim'), onclick: async () => { try { if (pushOn) { await desativarPush(); toast('Notificações desligadas', 'ok'); } else { await ativarPush(); toast('🔔 Notificações ligadas! Mandei um teste.', 'ok'); } } catch (e) { toast(e.message, 'erro'); } re(); } }, pushOn ? 'Desligar' : 'Ativar'));
         const som = h('select', {}, Object.entries(SONS).map(([k, r]) => h('option', { value: k }, r)));
         som.value = ler('kali-som') || 'plim';
         som.onchange = () => { salvar('kali-som', som.value); tocarSom(som.value); };
@@ -2695,6 +2795,7 @@
       h('hr'),
       ['online', 'ausente', 'ocupado'].map((x) => item([h('span', { class: 'bolinha ' + STATUS[x][0] }), STATUS[x][1]], () => definir(x))),
       h('hr'),
+      item(jogoDe(E.eu.statusTexto) ? '🎮 Jogando ' + jogoDe(E.eu.statusTexto) + ' (trocar)' : '🎮 Jogando…', definirJogo),
       item('Editar perfil', modalPerfil),
     ]);
   }
@@ -2771,10 +2872,10 @@
       let v = videosTela.get(uid);
       if (!v) { v = h('video', { autoplay: true, playsinline: true }); v.muted = true; videosTela.set(uid, v); }
       if (v.srcObject !== stm) v.srcObject = stm;
-      t.append(v, h('button', { class: 'cheia', title: 'Tela cheia', onclick: (e) => { e.stopPropagation(); t.requestFullscreen && t.requestFullscreen().catch(() => {}); } }, '⛶'));
+      t.append(v, h('button', { class: 'cheia', title: 'Tela cheia', onclick: (e) => { e.stopPropagation(); telaCheia(t); } }, '⛶'));
       t.title = foco ? 'Clica pra voltar pra grade' : 'Clica pra assistir em destaque';
       t.onclick = () => { E.focoTela = foco ? null : uid; atualizarCall(); };
-      t.ondblclick = () => t.requestFullscreen && t.requestFullscreen().catch(() => {});
+      t.ondblclick = () => telaCheia(t);
       t.onkeydown = (e) => { if (e.key === 'Enter') t.onclick(); };
     } else {
       t.append(avatar(u, 'av-call'));
@@ -2894,7 +2995,7 @@
       if (!v) { v = h('video', { autoplay: true, playsinline: true }); v.muted = true; videosTela.set(uid, v); }
       if (v.srcObject !== st) v.srcObject = st;
       return h('div', { class: 'tela' }, v, h('span', {}, '🖥️ ' + nome),
-        h('button', { class: 'icbtn', title: 'Tela cheia', onclick: () => (v.requestFullscreen ? v.requestFullscreen() : null) }, '⛶'));
+        h('button', { class: 'icbtn', title: 'Tela cheia', onclick: () => telaCheia(v) }, '⛶'));
     });
     for (const k of [...videosTela.keys()]) if (!vivos.has(k)) videosTela.delete(k);
     painel.replaceChildren(
@@ -3134,15 +3235,20 @@
     for (const d of E.dms) itens.push({ tipo: 'dm', nome: d.outro.nome, sub: d.grupo ? 'Grupo' : '@' + d.outro.usuario, ir: async () => { if (E.modo !== 'dm') await abrirDms(); E.telaAmigos = false; abrirCanal(d.canalId); } });
     for (const u of E.amigos.amigos) if (!E.dms.some((d) => !d.grupo && d.outro.id === u.id)) itens.push({ tipo: 'amigo', nome: u.nome, sub: '@' + u.usuario, ir: () => abrirDmCom(u.usuario).catch((err) => toast(err.message, 'erro')) });
     for (const s of E.servidores) itens.push({ tipo: 'servidor', nome: s.nome, sub: 'Servidor', ir: () => selecionarServidor(s.id) });
-    const ICS = { canal: '#', voz: '🔊', dm: '@', amigo: '@', servidor: '★' };
-    const inp = h('input', { placeholder: 'Pra onde? (# canal, @ pessoa, * servidor)', 'aria-label': 'Troca rápida' });
+    const jaTem = new Set(itens.filter((i) => i.tipo === 'dm' || i.tipo === 'amigo').map((i) => i.nome));
+    for (const s of E.servidores) for (const m of E.membros.get(s.id) || []) if (m.id !== E.eu.id && !jaTem.has(m.nome)) { jaTem.add(m.nome); itens.push({ tipo: 'pessoa', nome: m.nome, sub: '@' + m.usuario + ' · ' + s.nome, ir: () => abrirDmCom(m.usuario).catch((e) => toast(e.message, 'erro')) }); }
+    for (const [nome, sub, ir] of [['Painel', 'Ir pro painel', abrirPainel], ['Mutar / desmutar', 'Microfone na call', () => Voz.alternarMudo()], ['Ensurdecer', 'Áudio da call', () => Voz.alternarSurdo()], ['Sair da call', 'Desconectar', () => Voz.sair()],
+      ['Configurações', 'Abrir configurações', () => configUsuario()], ['Criar ou entrar em servidor', 'Novo servidor', modalServidor], ['Trocar tema claro/escuro', 'Aparência', alternarTema], ['Status de jogo', 'Jogando…', definirJogo], ['Atalhos', 'Ver atalhos do teclado', modalAtalhos], ['Ativar notificações', 'Push no celular/PC', () => ativarPush().then(() => toast('🔔 Notificações ligadas', 'ok')).catch((e) => toast(e.message, 'erro'))], ['Tour rápido', 'Rever o tour', () => { salvar('kali-tour', ''); tourInicial(); }]])
+      itens.push({ tipo: 'cmd', nome, sub, ir });
+    const ICS = { canal: '#', voz: '🔊', dm: '@', amigo: '@', pessoa: '@', servidor: '★', cmd: '>' };
+    const inp = h('input', { placeholder: 'Pra onde? (# canal, @ pessoa, * servidor, > comando)', 'aria-label': 'Troca rápida' });
     const lista = h('div', { class: 'tr-lista', role: 'listbox' });
     let sel = 0, achados = [];
     const pont = (alvo, q) => { alvo = alvo.toLowerCase(); if (alvo.startsWith(q)) return 3; if (alvo.includes(q)) return 2; let j = 0; for (const ch of alvo) if (ch === q[j]) j++; return j === q.length ? 1 : 0; };
     const desenhar = () => {
       let q = inp.value.trim().toLowerCase(), filtro = null;
-      if (/^[#@*]/.test(q)) { filtro = q[0]; q = q.slice(1).trim(); }
-      achados = itens.filter((it) => !filtro || (filtro === '#' ? ['canal', 'voz'].includes(it.tipo) : filtro === '@' ? ['dm', 'amigo'].includes(it.tipo) : it.tipo === 'servidor'))
+      if (/^[#@*>]/.test(q)) { filtro = q[0]; q = q.slice(1).trim(); }
+      achados = itens.filter((it) => !filtro || (filtro === '#' ? ['canal', 'voz'].includes(it.tipo) : filtro === '@' ? ['dm', 'amigo', 'pessoa'].includes(it.tipo) : filtro === '>' ? it.tipo === 'cmd' : it.tipo === 'servidor'))
         .map((it) => [it, q ? pont(it.nome, q) : 1]).filter(([, p]) => p).sort((a, b) => b[1] - a[1]).slice(0, 9).map(([it]) => it);
       sel = Math.min(sel, Math.max(0, achados.length - 1));
       lista.replaceChildren(...(achados.length ? achados.map((it, k) => h('button', { class: 'tr-item' + (k === sel ? ' sel' : ''), role: 'option', type: 'button', onmousemove: () => { if (sel !== k) { sel = k; desenhar(); } }, onclick: () => escolher(k) },
@@ -3455,6 +3561,14 @@
       renderRail(); if (E.modo === 'dm') renderSide();
     });
     Voz.aoFalarMudo = () => toast('🎙️ Você está mudo! Aperta Ctrl+Shift+M ou o microfone pra falar.', 'erro');
+    sock.on('voz:pedido', cardPedidoVoz);
+    sock.on('voz:pedido-fim', (d) => $('#pedido-' + d.canalId + '-' + d.usuarioId)?.remove());
+    sock.on('voz:resposta', (d) => {
+      const c = acharCanal(d.canalId);
+      if (!d.aceito) return toast('🚪 A staff recusou sua entrada em ' + (c ? c.nome : 'call') + '.', 'erro');
+      toast('✅ Entrada liberada! Entrando…', 'ok');
+      if (c) abrirCanal(c.id);
+    });
     sock.on('voz:membros', ({ canalId, membros }) => {
       const antes = new Set((E.voz.get(canalId) || []).map((m) => m.usuarioId));
       if (canalId === Voz.estado.canalId) {
@@ -3511,6 +3625,7 @@
       return;
     }
     conectar();
+    setTimeout(tourInicial, 900);
     if (await usarConvitePendente()) return;
     const salvo = ler('kali-servidor');
     $('#app').classList.toggle('lateral-mini', ler('kali-lateral-mini') === '1' && innerWidth > 760);

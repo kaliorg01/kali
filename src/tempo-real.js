@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import * as db from './db.js';
+import { enviarPush } from './push.js';
 import { erro, ErroKali } from './db.js';
 import { autenticarSocket, criarLimitador } from './auth.js';
 
@@ -61,6 +62,8 @@ export function entrarSala(usuarioId, sala) {
 export function sairSala(usuarioId, sala) {
   io?.in(`u:${usuarioId}`).socketsLeave(sala);
 }
+// Sala de espera: quem a staff liberou, por canal (vale até o servidor reiniciar).
+const liberadosEspera = new Map();
 export const estaOnline = (uid) => (presenca.get(uid)?.size || 0) > 0;
 export const quantosOnline = () => [...presenca.values()].filter((s) => s.size > 0).length;
 
@@ -202,12 +205,25 @@ export function publicarMensagem(canal, dados) {
   return anunciarMensagem(canal, id);
 }
 
+function avisarPorPush(canal, msg) {
+  if (!msg.autor || msg.sistema) return;
+  const corpo = (msg.texto || (msg.anexo ? '📎 anexo' : '🎤 áudio')).slice(0, 140);
+  let alvos = [];
+  if (canal.tipo === 'dm') alvos = db.participantesDm(canal.id).filter((u) => u !== msg.autor.id).map((u) => [u, msg.autor.nome, corpo]);
+  else if (canal.servidor_id != null) {
+    const nomes = [...new Set([...(msg.texto || '').matchAll(/@([a-z0-9_.]{3,20})/gi)].map((m) => m[1].toLowerCase()))].slice(0, 10);
+    for (const n of nomes) { const u = db.usuarioPorNome(n); if (u && u.id !== msg.autor.id && db.ehMembro(canal.servidor_id, u.id)) alvos.push([u.id, msg.autor.nome + ' em #' + canal.nome, corpo]); }
+  }
+  for (const [u, titulo, txt] of alvos) if (!estaOnline(u)) enviarPush(u, { titulo, corpo: txt, url: '/', tag: 'c' + canal.id }).catch(() => {});
+}
+
 /** Emite msg:nova de uma mensagem já gravada, agenda a expiração e dá XP ao autor. */
 export function anunciarMensagem(canal, id) {
   const msg = db.mensagemCompleta(id);
   emitir(salaDoCanal(canal), 'msg:nova', msg);
   if (msg.expiraEm) agendarExpiracao(id, msg.expiraEm);
   if (canal.servidor_id != null && msg.autor) xpPorMensagem(msg.autor.id, canal.servidor_id);
+  try { avisarPorPush(canal, msg); } catch { /* push nunca derruba a mensagem */ }
   return msg;
 }
 
@@ -731,6 +747,17 @@ function aoConectar(socket) {
   });
 
   // ---------------- voz
+  ouvir(socket, 'voz:aceitar', (d) => {
+    exigirObjeto(d);
+    const canal = db.canalPorId(exigirId(d.canalId, 'Canal'));
+    const alvo = exigirId(d.usuarioId, 'Usuário');
+    if (!canal || canal.servidor_id == null || !db.ehStaff(canal.servidor_id, uid)) throw erro(403, 'Só a staff aceita pedidos da sala de espera.');
+    if (d.aceitar !== false) { if (!liberadosEspera.has(canal.id)) liberadosEspera.set(canal.id, new Set()); liberadosEspera.get(canal.id).add(alvo); }
+    emitir(`u:${alvo}`, 'voz:resposta', { canalId: canal.id, aceito: d.aceitar !== false });
+    emitir(`s:${canal.servidor_id}`, 'voz:pedido-fim', { canalId: canal.id, usuarioId: alvo });
+    return { ok: true };
+  });
+
   ouvir(socket, 'voz:entrar', (d) => {
     exigirObjeto(d);
     const canalId = exigirId(d.canalId, 'Canal');
@@ -738,6 +765,11 @@ function aoConectar(socket) {
     if (!existe || existe.tipo !== 'voz') throw erro(404, 'Canal de voz não encontrado.');
     const canal = db.acessarCanal(uid, canalId); // membro + canal privado/por cargo
     db.exigirSemCastigo(canal, uid);
+    if (canal.sala_espera && canal.servidor_id != null && !db.ehStaff(canal.servidor_id, uid) && !(liberadosEspera.get(canalId)?.has(uid))) {
+      const u = db.usuarioPorId(uid);
+      emitir(`s:${canal.servidor_id}`, 'voz:pedido', { canalId, servidorId: canal.servidor_id, usuario: { id: uid, nome: u?.nome, usuario: u?.usuario } });
+      return { espera: true };
+    }
     const atual = vozDoUsuario.get(uid);
     if (atual) {
       const anterior = voz.get(atual)?.get(uid);

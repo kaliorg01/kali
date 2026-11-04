@@ -387,6 +387,7 @@
         throw new Error('Não consegui acessar seu microfone. Libera a permissão no navegador.');
       }
       const r = await pedir('voz:entrar', { canalId: id });
+      if (r.espera) { local.getTracks().forEach((t) => t.stop()); local = null; throw new Error('🚪 Sala de espera: pedido enviado! Assim que a staff aceitar, você entra sozinho.'); }
       if (r.erro) { local.getTracks().forEach((t) => t.stop()); local = null; throw new Error(r.erro); }
       canalId = id;
       aplicarTrack();

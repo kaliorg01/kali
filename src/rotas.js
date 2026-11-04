@@ -18,6 +18,7 @@ import { publicarMensagem, caminhoAnexo, pareceGolpe, respostaValida, quantosOnl
 } from './tempo-real.js';
 import { gerarResumo } from './resumo.js';
 import { buscarSeguro, previaDe } from './previa.js';
+import * as push from './push.js';
 
 const RE_USUARIO = /^[a-z0-9_.]{3,20}$/;
 const RE_CANAL_TEXTO = /^[a-z0-9-]{1,30}$/;
@@ -383,7 +384,8 @@ export function criarRotas() {
     const s = servidorComoStaff(uid, idDe(req.params.id));
     const alvo = idDe(req.params.uid);
     if (alvoModeravel(uid, s.id, alvo) === 0) throw erro(404, 'Essa pessoa não está no servidor.');
-    db.registrarAuditoria(s.id, uid, 'expulsar', db.usuarioPorId(alvo)?.nome);
+    const motivo = typeof req.query.motivo === 'string' ? req.query.motivo.trim().slice(0, 300) : '';
+    db.registrarAuditoria(s.id, uid, 'expulsar', db.usuarioPorId(alvo)?.nome, motivo || null);
     expulsar(s, alvo);
     res.json({ ok: true });
   });
@@ -524,13 +526,16 @@ export function criarRotas() {
     const uid = req.usuario.id;
     const s = servidorComoMembro(uid, idDe(req.params.id));
     const termo = typeof req.query.q === 'string' ? req.query.q.trim().slice(0, 100) : '';
-    if (termo.length < 2) throw erro(400, 'Digita pelo menos 2 letras pra buscar.');
     const de = typeof req.query.de === 'string' && /^[a-z0-9_.]{3,20}$/.test(req.query.de) ? req.query.de : null;
+    const tem = ['imagem', 'link', 'arquivo'].includes(req.query.tem) ? req.query.tem : null;
+    const data = (v) => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) ? Date.parse(v + 'T00:00:00-03:00') || null : null);
+    const antes = data(req.query.antes), depois = data(req.query.depois);
+    if (termo.length < 2 && !de && !tem && !antes && !depois) throw erro(400, 'Digita pelo menos 2 letras (ou usa um filtro) pra buscar.');
     const pagina = typeof req.query.pagina === 'string' && /^\d{1,3}$/.test(req.query.pagina) ? Number(req.query.pagina) : 0;
     const visiveis = servidorCompleto(s, uid).canais.filter((c) => c.tipo !== 'voz').map((c) => c.id)
       .filter((cid) => { try { db.acessarCanal(uid, cid); return true; } catch { return false; } });
     const nomes = new Map(servidorCompleto(s, uid).canais.map((c) => [c.id, c.nome]));
-    const linhas = db.buscarMensagens(visiveis, { termo, de, limite: 26, offset: pagina * 25 });
+    const linhas = db.buscarMensagens(visiveis, { termo, de, tem, antes, depois, limite: 26, offset: pagina * 25 });
     res.json({ mais: linhas.length > 25, resultados: db.serMensagens(linhas.slice(0, 25)).map((m) => ({ ...m, canalNome: nomes.get(m.canalId) || '' })) });
   });
 
@@ -1130,6 +1135,7 @@ export function criarRotas() {
     const modoLento = c.modoLento === undefined ? canal.modo_lento : c.modoLento;
     if (!MODO_LENTO.includes(modoLento)) throw erro(400, 'Tempo de modo lento inválido.');
     db.configurarCanal(canal.id, categoria, modoLento);
+    if (c.salaEspera !== undefined && canal.tipo === 'voz') db.definirSalaEspera(canal.id, !!c.salaEspera);
     if (c.soStaff !== undefined || c.palco !== undefined || c.forum !== undefined) {
       db.configurarCanalExtra(canal.id, c.soStaff === undefined ? canal.so_staff : !!c.soStaff, c.palco === undefined ? canal.palco : !!c.palco && canal.tipo === 'voz', c.forum === undefined ? canal.forum : !!c.forum && canal.tipo === 'texto');
     }
@@ -1150,6 +1156,17 @@ export function criarRotas() {
     emitir(`s:${s.id}`, 'cargos:atualizado', { servidorId: s.id });
     res.json({ ok: true, apelido: apelido || null });
   });
+
+  // ------------------------------------------------------------ push (notificação com o app fechado)
+  r.get('/push/chave', exigirLogin, (req, res) => res.json({ chave: push.chavePublica() }));
+  r.post('/push/inscrever', exigirLogin, (req, res) => {
+    const sub = corpoDe(req).inscricao;
+    if (!sub || typeof sub.endpoint !== 'string' || !/^https:\/\//.test(sub.endpoint) || sub.endpoint.length > 600 || !sub.keys || typeof sub.keys.p256dh !== 'string' || typeof sub.keys.auth !== 'string') throw erro(400, 'Inscrição inválida.');
+    db.salvarPush(req.usuario.id, { endpoint: sub.endpoint, keys: { p256dh: sub.keys.p256dh.slice(0, 200), auth: sub.keys.auth.slice(0, 100) } });
+    res.json({ ok: true });
+  });
+  r.post('/push/sair', exigirLogin, (req, res) => { const e = corpoDe(req).endpoint; if (typeof e === 'string') db.removerPush(e); res.json({ ok: true }); });
+  r.post('/push/teste', exigirLogin, async (req, res) => { await push.enviarPush(req.usuario.id, { titulo: 'KALI', corpo: '🔔 Notificações ligadas! É assim que vai chegar.', url: '/' }); res.json({ ok: true }); });
 
   // ------------------------------------------------------------ AutoMod (palavras bloqueadas)
   r.get('/servidores/:id/automod', exigirLogin, (req, res) => {
@@ -1214,7 +1231,8 @@ export function criarRotas() {
     if (![0, 1, 5, 10, 60, 1440, 10080].includes(min)) throw erro(400, 'Tempo de castigo inválido.');
     const ate = min ? Date.now() + min * 60e3 : null;
     db.castigar(s.id, alvo, ate);
-    db.registrarAuditoria(s.id, uid, 'castigo', db.usuarioPorId(alvo)?.nome, ate ? 'até ' + new Date(ate).toLocaleString('pt-BR') : 'tirou o castigo');
+    const motivoC = typeof corpoDe(req).motivo === 'string' ? corpoDe(req).motivo.trim().slice(0, 300) : '';
+    db.registrarAuditoria(s.id, uid, 'castigo', db.usuarioPorId(alvo)?.nome, (ate ? 'até ' + new Date(ate).toLocaleString('pt-BR') : 'tirou o castigo') + (motivoC ? ' · motivo: ' + motivoC : ''));
     emitir(`u:${alvo}`, 'castigo', { servidor: s.nome, ate });
     res.json({ ok: true, ate });
   });
