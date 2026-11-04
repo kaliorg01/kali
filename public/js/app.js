@@ -422,14 +422,32 @@
     const nDm = E.dms.reduce((t, d) => t + (E.naoLidos[d.canalId] || 0), 0);
     const nav = (ic, rot, fn, ativo, n) => h('button', { class: 'nav-painel' + (ativo ? ' ativo' : ''), onclick: fn },
       h('span', { class: 'ic' }, ic), h('span', { class: 'nm' }, rot), n ? h('span', { class: 'n' }, n > 99 ? '99+' : n) : null);
-    return [h('div', { class: 'side-topo' }, h('span', {}, 'KALI')),
-      h('div', { class: 'side-corpo' },
-        nav('▦', 'Painel', abrirPainel, true),
-        nav('💬', 'Mensagens', abrirDms, false, nDm),
-        nav('👋', 'Amigos', abrirAmigos, false, E.amigos.recebidos.length),
-        nav('＋', 'Criar ou entrar', modalServidor),
+    void nDm;
+    return [h('div', { class: 'side-corpo' },
+        h('div', { class: 'rot' }, 'Geral'),
         nav('⌨️', 'Atalhos', modalAtalhos),
         nav('⚙️', 'Configurações', () => configUsuario()))];
+  }
+  // Menu fixo do topo da lateral (substitui o trilho de bolinhas do Discord): ícone + nome, item ativo com barrinha.
+  function navLateral() {
+    const nDm = E.dms.reduce((t, d) => t + (E.naoLidos[d.canalId] || 0), 0);
+    const nav = (ic, rot, fn, ativo, n, cls) => h('button', { class: 'nav-painel' + (ativo ? ' ativo' : '') + (cls ? ' ' + cls : ''), onclick: fn },
+      ic, h('span', { class: 'nm' }, rot), n ? h('span', { class: 'n' }, n > 99 ? '99+' : n) : null);
+    const ic = (t) => h('span', { class: 'ic' }, t);
+    const srvs = E.servidores.map((sv) => {
+      const b = nav(h('span', { class: 'ic ic-srv' }, sv.icone ? h('img', { src: sv.icone, alt: '' }) : (sv.sigla || inicial(sv.nome)).slice(0, 2)), sv.nome,
+        () => selecionarServidor(sv.id), E.modo === 'servidor' && sv.id === E.servidorId, naoLidosServidor(sv));
+      aoSegurar(b, (x, y) => menuServidorEm(sv, x, y));
+      return b;
+    });
+    return h('nav', { class: 'nav-lateral', 'aria-label': 'Navegação' },
+      h('div', { class: 'marca' }, logo(), h('b', {}, 'KALI')),
+      nav(ic('▦'), 'Painel', abrirPainel, E.modo === 'painel'),
+      nav(ic('💬'), 'Mensagens', abrirDms, E.modo === 'dm' && !E.telaAmigos, nDm),
+      nav(ic('👋'), 'Amigos', abrirAmigos, E.modo === 'dm' && E.telaAmigos, E.amigos.recebidos.length),
+      h('div', { class: 'rot' }, 'Servidores'),
+      h('div', { class: 'lista-srv' }, srvs),
+      nav(ic('＋'), 'Criar ou entrar', modalServidor, false, 0, 'nav-add'));
   }
   function renderPainel(main) {
     const filtro = E.filtroPainel || 'todos', termo = (E.buscaPainel || '').toLowerCase();
@@ -497,6 +515,7 @@
     }
     itens.push(h('button', { class: 'srv add', title: 'Criar ou entrar em servidor', onclick: modalServidor }, '+'));
     rail.replaceChildren(...itens);
+    const navVelho = document.querySelector('.nav-lateral'); if (navVelho) navVelho.replaceWith(navLateral()); // badges da lateral acompanham o trilho
     atualizarTitulo();
   }
 
@@ -572,7 +591,8 @@
   function renderSide() {
     const side = $('#side');
     const partes = [];
-    if (E.modo === 'painel') return side.replaceChildren(...sidePainel());
+    const topoNav = navLateral();
+    if (E.modo === 'painel') return side.replaceChildren(topoNav, ...sidePainel());
     if (E.modo === 'dm') {
       partes.push(h('div', { class: 'side-topo topo-busca' }, h('button', { class: 'achar-conversa', onclick: modalNovaDm }, 'Encontre ou comece uma conversa')));
       // Igual ao Discord: Amigos e Loja no topo, depois "Mensagens diretas ＋".
@@ -673,7 +693,7 @@
       h('button', { class: 'icbtn' + (ev.mudo ? ' desligado' : ''), title: ev.mudo ? 'Ativar microfone' : 'Silenciar microfone', 'aria-pressed': String(!!ev.mudo), onclick: () => Voz.alternarMudo() }, ic(ev.mudo ? 'micOff' : 'mic')),
       h('button', { class: 'icbtn' + (ev.surdo ? ' desligado' : ''), title: ev.surdo ? 'Ativar áudio' : 'Desativar áudio', 'aria-pressed': String(!!ev.surdo), onclick: () => Voz.alternarSurdo() }, ic(ev.surdo ? 'foneOff' : 'fone')),
       h('button', { class: 'icbtn', title: 'Configurações', onclick: () => configUsuario() }, ic('engrenagem')))));
-    side.replaceChildren(...partes);
+    side.replaceChildren(topoNav, ...partes);
   }
 
   function renderMain() {
