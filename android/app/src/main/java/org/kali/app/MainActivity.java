@@ -22,7 +22,8 @@ import android.webkit.WebViewClient;
 public class MainActivity extends Activity {
     static MainActivity atual;
     private static final int REQ_TELA = 1, REQ_PERM = 2, REQ_ARQ = 3, REQ_AVISO = 4;
-    private static final String ENDERECO = "https://kaliorg01.github.io/kali/";
+    // Endereço do servidor da KALI: vem do build (variável KALI_URL no GitHub Actions ou -PkaliUrl=...).
+    private static final String ENDERECO = BuildConfig.KALI_URL;
 
     private WebView web;
     private PermissionRequest pedidoPendente;

@@ -1611,6 +1611,20 @@ body.terremoto{animation:terremoto .8s cubic-bezier(.36,.07,.19,.97)}
 .tv-confete{position:absolute;top:-20px;left:var(--x);width:9px;height:14px;background:var(--c);border-radius:2px;animation:confeteCai 2.8s linear var(--d) infinite}
 @keyframes confeteCai{to{transform:translateY(110vh) rotate(720deg)}}
 
+/* ===== Modo leve (padrão): corta o que pesa em celular/PC fraco ===== */
+:root[data-leve] .efeito-perfil,:root[data-leve] .rastro,:root[data-leve] .marca-efeito{display:none!important}
+:root[data-leve] .banner-vivo,:root[data-leve] .menu-perfil .banner-perfil::after,:root[data-leve] .conquista.ok::after,:root[data-leve] .conquista.ok .conq-ic,
+:root[data-leve] .jogando-ic,:root[data-leve] .neb,:root[data-leve] .tv-confete,:root[data-leve] .versus i,:root[data-leve] .fc-valor.minha,
+:root[data-leve] .nome-dono,:root[data-leve] .nome-cargo-animado,:root[data-leve] .tx-arcoiris,:root[data-leve] .tx-neon{animation:none!important}
+:root[data-leve] .conquista.r-lendario.ok{animation:conqEntra .45s both!important}
+:root[data-leve] body.terremoto{animation:none!important}
+/* progresso */
+.prog{display:flex;flex-direction:column;gap:8px}
+.prog-bloco{display:flex;align-items:center;gap:12px;padding:12px;border-radius:10px;background:var(--chip);border:1px solid var(--borda)}
+.prog-bloco>div{flex:1;min-width:0;display:flex;flex-direction:column}
+.prog-bloco small{color:var(--fraco);font-size:11.5px}.prog-bloco b{font-size:17px}
+.prog-ic{font-size:26px;width:44px;height:44px;display:grid;place-items:center;border-radius:10px;background:var(--roxo-suave)}
+
 /* ===== Torneios ===== */
 .capa-torneio{flex-direction:column;background:linear-gradient(135deg,#f59e0b,#b45309)!important}
 .capa-torneio span{font-size:34px}.capa-torneio small{font-size:11px;opacity:.9}

@@ -462,10 +462,26 @@
       nav(icn('mais'), 'Criar ou entrar', modalServidor, false, 0, 'nav-add'));
   }
   // Menu "Mais": o que é usado de vez em quando sai da lateral.
+  // Progresso num lugar só: nível/missão do servidor, conquistas e apostas.
+  async function modalProgresso() {
+    const s = servidorAtual() || servidoresOrdenados()[0];
+    const [conq, mis, rk] = await Promise.all([
+      api('GET', `/usuarios/${E.eu.id}/conquistas`).catch(() => null),
+      s ? api('GET', `/servidores/${s.id}/missoes`).catch(() => null) : null,
+      s ? api('GET', `/servidores/${s.id}/apostas/ranking`).catch(() => []) : []]);
+    const eu = (rk || []).find((x) => x.id === E.eu.id);
+    const pos = eu ? rk.indexOf(eu) + 1 : null;
+    const bloco = (ic, tit, valor, sub, bt) => h('div', { class: 'prog-bloco' }, h('span', { class: 'prog-ic' }, ic), h('div', {}, h('small', {}, tit), h('b', {}, valor), sub ? h('small', {}, sub) : null), bt);
+    abrirModal({ titulo: '🏅 Meu progresso', sub: s ? 'No servidor ' + s.nome : null, corpo: h('div', { class: 'prog' },
+      mis ? bloco('⭐', 'Nível no servidor', 'Nível ' + mis.nivel, `${mis.xp}/${mis.proximoNivelXp} XP`, s ? h('button', { type: 'button', class: 'bt', onclick: () => modalRanking(s.id) }, 'Ranking') : null) : null,
+      conq ? bloco('🏆', 'Conquistas', `${conq.conquistas.filter((c) => c.ok).length}/${conq.conquistas.length}`, `⚡ ${conq.pontos} pontos`, h('button', { type: 'button', class: 'bt', onclick: () => perfilCompleto(E.eu) }, 'Ver todas')) : null,
+      s ? bloco('🎲', 'Apostas', eu ? `${eu.v}V ${eu.d}D` : 'Sem apostas', eu ? `${eu.pct}% · ${pos}º no ranking · 🔥${eu.melhor} seguidas` : 'Entra numa fila pra aparecer aqui', h('button', { type: 'button', class: 'bt', onclick: () => modalRankingApostas(s) }, 'Ranking')) : null) });
+  }
   function menuMais(ancora) {
     const temSrv = E.servidores.length > 0;
     abrirMenu(ancora, [h('div', { class: 'sec-menu' }, 'Mais'),
-      temSrv ? item([ic('trofeu', 16), ' Ranking, missão e visão geral'], () => abrirVisao(E.servidorId || servidoresOrdenados()[0].id)) : null,
+      item([ic('trofeu', 16), ' Meu progresso'], modalProgresso),
+      temSrv ? item([ic('trofeu', 16), ' Visão geral do servidor'], () => abrirVisao(E.servidorId || servidoresOrdenados()[0].id)) : null,
       item([ic('relogio', 16), ' Meus lembretes'], () => modalLembretes()),
       item([ic('teclado', 16), ' Atalhos do teclado'], modalAtalhos),
       item([ic('engrenagem', 16), ' Configurações'], () => configUsuario()),
@@ -708,7 +724,7 @@
     const ef = u && u.vitrine && u.vitrine.efeito;
     if (ef === 'aura') return h('div', { class: 'aura-anel', 'aria-hidden': 'true' }, h('i'), h('i'));
     if (ef === 'holo' || ef === 'glitch') return h('div', { class: 'marca-efeito efeito-' + ef, 'aria-hidden': 'true' });
-    if (!ef || !PARTICULA[ef]) return null;
+    if (!ef || !PARTICULA[ef] || document.documentElement.hasAttribute('data-leve')) return null;
     return h('div', { class: 'efeito-perfil efeito-' + ef, 'aria-hidden': 'true' }, Array.from({ length: 12 }, (_, i) => h('i', { style: `--i:${i};--x:${(i * 37) % 100}%` }, PARTICULA[ef])));
   }
 
@@ -1112,7 +1128,7 @@
   }
   const RE_SO_EMOJI = /^(?:\p{Extended_Pictographic}(?:️|‍\p{Extended_Pictographic})*\s*){1,3}$/u;
   function chuvaEmoji(texto) {
-    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches || document.documentElement.hasAttribute('data-leve')) return;
     const lista = [...texto.matchAll(/\p{Extended_Pictographic}(?:️|‍\p{Extended_Pictographic})*/gu)].map((m) => m[0]);
     if (!lista.length) return;
     const camada = h('div', { class: 'camada-efeito', 'aria-hidden': 'true' });
@@ -1895,7 +1911,7 @@
         }) : null,
         item('Encaminhar', () => bEnc.click()),
         item('Me lembra disso', () => bLembrar.click()),
-        m.texto ? item('🌐 Traduzir', () => traduzir(m, document.querySelector(`.msg[data-id="${m.id}"] .texto`) || document.querySelector(`.msg[data-id="${m.id}"]`))) : null,
+        m.texto && !/\b(que|não|nao|pra|você|voce|com|uma|tá|ta|eu|de|é)\b/i.test(m.texto) ? item('🌐 Traduzir', () => traduzir(m, document.querySelector(`.msg[data-id="${m.id}"] .texto`) || document.querySelector(`.msg[data-id="${m.id}"]`))) : null,
         m.anexo && /^image\//.test(m.anexo.tipo || '') ? item(gifsFav().some((g) => g.url === m.anexo.url) ? '⭐ Tirar dos favoritos' : '⭐ Salvar nos favoritos (GIF/imagem)', () => alternarFav(m.anexo)) : null,
         m.texto ? item('Copiar texto', () => { navigator.clipboard?.writeText(m.texto).then(() => toast('Texto copiado ✓', 'ok')).catch(() => {}); }) : null,
         !minha && s ? item('Denunciar mensagem', () => modalDenuncia(m)) : null,
@@ -3309,6 +3325,11 @@
         linhaCfg('Fundo', 'Só no tema escuro.', ...[['', 'Liso'], ['grade', 'Grade'], ['estrelas', 'Estrelas'], ['aurora', 'Aurora']].map(([v, t]) => h('button', { type: 'button', class: 'bt' + ((document.documentElement.dataset.fundo || '') === v ? ' prim' : ''),
           onclick: () => { if (v) document.documentElement.dataset.fundo = v; else delete document.documentElement.dataset.fundo; salvar('kali-fundo', v); re(); } }, t))),
         linhaCfg('Rastro do mouse', 'Faíscas na cor de destaque seguindo o mouse.', chave(ler('kali-rastro') === '1', () => { salvar('kali-rastro', ler('kali-rastro') === '1' ? '' : '1'); re(); })),
+        linhaCfg('✨ Efeitos completos', document.documentElement.hasAttribute('data-leve') ? 'Desligado (modo leve): sem partículas, brilhos, glitch e 3D. Melhor pra celular e PC fraco.' : 'Ligado: todas as animações e efeitos.', chave(!document.documentElement.hasAttribute('data-leve'), () => {
+          const on = document.documentElement.hasAttribute('data-leve');
+          if (on) document.documentElement.removeAttribute('data-leve'); else document.documentElement.setAttribute('data-leve', '');
+          salvar('kali-efeitos', on ? '1' : ''); re(); toast(on ? '✨ Efeitos completos ligados (recarrega pra ligar o 3D)' : '🍃 Modo leve ligado', 'ok');
+        })),
         linhaCfg('Modo compacto', 'Mensagens mais juntinhas.', chave(cls('compacto'), () => { alternarAcess('compacto', 'Modo compacto'); re(); })),
       ]],
       ['Acessibilidade', (re) => [

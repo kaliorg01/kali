@@ -10,9 +10,14 @@ android {
         applicationId 'org.kali.app'
         minSdk 24
         targetSdk 34
-        versionCode 1
-        versionName '1.0'
+        versionCode Integer.parseInt(System.getenv('VERSAO_APP') ?: '1')
+        versionName '1.' + (System.getenv('VERSAO_APP') ?: '0')
+        def url = (project.findProperty('kaliUrl') ?: System.getenv('KALI_URL') ?: 'https://kaliorg01.github.io/kali/').toString()
+        if (!url.endsWith('/')) url += '/'
+        buildConfigField 'String', 'KALI_URL', '"' + url + '"'
     }
+
+    buildFeatures { buildConfig true }
 
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17

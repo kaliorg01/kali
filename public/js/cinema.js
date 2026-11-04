@@ -144,10 +144,11 @@
     }).observe(document.body, { childList: true });
   }
 
-  window.KaliCinema = { vitoria, transicao, tocar, intro: () => { try { localStorage.removeItem('kali-intro-dia'); } catch (e) {} intro(); } };
-  intro();
+  window.KaliCinema = { vitoria, transicao, tocar };
+  void intro; // a intro foi tirada a pedido; fica só a função caso volte um dia
   let iniciado = false;
   // a vitória das apostas vem pelo evento 'aposta:fim' do app (telaVitoria chama KaliCinema.vitoria); não lê mais o chat
-  const iniciar = () => { if (iniciado) return; iniciado = true; vigiarTitulo(); tilt(); vigiarModais(); void vigiarVitorias; };
+  const leve = () => document.documentElement.hasAttribute('data-leve');
+  const iniciar = () => { if (iniciado) return; iniciado = true; if (!leve()) { vigiarTitulo(); tilt(); } vigiarModais(); void vigiarVitorias; };
   if (document.readyState === 'loading') addEventListener('DOMContentLoaded', iniciar); else iniciar();
 })();
