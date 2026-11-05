@@ -150,7 +150,8 @@
   // Tela vinda do app Android: os quadros (JPEG) chegam pela ponte e viram vídeo num <canvas>.
   function telaDoApp() {
     const cv = document.createElement('canvas'); cv.width = 1280; cv.height = 720;
-    const g = cv.getContext('2d'); g.fillStyle = '#000'; g.fillRect(0, 0, cv.width, cv.height);
+    const g = cv.getContext('2d', { alpha: false, desynchronized: true }); g.fillStyle = '#000'; g.fillRect(0, 0, cv.width, cv.height);
+    g.imageSmoothingEnabled = false; // quadro já vem no tamanho certo: desenha pixel a pixel, sem amaciar
     const img = new Image(); let ocupado = false;
     window.__kaliQuadro = (b64) => {
       if (ocupado) return;
@@ -161,7 +162,7 @@
     };
     window.__kaliTelaParou = () => pararTela();
     window.KaliNativo.iniciarTela();
-    return cv.captureStream(20);
+    return cv.captureStream(30);
   }
   function pararTela() {
     if (!tela) return;
@@ -318,7 +319,7 @@
         tela = telaDoApp();
         tipoVideo = 'tela';
         const vApp = tela.getVideoTracks()[0];
-        vApp.contentHint = 'motion';
+        vApp.contentHint = 'detail'; // nitidez primeiro: o WebRTC não baixa a resolução quando a rede aperta, só os quadros
         pares.forEach((p, uid) => { p.telaSender = p.pc.addTrack(vApp, tela); renegociar(uid); });
         aoMudar();
         return;

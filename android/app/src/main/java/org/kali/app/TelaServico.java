@@ -26,10 +26,11 @@ import android.util.DisplayMetrics;
 import java.io.ByteArrayOutputStream;
 import java.nio.ByteBuffer;
 
-/** Grava a tela (MediaProjection) e manda ~15 quadros por segundo pro KALI. */
+/** Grava a tela (MediaProjection) e manda ~25 quadros por segundo pro KALI, em até 1080p. */
 public class TelaServico extends Service {
-    private static final int MAX_LADO = 1280; // 720p
-    private static final long INTERVALO_MS = 66; // ~15 fps
+    private static final int MAX_LADO = 1920; // 1080p (antes 720p)
+    private static final long INTERVALO_MS = 40; // ~25 fps (antes ~15)
+    private static final int QUALIDADE_JPEG = 88; // menos borrão em texto e HUD de jogo (antes 72)
 
     private MediaProjection proj;
     private VirtualDisplay vd;
@@ -99,7 +100,7 @@ public class TelaServico extends Service {
             bruto.copyPixelsFromBuffer(buf);
             Bitmap final_ = bruto.getWidth() != w ? Bitmap.createBitmap(bruto, 0, 0, w, h) : bruto;
             ByteArrayOutputStream out = new ByteArrayOutputStream(64 * 1024);
-            final_.compress(Bitmap.CompressFormat.JPEG, 72, out);
+            final_.compress(Bitmap.CompressFormat.JPEG, QUALIDADE_JPEG, out);
             if (final_ != bruto) final_.recycle();
             bruto.recycle();
             MainActivity a = MainActivity.atual;
