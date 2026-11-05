@@ -758,36 +758,86 @@
         throw new Error('Copia o link acima ☝️'); // mantém o modal aberto
       } });
   }
-  function modalCanal(tipoInicial, categoriaInicial) {
+  // Criar canal igual ao Discord: lista de tipos com rádio, nome com o ícone do tipo na frente e "Canal privado" com cargos.
+  const TIPOS_CANAL = [
+    { id: 'texto', ic: '#', nome: 'Texto', desc: 'Mande mensagens, imagens, GIFs, emojis, opiniões e piadas', base: 'texto' },
+    { id: 'voz', ic: '🔊', nome: 'Voz', desc: 'Converse por voz, vídeo e compartilhe a tela', base: 'voz' },
+    { id: 'forum', ic: '💬', nome: 'Fórum', desc: 'Crie um espaço organizado pra discussões em posts', base: 'texto', cfg: { forum: true } },
+    { id: 'anuncios', ic: '📢', nome: 'Anúncios', desc: 'Avisos importantes: só a staff posta, todo mundo lê', base: 'texto', cfg: { soStaff: true } },
+    { id: 'palco', ic: '🎤', nome: 'Palco', desc: 'Eventos com plateia: só fala quem a staff liberar', base: 'voz', cfg: { palco: true } },
+    { id: 'assistir', ic: '🍿', nome: 'Assistir junto', desc: 'YouTube ou vídeo sincronizado com a galera', base: 'assistir' },
+    { id: 'sala3d', ic: '🌌', nome: 'Sala 3D', desc: 'Voz com áudio espacial: anda no mapa e ouve quem tá perto', base: 'voz', espacial: true },
+  ];
+  async function modalCanal(tipoInicial, categoriaInicial) {
     const s = servidorAtual();
     if (!s) return;
-    let tipo = tipoInicial || 'texto';
-    const nome = h('input', { maxlength: 30, placeholder: 'novo-canal' });
-    const bT = h('button', { type: 'button' }, h('b', {}, '# Texto'), 'Mensagens, memes, links');
-    const bV = h('button', { type: 'button' }, h('b', {}, '🔊 Voz'), 'Call com a galera');
-    const bA = h('button', { type: 'button' }, h('b', {}, '🍿 Assistir'), 'Vídeo junto');
-    const senhaCanal = h('input', { type: 'password', maxlength: 64, placeholder: 'Deixe vazio pra canal aberto' });
+    let tipo = TIPOS_CANAL.find((t) => t.id === tipoInicial) ? tipoInicial : 'texto';
+    const prefixo = h('span', { class: 'prefixo-canal' }, '#');
+    const nome = h('input', { maxlength: 30, placeholder: 'novo-canal', 'aria-label': 'Nome do canal' });
+    const linhas = TIPOS_CANAL.map((t) => {
+      const b = h('button', { type: 'button', class: 'tipo-canal', role: 'radio', 'data-t': t.id },
+        h('span', { class: 'tc-ic' }, t.ic), h('span', { class: 'tc-txt' }, h('b', {}, t.nome), h('small', {}, t.desc)), h('span', { class: 'tc-radio' }));
+      b.onclick = () => { tipo = t.id; marcar(); nome.focus(); };
+      return b;
+    });
     const marcar = () => {
-      bT.classList.toggle('ativa', tipo === 'texto'); bV.classList.toggle('ativa', tipo === 'voz'); bA.classList.toggle('ativa', tipo === 'assistir');
-      nome.placeholder = tipo === 'texto' ? 'novo-canal' : tipo === 'voz' ? 'Sala da galera' : 'Cinema';
+      const t = TIPOS_CANAL.find((x) => x.id === tipo);
+      linhas.forEach((b) => { const on = b.dataset.t === tipo; b.classList.toggle('ativa', on); b.setAttribute('aria-checked', String(on)); });
+      prefixo.textContent = t.ic;
+      nome.placeholder = t.base === 'texto' ? 'novo-canal' : t.base === 'voz' ? 'Sala da galera' : 'Cinema';
+      if (t.base === 'texto') nome.value = nome.value.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+      senhaLinha.hidden = t.base !== 'texto';
     };
-    bT.onclick = () => { tipo = 'texto'; marcar(); nome.focus(); };
-    bV.onclick = () => { tipo = 'voz'; marcar(); nome.focus(); };
-    bA.onclick = () => { tipo = 'assistir'; marcar(); nome.focus(); };
-    const cx3d = h('input', { type: 'checkbox' });
-    const linha3d = h('label', { class: 'campo', style: 'display:flex;gap:8px;align-items:center' }, cx3d, h('span', { style: 'margin:0' }, '🌌 Sala 3D — áudio espacial (só voz)'));
-    nome.oninput = () => { if (tipo === 'texto') nome.value = nome.value.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''); };
-    marcar();
+    nome.oninput = () => { if (TIPOS_CANAL.find((x) => x.id === tipo).base === 'texto') nome.value = nome.value.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''); };
+    // canal privado (só cargos escolhidos + staff)
+    let cargos = [];
+    try { cargos = await api('GET', `/servidores/${s.id}/cargos`); } catch (e) {}
+    const escolhidos = new Set();
+    const listaCargos = h('div', { class: 'lista-check', hidden: true }, cargos.length ? cargos.map((c) => {
+      const cb = h('input', { type: 'checkbox' }); cb.onchange = () => { if (cb.checked) escolhidos.add(c.id); else escolhidos.delete(c.id); };
+      return h('label', { class: 'check-amigo' }, cb, h('span', { style: 'color:' + c.cor }, '● '), c.nome);
+    }) : h('small', {}, 'Sem cargos ainda: o canal fica só pra staff. Crie cargos em Configurações do servidor.'));
+    const priv = h('input', { type: 'checkbox', class: 'chave-input' });
+    priv.onchange = () => { listaCargos.hidden = !priv.checked; };
+    const linhaPriv = h('label', { class: 'linha-privado' }, h('span', { class: 'lp-ic' }, '🔒'), h('span', { class: 'lp-txt' }, h('b', {}, 'Canal privado'), h('small', {}, 'Só os cargos escolhidos (e a staff) vão ver este canal.')), priv);
+    const senhaCanal = h('input', { type: 'password', maxlength: 64, placeholder: 'Deixe vazio pra canal aberto' });
+    const senhaLinha = campo('🔑 Senha do canal (opcional)', senhaCanal);
     const cat = campoCategoria(s, categoriaInicial || '');
-    abrirModal({ titulo: 'Criar canal', sub: 'em ' + s.nome, corpo: [h('div', { class: 'tipos' }, bT, bV, bA), campo('Nome do canal', nome), cat.campo, linha3d, campo('🔒 Senha (opcional, só texto)', senhaCanal)], botao: 'Criar canal',
+    const f = abrirModal({ titulo: 'Criar canal', sub: categoriaInicial ? 'em ' + categoriaInicial : 'em ' + s.nome, corpo: [
+      h('div', { class: 'sec-menu' }, 'Tipo de canal'), h('div', { class: 'tipos-canal', role: 'radiogroup' }, linhas),
+      h('div', { class: 'sec-menu' }, 'Nome do canal'), h('div', { class: 'nome-canal-campo' }, prefixo, nome),
+      cat.campo, linhaPriv, listaCargos, senhaLinha], botao: 'Criar canal',
       acao: async () => {
-        const corpo = { nome: nome.value.trim(), tipo };
+        const t = TIPOS_CANAL.find((x) => x.id === tipo);
+        const corpo = { nome: nome.value.trim(), tipo: t.base };
         if (cat.input.value.trim()) corpo.categoria = cat.input.value.trim();
-        if (tipo === 'voz' && cx3d.checked) corpo.espacial = true;
-        if (tipo === 'texto' && senhaCanal.value) corpo.senha = senhaCanal.value;
+        if (t.espacial) corpo.espacial = true;
+        if (t.base === 'texto' && senhaCanal.value) corpo.senha = senhaCanal.value;
         const c = await api('POST', `/servidores/${s.id}/canais`, corpo);
+        if (t.cfg) { try { Object.assign(c, await api('PATCH', `/canais/${c.id}/config`, t.cfg)); } catch (e) { toast(e.message, 'erro'); } }
+        if (priv.checked) {
+          for (const cg of cargos.filter((x) => escolhidos.has(x.id))) await api('PUT', `/cargos/${cg.id}/canais`, { canalIds: [...cg.canais, c.id] }).catch(() => {});
+          if (!escolhidos.size) await api('PATCH', `/canais/${c.id}/config`, { privado: true }).catch(() => {});
+          carregarCargos(s.id).catch(() => {});
+        }
         aoCanalNovo(c);
         if (c.tipo !== 'voz') abrirCanal(c.id);
+      } });
+    f.classList.add('modal-criar-canal');
+    marcar();
+  }
+  function modalCategoria() {
+    const s = servidorAtual();
+    if (!s) return;
+    const nome = h('input', { maxlength: 30, placeholder: 'NOVA CATEGORIA', 'aria-label': 'Nome da categoria' });
+    nome.oninput = () => { nome.value = nome.value.toUpperCase(); };
+    abrirModal({ titulo: 'Criar categoria', sub: 'Categorias juntam canais (ex.: JOGOS, ESTUDO). Já cria um canal de texto dentro dela.', corpo: [h('div', { class: 'sec-menu' }, 'Nome da categoria'), h('div', { class: 'nome-canal-campo' }, h('span', { class: 'prefixo-canal' }, '📁'), nome)], botao: 'Criar categoria',
+      acao: async () => {
+        const n = nome.value.trim();
+        if (!n) throw new Error('Dá um nome pra categoria.');
+        const c = await api('POST', `/servidores/${s.id}/canais`, { nome: 'geral-' + n.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 20) || 'geral', tipo: 'texto', categoria: n });
+        aoCanalNovo(c);
+        toast('📁 Categoria ' + n + ' criada', 'ok');
       } });
   }
   async function apagarCanal(c) {
@@ -819,7 +869,7 @@
         [['todas', 'Todas as mensagens'], ['mencoes', 'Só @menções'], ['nada', 'Nada']].map(([v, t]) => item((nv === v ? '✓ ' : '') + t, () => { definirNivelNotif(s.id, v); renderRail(); toast('Notificações: ' + t, 'ok'); }))])),
       item(srvMudo ? '🔔 Reativar avisos do servidor' : '🔕 Silenciar servidor', () => { const on = alternarLocal('kali-srv-silenciados', s.id); toast(on ? 'Servidor silenciado: sem som nem aviso (menções também)' : 'Avisos do servidor reativados', 'ok'); }), ...extras];
     if (souStaffEm(s.id)) itens.push(item('Configurações do servidor', () => configServidor(s)));
-    if (souDono(s)) itens.push(item('Criar canal', () => modalCanal('texto')));
+    if (souDono(s)) itens.push(item('➕ Criar canal', () => modalCanal('texto')), item('📁 Criar categoria', modalCategoria), item('🌍 Servidor público', () => modalPublico(s)));
     if (souStaffEm(s.id)) itens.push(item('Criar evento', () => modalCriarEvento(s)), item('🛡️ AutoMod', () => modalAutomod(s)), item('👋 Boas-vindas e cargos', () => configBoasVindas(s)));
     itens.push(item('📊 Visão geral', () => abrirVisao(s.id)), item('🎭 Regras e meus cargos', () => modalBoasVindas(s)));
     itens.push(item('Abrir ticket com a staff', modalTicket));

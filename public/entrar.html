@@ -33,6 +33,7 @@
   <label class="campo"><span>Usuário</span><input id="usuario" aria-describedby="erro" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="20" placeholder="ex: carter_br" required></label>
   <label class="campo" id="campoNome" hidden><span>Nome de exibição (opcional)</span><input id="nome" maxlength="32" placeholder="Como a galera vai te ver"></label>
   <div class="campo campo-senha"><label for="senha"><span>Senha</span></label><input id="senha" type="password" autocomplete="current-password" maxlength="200" placeholder="Mínimo 6 caracteres" required aria-describedby="erro"><button type="button" class="olho" id="olho" aria-label="Mostrar senha" aria-pressed="false">👁</button></div>
+  <label class="campo" id="campoCodigo" hidden><span>🔐 Código de verificação</span><input id="codigo" inputmode="numeric" autocomplete="one-time-code" maxlength="11" placeholder="6 dígitos do app (ou código de recuperação)"></label>
   <p class="erro-form" id="erro" role="alert"></p>
   <button class="bt prim" id="botao" type="submit">Entrar</button>
 </form>
@@ -67,6 +68,7 @@
     if (senha.length < 6) return invalido('#senha', 'A senha precisa ter pelo menos 6 caracteres.');
     const corpo = { usuario, senha };
     if (aba === 'registrar' && $('#nome').value.trim()) corpo.nome = $('#nome').value.trim();
+    if (aba === 'entrar' && !$('#campoCodigo').hidden && $('#codigo').value.trim()) corpo.codigo = $('#codigo').value.trim();
     const rotulo = $('#botao').textContent;
     $('#botao').disabled = true; $('#erro').textContent = '';
     $('#botao').replaceChildren(Object.assign(document.createElement('span'), { className: 'giro' }), aba === 'registrar' ? 'Criando conta…' : 'Entrando…');
@@ -74,6 +76,12 @@
       const r = await fetch('/api/' + aba, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corpo) });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.erro || 'Não deu certo. Tenta de novo.');
+      if (d.precisa2fa) {
+        $('#campoCodigo').hidden = false; $('#codigo').focus();
+        $('#erro').textContent = 'Essa conta tem verificação em 2 etapas: digita o código do app.';
+        $('#botao').disabled = false; $('#botao').textContent = rotulo;
+        return;
+      }
       location.replace('/');
     } catch (err) {
       $('#erro').textContent = err.message === 'Failed to fetch' ? 'Servidor fora do ar.' : err.message;

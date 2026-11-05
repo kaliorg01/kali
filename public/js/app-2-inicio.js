@@ -6,7 +6,7 @@
   function abrirPainel() {
     sairAssistir();
     aplicarTemaServidor(null);
-    E.modo = 'painel'; E.servidorId = null; E.canalId = null; E.telaAmigos = false;
+    E.modo = 'painel'; E.servidorId = null; E.canalId = null; E.telaAmigos = false; E.verDescobrir = false;
     salvar('kali-servidor', 'painel');
     $('#app').classList.add('chat');
     render();
@@ -37,9 +37,10 @@
     return h('nav', { class: 'nav-lateral', 'aria-label': 'Navegação' },
       h('div', { class: 'marca' }, logo(), h('b', {}, 'KALI'),
         h('button', { class: 'recolher', title: mini ? 'Abrir menu' : 'Recolher menu', 'aria-label': mini ? 'Abrir menu' : 'Recolher menu', onclick: () => { salvar('kali-lateral-mini', mini ? '' : '1'); aplicarMini(); } }, mini ? '»' : '«')),
-      nav(icn('painel'), 'Painel', abrirPainel, E.modo === 'painel'),
+      nav(icn('painel'), 'Painel', abrirPainel, E.modo === 'painel' && !E.verDescobrir),
       nav(icn('balao'), 'Mensagens', abrirDms, E.modo === 'dm' && !E.telaAmigos, nDm),
       nav(icn('pessoas'), 'Amigos', abrirAmigos, E.modo === 'dm' && E.telaAmigos, E.amigos.recebidos.length),
+      nav(h('span', { class: 'ic' }, '🧭'), 'Descobrir', abrirDescobrir, E.modo === 'painel' && E.verDescobrir),
       E.servidores.length ? nav(icn('dado'), 'Apostas 1x1', () => abrirApostas(E.servidorId || servidoresOrdenados()[0].id), E.modo === 'servidor' && E.verApostas) : null,
       nav(icn('pontos'), 'Mais', (e) => menuMais(e.currentTarget), E.modo === 'servidor' && E.verVisao),
       h('button', { class: 'rot rot-btn', 'aria-expanded': String(!fechado), onclick: () => { salvar('kali-srv-recolhido', fechado ? '' : '1'); renderSide(); } }, h('span', {}, (fechado ? '▸ ' : '▾ ') + 'Servidores'), h('small', {}, String(E.servidores.length))),
@@ -72,7 +73,39 @@
       item([ic('engrenagem', 16), ' Configurações'], () => configUsuario()),
       item([ic('lupa', 16), ' Rever o tour'], () => { salvar('kali-tour', ''); tourInicial(); })].filter(Boolean));
   }
+  function abrirDescobrir() { abrirPainel(); E.verDescobrir = true; render(); }
+  async function renderDescobrir(main) {
+    const busca = h('input', { class: 'busca-painel', placeholder: 'Buscar comunidades…', value: E.buscaDesc || '', 'aria-label': 'Buscar servidores públicos' });
+    const grade = h('div', { class: 'grade-painel grade-descobrir' }, h('small', {}, 'Carregando…'));
+    main.replaceChildren(h('div', { class: 'painel' },
+      h('div', { class: 'hero-descobrir' }, h('h1', {}, 'Encontre sua ', h('span', {}, 'comunidade')), h('p', { class: 'sub' }, 'Servidores públicos da KALI: jogos, estudo, amigos, streamers. Entra com um clique.'), busca),
+      h('div', { class: 'sec-painel' }, h('b', {}, 'Comunidades em destaque'), h('small', {}, '· mais membros primeiro')), grade));
+    let t = null;
+    const carregar = async () => {
+      let l = [];
+      try { l = await api('GET', '/descobrir?q=' + encodeURIComponent(busca.value.trim())); } catch (e) { return grade.replaceChildren(h('small', {}, e.message)); }
+      grade.replaceChildren(...(l.length ? l.map((s) => h('div', { class: 'card-desc' },
+        h('div', { class: 'cd-banner', style: s.banner ? `background-image:url("${s.banner}")` : '' }),
+        h('div', { class: 'cd-ic' }, s.icone ? h('img', { src: s.icone, alt: '' }) : inicial(s.nome)),
+        h('div', { class: 'cd-info' }, h('b', {}, s.nome), h('p', {}, s.descricao || 'Sem descrição.'), h('small', {}, '👥 ' + s.membros + ' membro' + (s.membros === 1 ? '' : 's')),
+          s.souMembro ? h('button', { class: 'bt', onclick: () => selecionarServidor(s.id) }, 'Abrir') : h('button', { class: 'bt prim', onclick: async (e) => {
+            e.currentTarget.disabled = true;
+            try { const sv = await api('POST', '/convites/' + encodeURIComponent(s.convite)); adicionarServidor(sv); E.membros.delete(sv.id); await selecionarServidor(sv.id); toast('Você entrou em ' + sv.nome + ' 🎉', 'ok'); } catch (err) { toast(err.message, 'erro'); e.currentTarget.disabled = false; }
+          } }, 'Entrar')))) : [h('p', { class: 'vazio-painel' }, busca.value.trim() ? 'Nada encontrado.' : 'Ainda não tem servidor público. Dono de servidor: menu do servidor → 🌍 Servidor público.')]));
+    };
+    busca.oninput = () => { E.buscaDesc = busca.value; clearTimeout(t); t = setTimeout(carregar, 300); };
+    carregar();
+  }
+  async function modalPublico(s) {
+    let st = { publico: false, descricao: '' };
+    try { st = await api('GET', `/servidores/${s.id}/publico`); } catch (e) { return toast(e.message, 'erro'); }
+    const ck = h('input', { type: 'checkbox', class: 'chave-input', checked: st.publico || null });
+    const desc = h('textarea', { rows: 3, maxlength: 160, placeholder: 'Ex: Servidor de Free Fire, X1 todo dia e campeonato no fim de semana 🔥', style: 'width:100%' }); desc.value = st.descricao;
+    abrirModal({ titulo: '🌍 Servidor público', sub: 'Aparece em Descobrir e qualquer um pode entrar sem convite.', corpo: [h('label', { class: 'linha-privado' }, h('span', { class: 'lp-ic' }, '🌍'), h('span', { class: 'lp-txt' }, h('b', {}, 'Mostrar em Descobrir'), h('small', {}, 'Dá pra desligar quando quiser.')), ck), h('div', { class: 'sec-menu' }, 'Descrição'), desc],
+      botao: 'Salvar', acao: async () => { await api('PUT', `/servidores/${s.id}/publico`, { publico: ck.checked, descricao: desc.value }); toast(ck.checked ? '🌍 ' + s.nome + ' agora aparece em Descobrir' : 'Servidor saiu de Descobrir', 'ok'); } });
+  }
   function renderPainel(main) {
+    if (E.verDescobrir) return renderDescobrir(main);
     const filtro = E.filtroPainel || 'todos', termo = (E.buscaPainel || '').toLowerCase();
     const naCall = (s) => s.canais.filter((c) => c.tipo === 'voz').flatMap((c) => (E.voz.get(c.id) || []).map((m) => ({ ...m, canal: c })));
     const todos = E.servidores.filter((s) => s.nome.toLowerCase().includes(termo));

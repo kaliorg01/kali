@@ -74,6 +74,30 @@
         linhaCfg('Alto contraste', null, chave(cls('contraste'), () => { alternarAcess('contraste', 'Alto contraste'); re(); })),
         linhaCfg('Fonte grande', null, chave(cls('fonte-grande'), () => { alternarAcess('fonte-grande', 'Fonte grande'); re(); })),
       ]],
+      ['Segurança', (re) => {
+        const box = h('div', {}, h('small', {}, 'Carregando…'));
+        const mostrarCodigos = (codigos) => abrirModal({ titulo: '🧾 Códigos de recuperação', sub: 'Guarda num lugar seguro! Cada código entra UMA vez se você perder o celular. Eles não aparecem de novo.',
+          corpo: [h('div', { class: 'codigos-rec' }, codigos.map((c) => h('code', {}, c))), h('button', { type: 'button', class: 'bt', onclick: () => navigator.clipboard?.writeText(codigos.join('\n')).then(() => toast('Códigos copiados ✓', 'ok')) }, 'Copiar todos')] });
+        api('GET', '/eu/2fa').then((st) => {
+          if (!st.ativo) {
+            box.replaceChildren(linhaCfg('🔐 Verificação em 2 etapas', 'Desligada. Liga pra pedir um código do celular (Google Authenticator, Authy…) toda vez que alguém entrar na sua conta.',
+              h('button', { type: 'button', class: 'bt prim', onclick: async () => {
+                let d; try { d = await api('POST', '/eu/2fa/iniciar'); } catch (e) { return toast(e.message, 'erro'); }
+                const cod = h('input', { inputmode: 'numeric', maxlength: 6, placeholder: '123456', autocomplete: 'one-time-code' });
+                abrirModal({ titulo: '🔐 Ligar verificação em 2 etapas', sub: '1) Abre o Google Authenticator ou Authy → "+" → "Inserir chave". 2) Cola a chave abaixo (tipo: baseada em tempo). 3) Digita o código de 6 dígitos que aparecer.',
+                  corpo: [h('div', { class: 'chave-2fa' }, h('code', {}, d.segredo.replace(/(.{4})/g, '$1 ').trim()), h('button', { type: 'button', class: 'bt', onclick: () => navigator.clipboard?.writeText(d.segredo).then(() => toast('Chave copiada ✓', 'ok')) }, 'Copiar')),
+                    ehCelular() ? h('a', { class: 'bt', href: d.url, style: 'display:block;text-align:center;margin:6px 0' }, 'Abrir no app autenticador') : null, campo('Código do app', cod)].filter(Boolean),
+                  botao: 'Ativar', acao: async () => { const r = await api('POST', '/eu/2fa/ativar', { codigo: cod.value.trim() }); toast('🔐 Verificação em 2 etapas ligada!', 'ok'); setTimeout(() => mostrarCodigos(r.codigos), 200); re(); } });
+              } }, 'Ligar')));
+          } else {
+            const pedirCodigo = (titulo, fn) => { const cod = h('input', { maxlength: 11, placeholder: 'código do app ou de recuperação' }); abrirModal({ titulo, corpo: [campo('Código', cod)], botao: 'Confirmar', acao: () => fn(cod.value.trim()) }); };
+            box.replaceChildren(linhaCfg('🔐 Verificação em 2 etapas', `Ligada ✅ · ${st.codigosRestantes} código(s) de recuperação sobrando.`,
+              h('button', { type: 'button', class: 'bt', onclick: () => pedirCodigo('Novos códigos de recuperação', async (c) => { const r = await api('POST', '/eu/2fa/novos-codigos', { codigo: c }); setTimeout(() => mostrarCodigos(r.codigos), 200); re(); }) }, 'Novos códigos'),
+              h('button', { type: 'button', class: 'bt perigo', onclick: () => pedirCodigo('Desligar verificação em 2 etapas', async (c) => { await api('POST', '/eu/2fa/desativar', { codigo: c }); toast('Verificação em 2 etapas desligada', 'ok'); re(); }) }, 'Desligar')));
+          }
+        }).catch((e) => box.replaceChildren(h('small', {}, e.message)));
+        return [box];
+      }],
       ['Notificações', (re) => {
         const pushOn = ler('kali-push') === '1';
         const linhaPush = linhaCfg('🔔 Notificação com o app fechado', pushOn ? 'Ligada neste aparelho: DM e @menção chegam mesmo com a KALI fechada.' : 'Receba DM e @menção no celular/PC mesmo com a KALI fechada.',

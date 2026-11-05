@@ -184,6 +184,11 @@ for (const [tabela, coluna, def] of [
   ['servidores', 'apostas_taxa', 'INTEGER NOT NULL DEFAULT 0'],
   ['usuarios', 'efeito', 'TEXT'],
   ['usuarios', 'verificado', 'INTEGER NOT NULL DEFAULT 0'],
+  ['usuarios', 'totp_segredo', 'TEXT'],
+  ['usuarios', 'totp_pendente', 'TEXT'],
+  ['usuarios', 'totp_rec', 'TEXT'],
+  ['servidores', 'publico', 'INTEGER NOT NULL DEFAULT 0'],
+  ['servidores', 'descricao', 'TEXT'],
   ['canais', 'sala_espera', 'INTEGER NOT NULL DEFAULT 0'],
   ['servidores', 'boas_vindas', 'TEXT'],
 ]) {
@@ -480,6 +485,15 @@ CREATE TABLE IF NOT EXISTS canal_cargos (
 export const cargoPorId = (id) => q('SELECT * FROM cargos WHERE id = ?').get(id) ?? null;
 export const cargosDoCanal = (canalId) => q('SELECT cargo_id FROM canal_cargos WHERE canal_id = ?').all(canalId).map((r) => r.cargo_id);
 try { db.exec('ALTER TABLE cargos ADD COLUMN animado INTEGER NOT NULL DEFAULT 0'); } catch { /* já existe */ }
+// 2 etapas
+export const definirTotpPendente = (uid, seg) => q('UPDATE usuarios SET totp_pendente = ? WHERE id = ?').run(seg, uid);
+export const ativarTotp = (uid, seg, hashes) => q('UPDATE usuarios SET totp_segredo = ?, totp_pendente = NULL, totp_rec = ? WHERE id = ?').run(seg, JSON.stringify(hashes), uid);
+export const desativarTotp = (uid) => q('UPDATE usuarios SET totp_segredo = NULL, totp_pendente = NULL, totp_rec = NULL WHERE id = ?').run(uid);
+export const salvarRecuperacao = (uid, hashes) => q('UPDATE usuarios SET totp_rec = ? WHERE id = ?').run(JSON.stringify(hashes), uid);
+// servidores públicos (descobrir)
+export const definirPublico = (sid, publico, descricao) => q('UPDATE servidores SET publico = ?, descricao = ? WHERE id = ?').run(publico ? 1 : 0, descricao || null, sid);
+export const servidoresPublicos = (busca) => q(`SELECT s.id, s.nome, s.descricao, s.convite, s.icone_v, s.banner_v, (SELECT COUNT(*) FROM membros m WHERE m.servidor_id = s.id) AS membros
+  FROM servidores s WHERE s.publico = 1 AND (? = '' OR s.nome LIKE ? ESCAPE '\\' OR s.descricao LIKE ? ESCAPE '\\') ORDER BY membros DESC LIMIT 60`).all(busca, '%' + escLike(busca) + '%', '%' + escLike(busca) + '%');
 export const definirVerificado =(uid, on) => q('UPDATE usuarios SET verificado = ? WHERE id = ?').run(on ? 1 : 0, uid);
 export const definirCargoAnimado = (id, on) => q('UPDATE cargos SET animado = ? WHERE id = ?').run(on ? 1 : 0, id);
 export const cargosDoServidor = (sid) => q('SELECT id, nome, cor, perm, animado FROM cargos WHERE servidor_id = ? ORDER BY id').all(sid).map((c) => ({
@@ -1114,6 +1128,7 @@ export function serCanal(row) {
     forum: !!row.forum,
   };
 }
+export const definirPrivado = (id, on) => q('UPDATE canais SET privado = ? WHERE id = ? AND senha_hash IS NULL AND ticket_de IS NULL').run(on ? 1 : 0, id);
 export const definirSalaEspera = (id, on) => q('UPDATE canais SET sala_espera = ? WHERE id = ?').run(on ? 1 : 0, id);
 // Push: uma linha por aparelho inscrito.
 db.exec('CREATE TABLE IF NOT EXISTS push_inscricoes (endpoint TEXT PRIMARY KEY, usuario_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE, json TEXT NOT NULL, criado_em INTEGER NOT NULL)');

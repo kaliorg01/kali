@@ -262,6 +262,13 @@
     if (primeiro && !(ehCelular() && primeiro.tagName !== 'BUTTON')) primeiro.focus();
     return form;
   }
+  // Figurinhas (/fig 🐸) e mensagem falada (/tts texto)
+  const FIGURINHAS = ['🐸', '🐱', '🐶', '🦊', '🐼', '🐵', '🦄', '🐲', '👻', '💀', '🤡', '👽', '🤖', '🎃', '🔥', '💯', '🎮', '🏆', '❤️', '💔', '😎', '🥶', '🤯', '🫡'];
+  const RE_FIG = /^\/fig\s+(\S{1,8})\s*$/u;
+  const RE_TTS = /^\/tts\s+/i;
+  function falarTexto(t) {
+    try { if (!window.speechSynthesis || ler('kali-tts') === '0') return; const u = new SpeechSynthesisUtterance(String(t).slice(0, 200)); u.lang = 'pt-BR'; u.rate = 1.05; speechSynthesis.speak(u); } catch (e) {}
+  }
   const campo = (rotulo, input) => h('label', { class: 'campo' }, h('span', {}, rotulo), input);
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { fecharMenu(); fecharModal(); } });
 

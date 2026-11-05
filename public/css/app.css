@@ -1640,3 +1640,63 @@ body.terremoto{animation:terremoto .8s cubic-bezier(.36,.07,.19,.97)}
 .chave-jog.venceu::after{content:" ✓";color:var(--ok)}
 .chave-jog.perdeu{opacity:.45;text-decoration:line-through}
 .chave-campeao{padding:14px;border-radius:10px;text-align:center;font-weight:800;font-size:16px;background:linear-gradient(135deg,rgba(251,191,36,.25),var(--chip));border:1px solid #fbbf24;box-shadow:0 0 22px rgba(251,191,36,.3)}
+
+/* ===== Criar canal igual ao Discord ===== */
+.modal-criar-canal{width:min(480px,100%)}
+.tipos-canal{display:flex;flex-direction:column;gap:6px;margin-bottom:6px}
+.tipo-canal{display:flex;align-items:center;gap:12px;width:100%;padding:10px 12px;border-radius:8px;background:var(--chip);border:1px solid transparent;text-align:left;transition:background .12s,border-color .12s}
+.tipo-canal:hover{background:var(--hover)}
+.tipo-canal.ativa{background:color-mix(in srgb,var(--roxo) 14%,var(--chip));border-color:color-mix(in srgb,var(--roxo) 50%,transparent)}
+.tc-ic{width:28px;text-align:center;font-size:20px;color:var(--suave);flex:none}
+.tc-txt{flex:1;display:flex;flex-direction:column;min-width:0}
+.tc-txt b{font-size:14px}
+.tc-txt small{color:var(--fraco);font-size:12px}
+.tc-radio{width:20px;height:20px;border-radius:50%;border:2px solid var(--fraco);flex:none;display:grid;place-items:center}
+.tipo-canal.ativa .tc-radio{border-color:var(--roxo)}
+.tipo-canal.ativa .tc-radio::after{content:"";width:10px;height:10px;border-radius:50%;background:var(--roxo)}
+.nome-canal-campo{display:flex;align-items:center;gap:6px;padding:0 12px;border-radius:8px;background:var(--bg);border:1px solid var(--chip-borda);margin-bottom:12px}
+.nome-canal-campo:focus-within{border-color:var(--roxo)}
+.prefixo-canal{font-size:18px;color:var(--fraco);flex:none}
+.nome-canal-campo input{flex:1;border:0;background:transparent;padding:11px 0;outline:none;font-size:15px}
+.linha-privado{display:flex;align-items:center;gap:12px;padding:10px 0;cursor:pointer}
+.lp-ic{font-size:18px}
+.lp-txt{flex:1;display:flex;flex-direction:column}
+.lp-txt small{color:var(--fraco);font-size:12px}
+.chave-input{appearance:none;width:40px;height:24px;border-radius:12px;background:var(--chip-borda);position:relative;cursor:pointer;transition:background .15s;flex:none}
+.chave-input::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:transform .15s}
+.chave-input:checked{background:var(--roxo)}
+.chave-input:checked::after{transform:translateX(16px)}
+
+/* ===== Figurinhas, /tts, 2 etapas e Descobrir ===== */
+.figurinha{font-size:96px;line-height:1.1;display:inline-block;margin-top:4px;filter:drop-shadow(0 6px 14px rgba(0,0,0,.35));user-select:none}
+.msg.minha .figurinha{align-self:flex-end}
+.figurinha.anim-0,.grade-fig .anim-0:hover{animation:figPula 1.4s ease-in-out infinite}
+.figurinha.anim-1,.grade-fig .anim-1:hover{animation:figBalanca 1.6s ease-in-out infinite}
+.figurinha.anim-2,.grade-fig .anim-2:hover{animation:figPulsa 1.2s ease-in-out infinite}
+.figurinha.anim-3,.grade-fig .anim-3:hover{animation:figGira 2.4s ease-in-out infinite}
+@keyframes figPula{50%{transform:translateY(-12px)}}
+@keyframes figBalanca{25%{transform:rotate(-10deg)}75%{transform:rotate(10deg)}}
+@keyframes figPulsa{50%{transform:scale(1.15)}}
+@keyframes figGira{50%{transform:rotate(12deg) scale(1.08)}}
+.grade-fig{display:grid;grid-template-columns:repeat(6,1fr);gap:4px;padding:4px;max-width:300px}
+.grade-fig button{font-size:30px;padding:6px;border-radius:8px}
+.grade-fig button:hover{background:var(--hover)}
+.tag-tts{margin-right:4px;border-radius:6px;padding:0 4px;background:var(--roxo-suave)}
+.chave-2fa{display:flex;gap:8px;align-items:center;margin:8px 0}
+.chave-2fa code{flex:1;font-family:var(--mono);font-size:15px;letter-spacing:.06em;padding:10px;border-radius:8px;background:var(--chip);border:1px solid var(--chip-borda);word-break:break-all}
+.codigos-rec{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:8px 0}
+.codigos-rec code{font-family:var(--mono);padding:8px;border-radius:6px;background:var(--chip);text-align:center;letter-spacing:.08em}
+.hero-descobrir{padding:26px 22px;border-radius:12px;margin-bottom:18px;background:var(--grad);color:#fff}
+.hero-descobrir h1{font-size:26px}.hero-descobrir h1 span{color:#fff;text-decoration:underline wavy rgba(255,255,255,.5)}
+.hero-descobrir .sub{color:rgba(255,255,255,.88);margin:4px 0 14px}
+.hero-descobrir .busca-painel{width:100%;background:rgba(0,0,0,.35);border-color:rgba(255,255,255,.25);color:#fff}
+.grade-descobrir{grid-template-columns:repeat(auto-fill,minmax(min(100%,260px),1fr))}
+.card-desc{position:relative;border-radius:10px;overflow:hidden;background:var(--card);border:1px solid var(--borda);transition:transform .15s,border-color .15s}
+.card-desc:hover{transform:translateY(-3px);border-color:var(--roxo)}
+.cd-banner{height:92px;background:var(--grad);background-size:cover;background-position:center}
+.cd-ic{position:absolute;top:60px;left:14px;width:56px;height:56px;border-radius:14px;border:4px solid var(--card);background:var(--grad);display:grid;place-items:center;color:#fff;font-weight:800;font-size:20px;overflow:hidden}
+.cd-ic img{width:100%;height:100%;object-fit:cover}
+.cd-info{padding:34px 14px 14px;display:flex;flex-direction:column;gap:6px}
+.cd-info p{color:var(--suave);font-size:12.5px;min-height:34px}
+.cd-info small{color:var(--fraco)}
+.cd-info .bt{align-self:flex-start}

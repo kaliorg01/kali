@@ -172,6 +172,7 @@
     const arr = E.msgs.get(m.canalId);
     const nova = !arr || !arr.some((x) => x.id === m.id);
     if (nova && m.texto && efeitoDe(m.texto) && (m.canalId === E.canalId)) dispararEfeito(efeitoDe(m.texto));
+    else if (nova && m.texto && m.canalId === E.canalId && RE_TTS.test(m.texto) && m.autor && m.autor.id !== E.eu.id) falarTexto((m.autor.nome || '') + ' disse: ' + m.texto.replace(RE_TTS, ''));
     else if (nova && m.texto && m.canalId === E.canalId && RE_SO_EMOJI.test(m.texto.trim())) chuvaEmoji(m.texto);
     if (nova && m.autor && m.autor.id !== E.eu.id && alertaDe(m)) {
       toast('🚨 Alerta da staff: ' + corta(alertaDe(m), 90), 'erro');

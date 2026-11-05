@@ -296,6 +296,8 @@
       item('Mensagem temporária: ' + TEMPOS.find((t) => t[0] === E.temp)[1], () => abrirMenu(bAnexo, [h('div', { class: 'sec-menu' }, 'A mensagem some depois de'),
         TEMPOS.map(([s, r]) => item((E.temp === s ? '✓ ' : '') + r, () => { E.temp = s; bAnexo.classList.toggle('temp-on', !!s); }))])),
       item('Enquete', () => { ta.value = '/enquete Pergunta? | Opção 1 | Opção 2'; ta.oninput(); ta.focus(); }),
+      item('🧸 Figurinha', () => abrirMenu(bAnexo, [h('div', { class: 'sec-menu' }, 'Figurinhas'), h('div', { class: 'grade-fig' }, FIGURINHAS.map((f) => h('button', { type: 'button', class: 'anim-' + (FIGURINHAS.indexOf(f) % 4), onclick: () => { fecharMenu(); ta.value = '/fig ' + f; enviar(c.id, ta); } }, f)))])),
+      item('🔊 Mensagem falada (/tts)', () => { ta.value = '/tts '; ta.oninput(); ta.focus(); }),
     ]);
     ta.addEventListener('paste', (e) => { const fs = [...(e.clipboardData?.files || [])]; if (fs.length) { e.preventDefault(); enviarVarios(fs); } });
     const compositor = h('div', { class: 'compositor' }, h('div', { class: 'col' },
@@ -513,6 +515,12 @@
           : h('button', { class: 'bt' + (quer.includes(E.eu.id) ? '' : ' prim'), onclick: () => reagir(m.id, '🙋') }, quer.includes(E.eu.id) ? 'Desistir' : '🙋 Quero participar'))));
     } else if (m.texto && comandoDe(m.texto)) {
       corpo.append(cartaoComando(m, comandoDe(m.texto)));
+    } else if (m.texto && RE_FIG.test(m.texto)) {
+      const f = RE_FIG.exec(m.texto)[1];
+      corpo.append(h('div', { class: 'figurinha anim-' + (FIGURINHAS.indexOf(f) % 4), title: 'Figurinha' }, f));
+    } else if (m.texto && RE_TTS.test(m.texto)) {
+      const t = m.texto.replace(RE_TTS, '');
+      corpo.append(h('div', { class: 'texto' }, h('button', { class: 'tag-tts', title: 'Ouvir de novo', onclick: () => falarTexto(t) }, '🔊 '), formatarRico(t)));
     } else if (m.texto) {
       const ef = efeitoDe(m.texto);
       const tx = h('div', { class: 'texto' + (ef === 'neon' ? ' tx-neon' : ef === 'arcoiris' ? ' tx-arcoiris' : ef === 'terremoto' ? ' tx-terremoto' : '') }, ef ? h('span', { class: 'tag-efeito' }, EFEITOS[ef][0] + ' ') : null, formatarRico(ef ? m.texto.replace(RE_EFEITO, '') : m.texto));

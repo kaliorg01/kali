@@ -19,6 +19,7 @@ import { publicarMensagem, caminhoAnexo, pareceGolpe, respostaValida, quantosOnl
 import { gerarResumo } from './resumo.js';
 import { buscarSeguro, previaDe } from './previa.js';
 import * as push from './push.js';
+import * as totp from './totp.js';
 
 const RE_USUARIO = /^[a-z0-9_.]{3,20}$/;
 const RE_CANAL_TEXTO = /^[a-z0-9-]{1,30}$/;
@@ -203,6 +204,16 @@ export function criarRotas() {
     if (!ok || !row) {
       registrarFalhaLogin(usuario, ip);
       throw erro(401, 'Usuário ou senha incorretos.');
+    }
+    if (row.totp_segredo) {
+      const codigo = typeof c.codigo === 'string' ? c.codigo.trim() : '';
+      if (!codigo) return res.json({ precisa2fa: true });
+      let ok2 = totp.conferirCodigo(row.totp_segredo, codigo);
+      if (!ok2) {
+        const hs = (() => { try { return JSON.parse(row.totp_rec || '[]'); } catch { return []; } })(), h = totp.hashRec(codigo);
+        if (hs.includes(h)) { ok2 = true; db.salvarRecuperacao(row.id, hs.filter((x) => x !== h)); }
+      }
+      if (!ok2) { registrarFalhaLogin(usuario, ip); throw erro(401, 'Código de verificação inválido.'); }
     }
     limparFalhasLogin(usuario);
     definirCookieSessao(req, res, db.criarSessao(row.id, req.headers['user-agent']));
@@ -614,6 +625,50 @@ export function criarRotas() {
   });
 
   // Perfil: servidores e amigos em comum.
+  // ------------------------------------------------------------ verificação em 2 etapas
+  r.get('/eu/2fa', exigirLogin, (req, res) => { const u = db.usuarioPorId(req.usuario.id); let n = 0; try { n = JSON.parse(u.totp_rec || '[]').length; } catch {} res.json({ ativo: !!u.totp_segredo, codigosRestantes: n }); });
+  r.post('/eu/2fa/iniciar', exigirLogin, (req, res) => {
+    const u = db.usuarioPorId(req.usuario.id);
+    if (u.totp_segredo) throw erro(400, 'A verificação em 2 etapas já está ligada.');
+    const seg = totp.gerarSegredo(); db.definirTotpPendente(u.id, seg);
+    res.json({ segredo: seg, url: totp.urlApp(u.usuario, seg) });
+  });
+  r.post('/eu/2fa/ativar', exigirLogin, (req, res) => {
+    const u = db.usuarioPorId(req.usuario.id);
+    if (!u.totp_pendente || !totp.conferirCodigo(u.totp_pendente, String(corpoDe(req).codigo || ''))) throw erro(400, 'Código errado. Confere o app e tenta de novo.');
+    const rec = totp.gerarRecuperacao(); db.ativarTotp(u.id, u.totp_pendente, rec.hashes);
+    res.json({ ok: true, codigos: rec.codigos });
+  });
+  r.post('/eu/2fa/desativar', exigirLogin, (req, res) => {
+    const u = db.usuarioPorId(req.usuario.id), codigo = String(corpoDe(req).codigo || '').trim();
+    let hs = []; try { hs = JSON.parse(u.totp_rec || '[]'); } catch {}
+    if (!u.totp_segredo || !(totp.conferirCodigo(u.totp_segredo, codigo) || hs.includes(totp.hashRec(codigo)))) throw erro(400, 'Código inválido.');
+    db.desativarTotp(u.id); res.json({ ok: true });
+  });
+  r.post('/eu/2fa/novos-codigos', exigirLogin, (req, res) => {
+    const u = db.usuarioPorId(req.usuario.id);
+    if (!u.totp_segredo || !totp.conferirCodigo(u.totp_segredo, String(corpoDe(req).codigo || ''))) throw erro(400, 'Código inválido.');
+    const rec = totp.gerarRecuperacao(); db.salvarRecuperacao(u.id, rec.hashes); res.json({ codigos: rec.codigos });
+  });
+
+  // ------------------------------------------------------------ descobrir servidores públicos
+  r.get('/descobrir', exigirLogin, (req, res) => {
+    const busca = typeof req.query.q === 'string' ? req.query.q.trim().slice(0, 40) : '';
+    res.json(db.servidoresPublicos(busca).map((s) => ({ id: s.id, nome: s.nome, descricao: s.descricao || '', convite: s.convite, membros: s.membros, icone: db.urlImagem('s', s.id, 'icone', s.icone_v), banner: db.urlImagem('s', s.id, 'banner', s.banner_v), souMembro: db.ehMembro(s.id, req.usuario.id) })));
+  });
+  r.put('/servidores/:id/publico', exigirLogin, (req, res) => {
+    const s = servidorComoDono(req.usuario.id, idDe(req.params.id));
+    const c = corpoDe(req);
+    const desc = typeof c.descricao === 'string' ? c.descricao.trim().slice(0, 160) : '';
+    db.definirPublico(s.id, !!c.publico, desc);
+    res.json({ ok: true });
+  });
+  r.get('/servidores/:id/publico', exigirLogin, (req, res) => {
+    const s = servidorComoDono(req.usuario.id, idDe(req.params.id));
+    const row = db.servidorPorId ? db.servidorPorId(s.id) : s;
+    res.json({ publico: !!row.publico, descricao: row.descricao || '' });
+  });
+
   // Selo de verificado (✔️): só o dono do app dá/tira.
   r.post('/usuarios/:id/verificado', exigirLogin, (req, res) => {
     if (!ehDonoDoApp(req.usuario)) throw erro(403, 'Só o dono da KALI verifica contas.');
@@ -1203,6 +1258,7 @@ export function criarRotas() {
     if (!MODO_LENTO.includes(modoLento)) throw erro(400, 'Tempo de modo lento inválido.');
     db.configurarCanal(canal.id, categoria, modoLento);
     if (c.salaEspera !== undefined && canal.tipo === 'voz') db.definirSalaEspera(canal.id, !!c.salaEspera);
+    if (c.privado !== undefined) db.definirPrivado(canal.id, !!c.privado);
     if (c.soStaff !== undefined || c.palco !== undefined || c.forum !== undefined) {
       db.configurarCanalExtra(canal.id, c.soStaff === undefined ? canal.so_staff : !!c.soStaff, c.palco === undefined ? canal.palco : !!c.palco && canal.tipo === 'voz', c.forum === undefined ? canal.forum : !!c.forum && canal.tipo === 'texto');
     }
