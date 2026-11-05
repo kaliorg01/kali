@@ -321,11 +321,23 @@
     const uid = m.usuarioId, eu = uid === E.eu.id, stm = streamDe(uid), foco = E.focoTela === uid;
     const u = [...E.membros.values()].flat().find((x) => x.id === uid) || (eu ? E.eu : { id: uid, nome: m.nome, cor: m.cor });
     const t = h('div', { class: 'tile' + (m.falando ? ' falando' : '') + (stm ? ' com-video' : ''), tabindex: stm ? 0 : null, 'data-uid': uid });
-    if (stm) {
+    if (stm && eu && Voz.estado.compartilhando && !E.verMinhaPrevia) {
+      // Igual ao Discord: quem transmite não vê a própria tela (evita o "espelho infinito"), só um aviso.
+      t.classList.add('minha-transmissao');
+      t.append(h('div', { class: 'mt-caixa' }, h('div', { class: 'mt-ic' }, ic('tela', 30)), h('b', {}, 'Você está transmitindo sua tela'),
+        h('small', {}, 'A galera da call está vendo agora.'),
+        h('div', { class: 'mt-acoes' },
+          h('button', { class: 'bt', onclick: (e) => { e.stopPropagation(); E.verMinhaPrevia = true; atualizarCall(true); } }, 'Ver prévia'),
+          h('button', { class: 'bt perigo', onclick: (e) => { e.stopPropagation(); Voz.alternarTela().catch((err) => toast(err.message, 'erro')); } }, 'Parar de transmitir'))));
+    } else if (stm) {
       let v = videosTela.get(uid);
       if (!v) { v = h('video', { autoplay: true, playsinline: true }); v.muted = true; videosTela.set(uid, v); }
       if (v.srcObject !== stm) v.srcObject = stm;
+      // tela de celular (em pé) ganha quadro em pé, sem tarja preta dos lados
+      const orientar = () => t.classList.toggle('retrato', v.videoHeight > v.videoWidth * 1.1);
+      v.onloadedmetadata = orientar; v.onresize = orientar; if (v.videoWidth) orientar();
       t.append(v, h('button', { class: 'cheia', title: 'Tela cheia', onclick: (e) => { e.stopPropagation(); telaCheia(t); } }, '⛶'));
+      if (eu) t.append(h('button', { class: 'bt esconder-previa', onclick: (e) => { e.stopPropagation(); E.verMinhaPrevia = false; atualizarCall(true); } }, 'Esconder prévia'));
       t.title = foco ? 'Clica pra voltar pra grade' : 'Clica pra assistir em destaque';
       t.onclick = () => { E.focoTela = foco ? null : uid; atualizarCall(); };
       t.ondblclick = () => telaCheia(t);
@@ -375,14 +387,14 @@
     }
     videosTela.forEach((v) => { if (v.paused) v.play().catch(() => {}); });
     const erro = (err) => toast(err.message, 'erro');
-    $('#barra-call').replaceChildren(
+    $('#barra-call').replaceChildren(...[
       h('button', { class: ev.camera ? 'ligado' : '', title: ev.camera ? 'Desligar câmera' : 'Ligar câmera', 'aria-pressed': String(ev.camera), onclick: () => Voz.alternarCamera().catch(erro) }, ic('camera', 22)),
       h('button', { class: ev.compartilhando ? 'ligado' : '', title: ev.compartilhando ? 'Parar de transmitir' : 'Compartilhar tela', 'aria-pressed': String(ev.compartilhando), onclick: () => Voz.alternarTela().catch(erro) }, ic('tela', 22)),
       h('button', { class: ev.mudo ? 'desligado' : '', title: ev.mudo ? 'Ativar microfone' : 'Silenciar microfone', 'aria-pressed': String(ev.mudo), onclick: () => Voz.alternarMudo() }, ic(ev.mudo ? 'micOff' : 'mic', 22)),
       h('button', { class: ev.surdo ? 'desligado' : '', title: ev.surdo ? 'Ativar áudio' : 'Desativar áudio', 'aria-pressed': String(ev.surdo), onclick: () => Voz.alternarSurdo() }, ic(ev.surdo ? 'foneOff' : 'fone', 22)),
       h('button', { class: legendaLigada ? 'ligado' : '', title: legendaLigada ? 'Desligar legenda' : 'Legenda ao vivo (o que você fala vira texto pra galera)', onclick: alternarLegenda }, ic('cc', 22)),
       palcoAtual() && !souStaffEm(palcoAtual().servidorId) ? h('button', { class: maoLevantada() ? 'ligado' : '', title: maoLevantada() ? 'Baixar a mão' : 'Levantar a mão pra falar', onclick: () => pedir('voz:mao', { levantar: !maoLevantada() }) }, ic('mao', 22)) : null,
-      h('button', { class: 'encerrar', title: 'Desconectar', onclick: () => Voz.sair() }, ic('desligar', 22)));
+      h('button', { class: 'encerrar', title: 'Desconectar', onclick: () => Voz.sair() }, ic('desligar', 22))].filter(Boolean)); // sem filtro, o null virava o texto "null"
     desenharPalco();
   }
   // Palco: só fala quem a staff deu a vez. Plateia fica muda e levanta a mão.
@@ -440,7 +452,7 @@
       return atualizarCall();
     }
     const lista = [];
-    if (Voz.minhaTela) lista.push([E.eu.id, Voz.minhaTela, 'Você']);
+    if (Voz.minhaTela && (!Voz.estado.compartilhando || E.verMinhaPrevia)) lista.push([E.eu.id, Voz.minhaTela, 'Você']); // sem espelho da própria tela
     Voz.telas.forEach((st, uid) => lista.push([uid, st, nomeDe(uid)]));
     if (!lista.length) { if (painel) painel.remove(); videosTela.clear(); return; }
     if (!painel) { painel = h('div', { class: 'telas', id: 'telas' }); document.body.append(painel); }
