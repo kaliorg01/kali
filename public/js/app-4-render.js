@@ -270,7 +270,11 @@
       ajustar();
       if (ta.value && Date.now() - ultimoDigitando > 2000) { ultimoDigitando = Date.now(); sock && sock.emit('digitando', { canalId: c.id }); }
     };
-    ta.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); enviar(c.id, ta); } };
+    ta.addEventListener('input', () => sugerirComandos(c, ta));
+    ta.onkeydown = (e) => {
+      if (teclaSugestao(e, ta)) return;
+      if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); fecharSugestao(); enviar(c.id, ta); }
+    };
     const emoji = h('button', { class: 'icbtn', type: 'button', title: 'Emoji' }, ic('sorriso'));
     const bGif = h('button', { class: 'icbtn bt-gif', type: 'button', title: 'GIFs favoritos' }, 'GIF');
     const bEnviar = h('button', { class: 'enviar', title: 'Enviar (botão direito ou segurar: agendar)', onclick: () => enviar(c.id, ta) }, ic('enviar', 17));
@@ -460,7 +464,7 @@
         const dono = s && s.donoId === m.autor.id, cor = s && !dono ? corCargo(s.id, m.autor.id) : null;
         const anim = s && !dono && !m.autor.corNome && cor && cargoAnimado(s.id, m.autor.id);
         const ouro = s && E.top1 && E.top1.get(s.id) === m.autor.id, glitch = m.autor.efeito === 'glitch';
-        corpo.append(h('b', { class: 'autor' + (dono && !m.autor.corNome ? ' nome-dono' : '') + (anim ? ' nome-cargo-anim' : '') + (ouro ? ' nome-ouro' : '') + (glitch ? ' nome-glitch' : ''), 'data-nome': m.autor.nome, title: ouro ? '🏆 Top 1 do ranking' : null, style: anim ? `--c:${cor}` : estiloNome(m.autor.corNome) || (cor ? `color:${cor}` : null) }, m.autor.nome), seloVerif(m.autor) || '');
+        corpo.append(h('b', { class: 'autor' + (dono && !m.autor.corNome ? ' nome-dono' : '') + (anim ? ' nome-cargo-anim' : '') + (ouro ? ' nome-ouro' : '') + (glitch ? ' nome-glitch' : ''), 'data-nome': m.autor.nome, title: ouro ? '🏆 Top 1 do ranking' : null, style: anim ? `--c:${cor}` : estiloNome(m.autor.corNome) || (cor ? `color:${cor}` : null) }, m.autor.nome), seloVerif(m.autor) || '', m.autor.bot ? h('span', { class: 'tag tag-bot' }, '✔ BOT') : '');
       }
       corpo.append(h('time', { title: new Date(m.criadoEm).toLocaleString('pt-BR') }, hora(m.criadoEm)));
     }

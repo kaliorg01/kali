@@ -49,7 +49,7 @@
         } }, 'Trocar senha')),
       ]],
       ['Perfil', (re) => [
-        linhaCfg('Foto de perfil', 'PNG, JPG, GIF ou WEBP até 4 MB.', h('button', { type: 'button', class: 'bt prim', onclick: () => escolherImagem('/eu/imagem/avatar') }, 'Trocar foto'),
+        linhaCfg('Foto de perfil', 'PNG, JPG, GIF (animado) ou WEBP até 12 MB.', h('button', { type: 'button', class: 'bt prim', onclick: () => escolherImagem('/eu/imagem/avatar') }, 'Trocar foto'),
           E.eu.avatar ? h('button', { type: 'button', class: 'bt', onclick: async () => { await api('DELETE', '/eu/imagem/avatar').catch(() => {}); await recarregarEu(); re(); } }, 'Remover') : null),
         linhaCfg('Banner, moldura e cor do nome', 'Itens exclusivos da Loja.', h('button', { type: 'button', class: 'bt', onclick: modalLoja }, 'Abrir Loja')),
       ]],
@@ -331,6 +331,10 @@
       t.ondblclick = () => telaCheia(t);
       t.onkeydown = (e) => { if (e.key === 'Enter') t.onclick(); };
     } else {
+      // Igual ao Discord: o banner da pessoa (GIF anima) cobre o quadro quando ela não está com vídeo.
+      if (u.bannerImg) { t.classList.add('com-banner'); t.style.setProperty('--banner', `url("${u.bannerImg}")`); }
+      else if (u.vitrine && BANNERS[u.vitrine.banner]) { t.classList.add('com-banner'); t.style.setProperty('--banner', BANNERS[u.vitrine.banner]); }
+      if (u.cor) t.style.setProperty('--cor-tile', u.cor);
       t.append(avatar(u, 'av-call'));
     }
     if (!eu) {

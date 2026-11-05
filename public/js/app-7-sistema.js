@@ -180,7 +180,7 @@
       try { if (window.Notification && Notification.permission === 'granted') new Notification('🚨 Alerta da staff', { body: corta(alertaDe(m), 140) }); } catch (e) {}
     }
     if (nova && m.autor && m.autor.id !== E.eu.id && E.eu.status !== 'foco' && !silenciado(m.canalId) && !bloqueado(m.autor.id) && (mencionaEu(m) || E.dms.some((x) => x.canalId === m.canalId))) tocarSom(ler('kali-som') || 'plim');
-    if (nova && m.autor && m.autor.id !== E.eu.id) notificarMsg(m, c);
+    if (nova && m.autor && m.autor.id !== E.eu.id) notificarMsg(m, acharCanal(m.canalId));
     if (arr && !arr.some((x) => x.id === m.id)) { arr.push(m); arr.sort((a, b) => a.id - b.id); }
     const d = E.dms.find((x) => x.canalId === m.canalId);
     if (d) { d.ultima = m; E.dms = [d, ...E.dms.filter((x) => x !== d)]; }

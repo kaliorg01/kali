@@ -870,6 +870,7 @@
       item(srvMudo ? '🔔 Reativar avisos do servidor' : '🔕 Silenciar servidor', () => { const on = alternarLocal('kali-srv-silenciados', s.id); toast(on ? 'Servidor silenciado: sem som nem aviso (menções também)' : 'Avisos do servidor reativados', 'ok'); }), ...extras];
     if (souStaffEm(s.id)) itens.push(item('Configurações do servidor', () => configServidor(s)));
     if (souDono(s)) itens.push(item('➕ Criar canal', () => modalCanal('texto')), item('📁 Criar categoria', modalCategoria), item('🌍 Servidor público', () => modalPublico(s)));
+    if (souStaffEm(s.id)) itens.push(item('🤖 Bots e comandos /', () => modalBots(s)));
     if (souStaffEm(s.id)) itens.push(item('Criar evento', () => modalCriarEvento(s)), item('🛡️ AutoMod', () => modalAutomod(s)), item('👋 Boas-vindas e cargos', () => configBoasVindas(s)));
     itens.push(item('📊 Visão geral', () => abrirVisao(s.id)), item('🎭 Regras e meus cargos', () => modalBoasVindas(s)));
     itens.push(item('Abrir ticket com a staff', modalTicket));
@@ -1156,7 +1157,7 @@
     inp.onchange = async () => {
       const f = inp.files[0];
       if (!f) return;
-      if (f.size > 4 * 1048576) return toast('Imagem grande demais (máximo 4 MB).', 'erro');
+      if (f.size > 12 * 1048576) return toast('Imagem grande demais (máximo 12 MB).', 'erro');
       toast('Enviando imagem…');
       try {
         const r = await fetch('/api' + rota, { method: 'PUT', headers: { 'Content-Type': 'application/octet-stream' }, body: f });
@@ -1272,3 +1273,69 @@
     abrirModal({ titulo: 'Nova conversa', sub: 'Digita o nome de usuário da pessoa.', corpo: [campo('Usuário', u)], botao: 'Conversar',
       acao: () => abrirDmCom(u.value.trim().replace(/^@/, '').toLowerCase()) });
   }
+
+
+  // ---------- bots com comandos / ----------
+  async function modalBots(s) {
+    let bots = [];
+    try { bots = await api('GET', `/servidores/${s.id}/bots`); } catch (e) { return toast(e.message, 'erro'); }
+    const mostrarToken = (b, token) => abrirModal({ titulo: '🔑 Token do ' + b.nome, sub: 'Copia agora: ele não aparece de novo. Quem tiver esse token controla o bot, não mostra pra ninguém.',
+      corpo: [h('div', { class: 'chave-2fa' }, h('code', {}, token), h('button', { type: 'button', class: 'bt', onclick: () => navigator.clipboard?.writeText(token).then(() => toast('Token copiado ✓', 'ok')) }, 'Copiar')),
+        h('div', { class: 'sec-menu' }, 'Como ligar o bot'),
+        h('pre', { class: 'guia-bot' }, `npm install socket.io-client\nKALI_URL=${location.origin} KALI_TOKEN=<token> node scripts/bot-exemplo.js`),
+        h('small', { class: 'sub' }, 'O exemplo já registra /ping, /dado, /moeda, /escolhe e /8ball. Edita o arquivo pra criar os seus comandos.')] });
+    const linhas = bots.map((b) => h('li', {},
+      h('span', { class: 'av', style: 'background:' + b.cor }, '🤖'),
+      h('div', {}, h('b', {}, b.nome, ' ', h('span', { class: 'tag' }, 'BOT')), h('small', {}, '@' + b.usuario + ' · ' + (b.comandos.length ? b.comandos.map((c) => '/' + c.nome).join(' ') : 'nenhum comando registrado ainda'))),
+      h('div', { class: 'acoes-cargo' },
+        h('button', { class: 'bt', title: 'Gerar token novo (o antigo para de funcionar)', onclick: async () => { if (!confirm('Gerar token novo? O antigo para de funcionar.')) return; try { const r = await api('POST', `/servidores/${s.id}/bots/${b.id}/token`); mostrarToken(b, r.token); } catch (e) { toast(e.message, 'erro'); } } }, '🔑'),
+        h('button', { class: 'bt', title: 'Tirar o bot do servidor', onclick: async () => { if (!confirm('Tirar ' + b.nome + ' do servidor?')) return; try { await api('DELETE', `/servidores/${s.id}/bots/${b.id}`); toast('Bot removido', 'ok'); modalBots(s); } catch (e) { toast(e.message, 'erro'); } } }, '🗑'))));
+    const nome = h('input', { maxlength: 32, placeholder: 'Ex: KALI Music, Moderador, Sorteios' });
+    abrirModal({ titulo: '🤖 Bots de ' + s.nome, sub: 'Bot é uma conta que responde comandos / no chat. Você cria aqui, pega o token e roda o programa do bot (no seu PC ou num servidor).',
+      corpo: [bots.length ? h('ul', { class: 'novidades cargos' }, linhas) : h('p', { class: 'sub' }, 'Nenhum bot ainda.'), campo('Novo bot', nome)], botao: 'Criar bot',
+      acao: async () => { const b = await api('POST', `/servidores/${s.id}/bots`, { nome: nome.value.trim() }); E.cmdCache && E.cmdCache.delete(s.id); setTimeout(() => mostrarToken(b, b.token), 150); } });
+  }
+
+  // ---------- autocomplete do / (comandos da KALI + dos bots do servidor) ----------
+  const CMDS_KALI = [
+    ['fig', '🧸 Manda uma figurinha (ex: /fig 🐸)'], ['tts', '🔊 Mensagem falada em voz alta'], ['enquete', '📊 Pergunta? | Opção 1 | Opção 2'],
+    ['time', '🎮 Fecha um time: /time 5 Valorant'], ['pomodoro', '⏱ Estudo em grupo: /pomodoro 25'], ['confete', '🎉 Mensagem com confete'],
+    ['fogo', '🔥 Mensagem pegando fogo'], ['explosao', '💥 Explosão na tela'], ['terremoto', '🌋 Treme a tela'], ['neon', '💡 Texto neon'], ['arcoiris', '🌈 Texto arco-íris'],
+  ];
+  let sugestao = null, sugSel = 0;
+  function fecharSugestao() { if (sugestao) { sugestao.remove(); sugestao = null; } }
+  async function sugerirComandos(c, ta) {
+    const v = ta.value;
+    const m = /^\/([a-z0-9_-]*)$/i.exec(v);
+    if (!m) return fecharSugestao();
+    const q = m[1].toLowerCase();
+    let dosBots = [];
+    if (c.servidorId) {
+      E.cmdCache = E.cmdCache || new Map();
+      const cache = E.cmdCache.get(c.servidorId);
+      if (cache && Date.now() - cache.t < 30000) dosBots = cache.l;
+      else { try { dosBots = await api('GET', `/servidores/${c.servidorId}/comandos`); E.cmdCache.set(c.servidorId, { t: Date.now(), l: dosBots }); } catch (e) {} }
+    }
+    if (ta.value !== v) return;
+    const itens = [...dosBots.map((x) => ({ nome: x.nome, desc: x.descricao, de: '🤖 ' + x.bot })), ...CMDS_KALI.map(([n, d]) => ({ nome: n, desc: d, de: 'KALI' }))]
+      .filter((x) => x.nome.startsWith(q)).slice(0, 8);
+    fecharSugestao();
+    if (!itens.length) return;
+    sugSel = 0;
+    const r = ta.closest('.caixa') ? ta.closest('.caixa').getBoundingClientRect() : ta.getBoundingClientRect();
+    sugestao = h('div', { class: 'sugestao-cmd', role: 'listbox' }, h('div', { class: 'sec-menu' }, 'Comandos'), itens.map((x, i) => h('button', { type: 'button', class: 'sug-item' + (i === 0 ? ' sel' : ''), 'data-nome': x.nome,
+      onmousedown: (e) => { e.preventDefault(); escolher(x.nome); } }, h('b', {}, '/' + x.nome), h('span', {}, x.desc), h('small', {}, x.de))));
+    sugestao.style.left = r.left + 'px'; sugestao.style.width = r.width + 'px'; sugestao.style.bottom = (innerHeight - r.top + 6) + 'px';
+    document.body.append(sugestao);
+    function escolher(nome) { ta.value = '/' + nome + ' '; fecharSugestao(); ta.focus(); ta.dispatchEvent(new Event('input')); }
+    sugestao._escolher = escolher;
+  }
+  function teclaSugestao(e, ta) {
+    if (!sugestao) return false;
+    const bs = [...sugestao.querySelectorAll('.sug-item')];
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); sugSel = (sugSel + (e.key === 'ArrowDown' ? 1 : -1) + bs.length) % bs.length; bs.forEach((b, i) => b.classList.toggle('sel', i === sugSel)); return true; }
+    if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) { e.preventDefault(); sugestao._escolher(bs[sugSel].dataset.nome); return true; }
+    if (e.key === 'Escape') { fecharSugestao(); return true; }
+    return false;
+  }
+  addEventListener('mousedown', (e) => { if (sugestao && !sugestao.contains(e.target)) fecharSugestao(); });

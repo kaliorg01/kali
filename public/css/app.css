@@ -1700,3 +1700,20 @@ body.terremoto{animation:terremoto .8s cubic-bezier(.36,.07,.19,.97)}
 .cd-info p{color:var(--suave);font-size:12.5px;min-height:34px}
 .cd-info small{color:var(--fraco)}
 .cd-info .bt{align-self:flex-start}
+
+/* ===== Bots e autocomplete do / ===== */
+.tag-bot{background:#5865f2!important;color:#fff!important;border-color:transparent!important}
+.guia-bot{font-family:var(--mono);font-size:12px;padding:10px;border-radius:8px;background:var(--bg);border:1px solid var(--chip-borda);white-space:pre-wrap;word-break:break-all;margin:4px 0 8px}
+.sugestao-cmd{position:fixed;z-index:var(--z-menu,50);max-width:calc(100vw - 16px);padding:6px;border-radius:10px;background:var(--card);border:1px solid var(--chip-borda);box-shadow:var(--sombra);animation:menuPop .15s ease}
+.sug-item{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;width:100%;padding:8px 10px;border-radius:6px;text-align:left}
+.sug-item b{color:var(--texto)}
+.sug-item span{color:var(--suave);font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sug-item small{color:var(--fraco);font-size:11px}
+.sug-item.sel,.sug-item:hover{background:var(--roxo-suave)}
+
+/* ===== Banner de cada um no quadro da call (GIF anima) ===== */
+.tile.com-banner{background:var(--banner) center/cover no-repeat,var(--card)!important;position:relative;overflow:hidden}
+.tile.com-banner::before{content:"";position:absolute;inset:0;background:radial-gradient(circle at 50% 50%,rgba(0,0,0,.15),rgba(0,0,0,.55));pointer-events:none}
+.tile.com-banner .av-call{position:relative;z-index:1;box-shadow:0 0 0 4px rgba(0,0,0,.35),0 10px 30px rgba(0,0,0,.5)}
+.tile.com-banner > :not(.av-call){position:relative;z-index:1}
+.tile:not(.com-banner):not(.com-video){background:radial-gradient(circle at 50% 45%,color-mix(in srgb,var(--cor-tile,var(--roxo)) 22%,var(--card)),var(--card) 70%)}

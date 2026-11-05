@@ -625,6 +625,68 @@ export function criarRotas() {
   });
 
   // Perfil: servidores e amigos em comum.
+  // ------------------------------------------------------------ bots com comandos /
+  const botPublico = (b) => ({ id: b.id, usuario: b.usuario, nome: b.nome, cor: b.cor, donoId: b.bot_dono, comandos: db.comandosDoBot(b.id) });
+  r.get('/servidores/:id/bots', exigirLogin, (req, res) => {
+    const s = servidorComoMembro(req.usuario.id, idDe(req.params.id));
+    res.json(db.botsDoServidor(s.id).map(botPublico));
+  });
+  r.get('/servidores/:id/comandos', exigirLogin, (req, res) => {
+    const s = servidorComoMembro(req.usuario.id, idDe(req.params.id));
+    res.json(db.comandosDoServidor(s.id).map((c) => ({ nome: c.nome, descricao: c.descricao, botId: c.bot_id, bot: c.bot_nome })));
+  });
+  r.post('/servidores/:id/bots', exigirLogin, async (req, res) => {
+    const uid = req.usuario.id;
+    const s = servidorComoStaff(uid, idDe(req.params.id));
+    if (req.usuario.bot) throw erro(403, 'Bot não cria bot.');
+    const nome = typeof corpoDe(req).nome === 'string' ? corpoDe(req).nome.trim().slice(0, 32) : '';
+    if (nome.length < 2) throw erro(400, 'Dá um nome pro bot (2 a 32 letras).');
+    if (db.botsDoServidor(s.id).length >= 10) throw erro(400, 'Máximo de 10 bots por servidor.');
+    let usuario;
+    for (let i = 0; i < 20; i++) { usuario = ('bot_' + nome.toLowerCase().normalize('NFD').replace(/[^a-z0-9]/g, '').slice(0, 10) + '_' + Math.floor(Math.random() * 9000 + 1000)).slice(0, 20); if (!db.usuarioPorNome(usuario)) break; }
+    const { hash, salt } = await gerarHash(crypto.randomBytes(24).toString('hex'));
+    const id = db.criarUsuario({ usuario, nome, hash, salt, cor: db.corAleatoria() });
+    db.marcarBot(id, uid);
+    db.adicionarMembro(s.id, id);
+    const token = db.criarSessaoBot(id);
+    db.registrarAuditoria(s.id, uid, 'bot', nome, 'criou o bot');
+    emitir(`s:${s.id}`, 'cargos:atualizado', { servidorId: s.id });
+    res.status(201).json({ ...botPublico(db.usuarioPorId(id)), token });
+  });
+  const botComoDono = (uid, botId, sid) => {
+    const b = db.usuarioPorId(botId);
+    if (!b || !b.bot) throw erro(404, 'Bot não encontrado.');
+    if (b.bot_dono !== uid && !(sid && db.ehStaff(sid, uid))) throw erro(403, 'Só quem criou o bot (ou a staff) mexe nele.');
+    return b;
+  };
+  r.post('/servidores/:id/bots/:bid/token', exigirLogin, (req, res) => {
+    const s = servidorComoMembro(req.usuario.id, idDe(req.params.id));
+    const b = botComoDono(req.usuario.id, idDe(req.params.bid), s.id);
+    res.json({ token: db.criarSessaoBot(b.id) });
+  });
+  r.delete('/servidores/:id/bots/:bid', exigirLogin, (req, res) => {
+    const s = servidorComoStaff(req.usuario.id, idDe(req.params.id));
+    const b = botComoDono(req.usuario.id, idDe(req.params.bid), s.id);
+    db.removerMembro(s.id, b.id);
+    db.registrarAuditoria(s.id, req.usuario.id, 'bot', b.nome, 'removeu o bot');
+    emitir(`s:${s.id}`, 'cargos:atualizado', { servidorId: s.id });
+    res.json({ ok: true });
+  });
+  // o próprio bot registra os comandos dele (Authorization: Bot <token>)
+  r.put('/bot/comandos', exigirLogin, (req, res) => {
+    if (!req.usuario.bot) throw erro(403, 'Só conta de bot registra comandos.');
+    const lista = corpoDe(req).comandos;
+    if (!Array.isArray(lista) || lista.length > 25) throw erro(400, 'Mande até 25 comandos: [{nome, descricao}].');
+    const limpos = lista.map((c) => ({ nome: String(c && c.nome || '').toLowerCase().trim(), descricao: String(c && c.descricao || '').trim().slice(0, 100) }));
+    if (limpos.some((c) => !/^[a-z0-9_-]{1,32}$/.test(c.nome))) throw erro(400, 'Nome de comando: 1 a 32 letras minúsculas, números, _ ou -.');
+    db.definirComandos(req.usuario.id, limpos);
+    res.json({ ok: true, comandos: limpos });
+  });
+  r.get('/bot/eu', exigirLogin, (req, res) => {
+    if (!req.usuario.bot) throw erro(403, 'Não é bot.');
+    res.json({ id: req.usuario.id, usuario: req.usuario.usuario, nome: req.usuario.nome, servidores: db.servidoresDoUsuario ? db.servidoresDoUsuario(req.usuario.id).map((x) => ({ id: x.id, nome: x.nome })) : [] });
+  });
+
   // ------------------------------------------------------------ verificação em 2 etapas
   r.get('/eu/2fa', exigirLogin, (req, res) => { const u = db.usuarioPorId(req.usuario.id); let n = 0; try { n = JSON.parse(u.totp_rec || '[]').length; } catch {} res.json({ ativo: !!u.totp_segredo, codigosRestantes: n }); });
   r.post('/eu/2fa/iniciar', exigirLogin, (req, res) => {
@@ -1012,7 +1074,7 @@ export function criarRotas() {
   });
 
   // ------------------------------------------------------------ foto, banner, ícone (até 4 MB)
-  const corpoImagem = express.raw({ type: () => true, limit: '4mb' });
+  const corpoImagem = express.raw({ type: () => true, limit: '12mb' }); // GIF animado de banner costuma passar de 4 MB
   function salvarImagem(req, dono, id, tipo) {
     const buf = req.body;
     if (!Buffer.isBuffer(buf) || !tipoDaImagem(buf)) throw erro(415, 'Envie uma imagem PNG, JPG, GIF ou WEBP.');

@@ -63,6 +63,8 @@ export function limparCookieSessao(req, res) {
 }
 
 export function tokenDaRequisicao(req) {
+  const a = req.headers.authorization;
+  if (typeof a === 'string' && /^Bot [0-9a-f]{64}$/.test(a)) return a.slice(4); // bots: Authorization: Bot <token>
   return lerCookies(req.headers.cookie)[COOKIE] || null;
 }
 
@@ -81,7 +83,8 @@ export function exigirLogin(req, res, next) {
 /** Middleware do socket.io: autentica pelo cookie kali_sid do handshake. */
 export function autenticarSocket(socket, next) {
   try {
-    const token = lerCookies(socket.request.headers.cookie)[COOKIE];
+    const tb = socket.handshake && socket.handshake.auth && socket.handshake.auth.botToken;
+    const token = typeof tb === 'string' && /^[0-9a-f]{64}$/.test(tb) ? tb : lerCookies(socket.request.headers.cookie)[COOKIE];
     const usuario = token ? usuarioDaSessao(token) : null;
     if (!usuario) return next(new Error('nao-autorizado'));
     socket.data.usuarioId = usuario.id;

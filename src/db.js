@@ -185,6 +185,8 @@ for (const [tabela, coluna, def] of [
   ['usuarios', 'efeito', 'TEXT'],
   ['usuarios', 'verificado', 'INTEGER NOT NULL DEFAULT 0'],
   ['usuarios', 'totp_segredo', 'TEXT'],
+  ['usuarios', 'bot', 'INTEGER NOT NULL DEFAULT 0'],
+  ['usuarios', 'bot_dono', 'INTEGER'],
   ['usuarios', 'totp_pendente', 'TEXT'],
   ['usuarios', 'totp_rec', 'TEXT'],
   ['servidores', 'publico', 'INTEGER NOT NULL DEFAULT 0'],
@@ -746,6 +748,21 @@ export const usuariosComFocoExpirado = (agora) =>
 
 // ---------------------------------------------------------------- sessões
 const DURACAO_SESSAO = 30 * 24 * 60 * 60 * 1000;
+// ---------------------------------------------------------------- bots (contas de bot com comandos /)
+db.exec('CREATE TABLE IF NOT EXISTS bot_comandos (bot_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE, nome TEXT NOT NULL, descricao TEXT NOT NULL, PRIMARY KEY (bot_id, nome))');
+export function criarSessaoBot(botId) {
+  q('DELETE FROM sessoes WHERE usuario_id = ?').run(botId);
+  const token = crypto.randomBytes(32).toString('hex'), agora = Date.now();
+  q('INSERT INTO sessoes (token, usuario_id, criado_em, expira_em, ua, ultimo) VALUES (?, ?, ?, ?, ?, ?)').run(token, botId, agora, agora + 100 * 365 * 86400000, 'bot', agora);
+  return token;
+}
+export const marcarBot = (id, dono) => q('UPDATE usuarios SET bot = 1, bot_dono = ? WHERE id = ?').run(dono, id);
+export const botsDoServidor = (sid) => q('SELECT u.id, u.usuario, u.nome, u.cor, u.bot_dono FROM usuarios u JOIN membros m ON m.usuario_id = u.id WHERE m.servidor_id = ? AND u.bot = 1 ORDER BY u.id').all(sid);
+export const comandosDoBot = (botId) => q('SELECT nome, descricao FROM bot_comandos WHERE bot_id = ? ORDER BY nome').all(botId);
+export function definirComandos(botId, lista) {
+  transacao(() => { q('DELETE FROM bot_comandos WHERE bot_id = ?').run(botId); for (const c of lista) q('INSERT INTO bot_comandos (bot_id, nome, descricao) VALUES (?, ?, ?)').run(botId, c.nome, c.descricao); });
+}
+export const comandosDoServidor = (sid) => q(`SELECT c.nome, c.descricao, u.id AS bot_id, u.nome AS bot_nome FROM bot_comandos c JOIN usuarios u ON u.id = c.bot_id JOIN membros m ON m.usuario_id = u.id AND m.servidor_id = ? WHERE u.bot = 1 ORDER BY c.nome`).all(sid);
 export function criarSessao(usuarioId, ua) {
   const token = crypto.randomBytes(32).toString('hex');
   const agora = Date.now();
@@ -918,7 +935,7 @@ export function marcarImagem(dono, id, tipo, v) {
   q(`UPDATE ${tabela} SET ${coluna} = ? WHERE id = ?`).run(v, id);
 }
 const SELECT_MSG = `SELECT m.*, u.usuario AS a_usuario, u.nome AS a_nome, u.cor AS a_cor, u.avatar_v AS a_avatar,
-                    u.equip_moldura AS a_moldura, u.equip_cor AS a_cor_item, mb.apelido AS a_apelido, u.verificado AS a_verificado, u.efeito AS a_efeito
+                    u.equip_moldura AS a_moldura, u.equip_cor AS a_cor_item, mb.apelido AS a_apelido, u.verificado AS a_verificado, u.efeito AS a_efeito, u.bot AS a_bot
                     FROM mensagens m LEFT JOIN usuarios u ON u.id = m.autor_id
                     LEFT JOIN canais cx ON cx.id = m.canal_id
                     LEFT JOIN membros mb ON mb.servidor_id = cx.servidor_id AND mb.usuario_id = m.autor_id`;
@@ -1007,7 +1024,7 @@ export function serMensagem(row, reacoes = []) {
     canalId: row.canal_id,
     autor: row.autor_id != null && row.a_usuario != null
       ? { id: row.autor_id, usuario: row.a_usuario, nome: row.a_apelido || row.a_nome, cor: row.a_cor, avatar: urlImagem('u', row.autor_id, 'avatar', row.a_avatar),
-        moldura: urlItem(row.a_moldura), corNome: corDoItem(row.a_cor_item), verificado: !!row.a_verificado, efeito: row.a_efeito || '' }
+        moldura: urlItem(row.a_moldura), corNome: corDoItem(row.a_cor_item), verificado: !!row.a_verificado, efeito: row.a_efeito || '', bot: !!row.a_bot }
       : null,
     texto: row.texto,
     criadoEm: row.criado_em,

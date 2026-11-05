@@ -654,6 +654,16 @@ function aoConectar(socket) {
     const respostaA = respostaValida(d.respostaA, canal.id);
     checarLimiteMensagens(uid);
     const msg = publicarMensagem(canal, { autorId: uid, texto, expiraEm, respostaA });
+    if (canal.servidor_id != null && texto.startsWith('/')) {
+      const m = /^\/([a-z0-9_-]{1,32})(?:\s+([\s\S]*))?$/i.exec(texto);
+      if (m) {
+        const nome = m[1].toLowerCase();
+        const u = db.usuarioPorId(uid);
+        for (const c of db.comandosDoServidor(canal.servidor_id).filter((x) => x.nome === nome && x.bot_id !== uid)) {
+          emitir(`u:${c.bot_id}`, 'bot:comando', { comando: nome, args: (m[2] || '').trim(), canalId: canal.id, servidorId: canal.servidor_id, msgId: msg.id, usuario: { id: uid, nome: u?.nome, usuario: u?.usuario } });
+        }
+      }
+    }
     return { ok: true, msg };
   });
 
