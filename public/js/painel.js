@@ -103,6 +103,33 @@
       h('button', { type: 'button', class: 'bt prim', onclick: criar }, 'Criar item')];
   }
 
+  // ---------- rascunhos de banner (gerados pelo Claude) ----------
+  const gradeRasc = h('div', { class: 'rasc-grade' });
+  async function carregarRascunhos() {
+    let l = [];
+    try { l = await api('GET', '/loja/rascunhos'); } catch (e) { return gradeRasc.replaceChildren(h('p', { class: 'sub' }, e.message)); }
+    gradeRasc.replaceChildren(...(l.length ? l.map((r, n) => {
+      const nome = h('input', { maxlength: 40, value: r.nome, 'aria-label': 'Nome do banner' });
+      const preco = h('input', { inputmode: 'decimal', value: (r.preco / 100).toFixed(2).replace('.', ','), 'aria-label': 'Preço em reais' });
+      const card = h('div', { class: 'rasc-card', style: '--i:' + n },
+        h('img', { src: r.url, alt: r.nome, loading: 'lazy' }),
+        h('div', { class: 'rasc-info' }, nome, h('div', { class: 'rasc-linha' }, h('span', { class: 'sub' }, 'R$'), preco, h('small', { class: 'sub' }, (r.tamanho / 1048576).toFixed(2) + ' MB'))),
+        h('div', { class: 'rasc-acoes' },
+          h('button', { type: 'button', class: 'bt prim', onclick: async (e) => {
+            const centavos = Math.round(Number(String(preco.value || '0').replace(',', '.')) * 100);
+            if (!Number.isFinite(centavos) || centavos < 0) return toast('Preço inválido.', 'erro');
+            e.currentTarget.disabled = true;
+            try { await api('POST', `/loja/rascunhos/${r.id}/publicar`, { nome: nome.value.trim(), preco: centavos }); toast('🛒 "' + nome.value.trim() + '" foi pra loja!', 'ok'); card.classList.add('saindo'); setTimeout(() => { carregarRascunhos(); carregarItens(); }, 350); }
+            catch (err) { toast(err.message, 'erro'); e.currentTarget.disabled = false; }
+          } }, '🛒 Mandar pra loja'),
+          h('button', { type: 'button', class: 'bt', title: 'Descartar', onclick: async () => {
+            if (!confirm('Descartar "' + r.nome + '"?')) return;
+            try { await api('DELETE', `/loja/rascunhos/${r.id}`); card.classList.add('saindo'); setTimeout(carregarRascunhos, 350); } catch (err) { toast(err.message, 'erro'); }
+          } }, '🗑')));
+      return card;
+    }) : [h('p', { class: 'sub' }, 'Nenhum rascunho agora. Pra gerar mais: node scripts/gerar-banners.js')]));
+  }
+
   // ---------- entregar ----------
   function formEntregar() {
     const lista = h('datalist', { id: 'lista-usuarios' });
@@ -162,11 +189,12 @@
       h('header', { class: 'painel-topo', style: '--i:0' }, h('img', { src: '/img/icone.png', alt: '' }), h('h1', {}, 'KALI · PAINEL DO DONO'),
         h('span', { class: 'sub' }, '@' + eu.usuario), h('a', { href: '/' }, 'Abrir o KALI →')),
       h('section', { class: 'bloco', style: '--i:1' }, h('h2', {}, 'Agora'), numeros),
+      h('section', { class: 'bloco', style: '--i:2' }, h('h2', {}, '✨ Banners novos (rascunhos)'), h('p', { class: 'sub' }, 'Banners animados originais da KALI. Ajusta nome e preço e manda pra loja os que você curtir.'), gradeRasc),
       h('section', { class: 'bloco', style: '--i:2' }, h('h2', {}, 'Criar item da loja'), formCriar()),
       h('section', { class: 'bloco', style: '--i:3' }, h('h2', {}, 'Itens à venda'), grade),
       h('section', { class: 'bloco', style: '--i:4' }, h('h2', {}, 'Entregar item (depois do pagamento)'), formEntregar()),
       h('section', { class: 'bloco', style: '--i:5' }, h('h2', {}, 'Usuários'), blocoUsuarios()));
-    await Promise.all([atualizarResumo(), carregarItens()]);
+    await Promise.all([atualizarResumo(), carregarItens(), carregarRascunhos()]);
     setInterval(atualizarResumo, 15000);
   })();
 })();

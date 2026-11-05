@@ -83,6 +83,19 @@
   /* Reduzir movimento: tira grade 3D, partículas e flutuação; mantém brilhos e esmaecer */
   @media (prefers-reduced-motion:reduce){.fundo .grade,.fundo .bolha,.fundo .pt,.painel-topo img{animation:none!important}.bloco,.painel-topo,.numero,.item-loja,.usuario-linha{animation-name:soEsmaece!important}.bloco:hover,.numero:hover,.item-loja:hover,.bt:hover{transform:none!important}}
   @keyframes soEsmaece{from{opacity:0}to{opacity:1}}
+/* rascunhos de banner */
+.rasc-grade{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr));gap:14px;margin-top:10px}
+.rasc-card{display:flex;flex-direction:column;border-radius:12px;overflow:hidden;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);transition:transform .2s,opacity .3s,border-color .2s;animation:entra .4s both;animation-delay:calc(var(--i) * 40ms)}
+.rasc-card:hover{transform:translateY(-3px);border-color:#ff4fb8}
+.rasc-card.saindo{opacity:0;transform:scale(.95)}
+.rasc-card img{width:100%;aspect-ratio:3/1;object-fit:cover;display:block;background:#000}
+.rasc-info{display:flex;flex-direction:column;gap:6px;padding:10px 12px 4px}
+.rasc-info input{width:100%}
+.rasc-linha{display:flex;align-items:center;gap:6px}
+.rasc-linha input{width:90px;flex:none}
+.rasc-acoes{display:flex;gap:6px;padding:8px 12px 12px}
+.rasc-acoes .bt.prim{flex:1}
+@keyframes entra{from{opacity:0;transform:translateY(8px)}}
 </style>
 </head>
 <body class="painel">

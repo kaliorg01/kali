@@ -1134,6 +1134,47 @@ export function criarRotas() {
     aoAtualizarPerfil(req.usuario.id);
     res.json({ ok: true });
   });
+  // Rascunhos de banner (gerados por scripts/gerar-banners.js): o dono escolhe o que vira item da loja.
+  const PASTA_RASC = path.join(path.dirname(db.CAMINHO_DB), 'rascunhos');
+  const idRasc = (v) => { if (!/^[a-z0-9_-]{1,40}$/.test(String(v))) throw erro(404, 'Rascunho não encontrado.'); return String(v); };
+  r.get('/loja/rascunhos', exigirLogin, (req, res) => {
+    exigirDonoDoApp(req);
+    let arqs = [];
+    try { arqs = fs.readdirSync(PASTA_RASC).filter((f) => f.endsWith('.gif') || f.endsWith('.png') || f.endsWith('.webp')); } catch { /* sem pasta ainda */ }
+    res.json(arqs.map((f) => {
+      const id = f.replace(/\.[a-z]+$/, '');
+      let meta = {}; try { meta = JSON.parse(fs.readFileSync(path.join(PASTA_RASC, id + '.json'), 'utf8')); } catch {}
+      const tam = fs.statSync(path.join(PASTA_RASC, f)).size;
+      return { id, arquivo: f, nome: meta.nome || id, preco: meta.preco || 0, tamanho: tam, url: `/api/loja/rascunhos/${id}/imagem` };
+    }));
+  });
+  const arquivoRasc = (id) => { for (const ext of ['gif', 'png', 'webp']) { const p = path.join(PASTA_RASC, `${id}.${ext}`); if (fs.existsSync(p)) return p; } throw erro(404, 'Rascunho não encontrado.'); };
+  r.get('/loja/rascunhos/:rid/imagem', exigirLogin, (req, res) => {
+    exigirDonoDoApp(req);
+    const p = arquivoRasc(idRasc(req.params.rid));
+    res.type(tipoDaImagem(fs.readFileSync(p).subarray(0, 16)) || 'application/octet-stream');
+    res.sendFile(p);
+  });
+  r.post('/loja/rascunhos/:rid/publicar', exigirLogin, (req, res) => {
+    exigirDonoDoApp(req);
+    const id = idRasc(req.params.rid), p = arquivoRasc(id), c = corpoDe(req);
+    const nome = typeof c.nome === 'string' ? c.nome.trim().slice(0, 40) : '';
+    const preco = Number(c.preco);
+    if (nome.length < 2) throw erro(400, 'Dá um nome pro banner.');
+    if (!Number.isInteger(preco) || preco < 0 || preco > 100000000) throw erro(400, 'Preço inválido.');
+    const v = String(Date.now());
+    const itemId = db.criarItem('banner', nome, preco, v);
+    fs.copyFileSync(p, path.join(db.PASTA_IMAGENS, `i${itemId}-item`));
+    fs.rmSync(p, { force: true }); fs.rmSync(path.join(PASTA_RASC, id + '.json'), { force: true });
+    res.status(201).json(itemPublico(db.itemPorId(itemId)));
+  });
+  r.delete('/loja/rascunhos/:rid', exigirLogin, (req, res) => {
+    exigirDonoDoApp(req);
+    const id = idRasc(req.params.rid), p = arquivoRasc(id);
+    fs.rmSync(p, { force: true }); fs.rmSync(path.join(PASTA_RASC, id + '.json'), { force: true });
+    res.json({ ok: true });
+  });
+
   // Criar item: corpo cru = imagem (banner/moldura); ?tipo=&nome=&preco=(centavos)&cor=#hex ou #hex,#hex
   r.post('/loja/itens', exigirLogin, corpoImagem, (req, res) => {
     exigirDonoDoApp(req);
